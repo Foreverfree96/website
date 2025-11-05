@@ -1,8 +1,8 @@
 import { ref, reactive } from "vue";
 import axios from "axios";
 
-// Backend base URL
-const API_URL = "http://localhost:5000/api/users";
+// Backend base URL from environment variable
+const API_URL = import.meta.env.VITE_API_URL + "/api/users";
 
 export function useAuth() {
   // Reactive state
