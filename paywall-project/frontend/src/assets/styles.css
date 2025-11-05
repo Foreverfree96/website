@@ -1,0 +1,542 @@
+/* ==========================
+   Global Styles
+========================== */
+body {
+  font-family: 'Inter', sans-serif;
+  background-color: #7dbe9d;
+  margin: 0;
+}
+
+/* ==========================
+   Navbar & Nav Links
+========================== */
+nav {
+  background-color: white;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+  padding: 1rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  position: sticky;
+  top: 0;
+  z-index: 50;
+}
+
+.nav-link {
+  margin: 0 0.5rem;
+  padding: 0.5rem 1rem;
+  background-color: black;   /* Charcoal */
+  color: pink;               /* Pink text */
+  font-weight: 600;
+  border: 4.5px solid #14532d; /* Dark green border */
+  border-radius: 0.375rem;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+  cursor: pointer;
+  transition: box-shadow 0.3s ease, transform 0.2s ease-in;
+  transform: translateY(-3px); /* float slightly up */
+  box-shadow: 0 6px 10px rgba(0,0,0,0.4);
+}
+
+.nav-link:hover {
+  box-shadow: 0 6px 10px rgba(0,0,0,0.4);
+  transform: translateY(-2px);
+  color: rgb(	125,	190,	157); /* Hover text color */
+}
+
+.nav-link:active {
+  transform: translateY(0);
+}
+
+/* ==========================
+   Form Styles
+========================== */
+.signup-wrapper {
+  display: flex;
+  max-width: 400px;
+  margin: auto;
+}
+
+.signup-form {
+  display: flex;
+  align-content: space-evenly;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.signup-input {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #d1d5db;
+  margin: 0.25rem 0 0.5rem 0;
+  border-radius: 0.375rem;
+  outline: none;
+  transition: box-shadow 0.3s ease, transform 0.2s ease-in;
+  transform: translateY(-3px); /* float slightly up */
+  box-shadow: 0 6px 10px rgba(0,0,0,0.4);
+}
+
+.signup-input:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 4px rgba(59,130,246,0.3);
+}
+
+.signup-button {
+  margin-left: 70px;
+  font-size: 19px;
+  width: 65%;
+  padding: 0.5rem 0;
+  background-color: #14532d;
+  color: white;
+  font-weight: 600;
+  border-radius: 0.375rem;
+  transition: background-color 0.2s;
+  cursor: pointer;
+}
+
+.signup-button:hover {
+  background-color: #0f3d24;
+}
+
+.signup-link:hover {
+  color: #2563eb;
+}
+
+.signup-error {
+  color: #ef4444;
+  font-size: 0.875rem;
+}
+
+/* ==========================
+   Global Buttons / Auth Buttons
+========================== */
+
+.auth-button {
+  text-decoration: none;
+  color: pink;                 /* text color */
+  background-color: black;     /* button background stays black */
+  border: 4.5px solid #14532d; /* dark green border */
+  border-radius: 0.375rem;
+  padding: 0.5rem 1.25rem;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+  cursor: pointer;
+  transition: box-shadow 0.3s ease, transform 0.2s ease, color 0.3s ease;
+}
+.auth-button:hover {
+  /* Only shadow and transform on hover, background stays black */
+  box-shadow: 0 6px 10px rgba(0,0,0,0.4);
+  transform: translateY(-2px);
+  color: pink; /* keep text pink */
+  background-color: black; /* ensure background stays black */
+}
+.btn:active,
+.auth-button:active {
+  transform: translateY(0);
+}
+
+/* ==========================
+   Heading & Text Styles
+========================== */
+.text-3xl {
+  margin: 0.5rem 0;
+}
+.mb-2{
+
+  font-size: 25px;
+}
+
+.font-semibold, .mb-2{
+ display: flexbox;
+}
+.border, .p-2{
+  border: none;
+  font-size: 15px;
+  padding: 10px;
+  border-radius: 35px;
+  text-align: left;
+  text-decoration: none;
+  
+}
+.p-2{
+  font-weight: 300;
+  transition: all 0.3s ease 0.2s; /* 0.5s delay before transition starts */
+  border: 2px solid #43556f;
+  outline: none;
+
+  border: 4px solid black;
+ font-weight: 200;
+}
+.p-2:focus{
+  transition: color 0.3s ease-in-out;
+  border: 4px solid pink;
+  box-shadow: none;
+  outline: none;
+}
+.px-4{
+  background-color: black;
+  color: pink;
+  cursor: pointer;
+  text-decoration: none;
+  border: 3px solid #14532d;
+  padding: 5px 10px 5px 10px;
+  font-weight: bold;
+  border-radius: 0.375rem;
+}
+.px-4:hover{
+  transition: color 0.3s ease-in;
+  color: rgb(66, 140, 165);
+}
+.mt-2{
+  font-size: 20px;
+  font-weight: 500;
+  margin: 15px;
+}
+.mb-4, .p3{
+  margin-bottom: 40px;
+  font-size: 25px;
+  margin-left: 15px;
+  padding: 10px;
+}
+.mb-6 {
+  font-weight: 500;
+  font-size: 23px;
+  margin: 0.25rem 0 0.625rem 0;
+  margin-left: 25px;
+}
+.text-3xl{
+  margin-top: 21px;
+  font-weight: 600;
+  font-size: 40px;
+  margin-left: 15px;
+  padding: 10px;
+}
+
+.text-center {
+  text-decoration: none;
+}
+
+
+/* ==========================
+   Utility / Flex
+========================== */
+.flex.space-x-4 {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+/* ==========================
+   Hover IDs for Nav Links
+========================== */
+#home-btn:hover,
+.auth-button:hover,
+#signup-btn:hover,
+#login-btn:hover,
+#profile-btn:hover,
+#dashboard-btn:hover
+{
+  transition: color 0.3s ease-in;
+  color: rgb(	125,	190,	157);
+}
+.bg-white{
+  background-color: #0f3d24;
+  padding-top: 10px;
+}
+
+.gap-4{
+
+display: flex;
+margin-left: 20px;
+}
+.auth-wrapper {
+  display: flexbox;
+  justify-content: center;
+}
+.auth-form{
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding-top: 15px;
+}
+.auth-input{
+  font-size: 15px;
+  padding: 10px;
+  border-radius: 35px;
+  text-align: left;
+  text-decoration: none;
+}
+.auth-button{
+
+  font-size: 20px;
+  margin-bottom: 15px;
+  margin-top: 15px;
+  padding: 15px 35px 15px 35px;
+}
+.mt-4{
+margin: 0px 15px 0px 15px;
+  font-weight: 600;
+  font-size: 30px;
+}
+.auth-link{ 
+  text-decoration: none;
+  padding: 10px;
+  color: pink;
+}
+.auth-link:hover{
+
+  transition: color 0.3s ease-in;
+  color: rgb(34, 99, 121)
+}
+.button-login{
+  font-size: 18px;
+  font-weight: 600;
+  padding: 5px 10px 5px 10px;
+  text-decoration: none;
+  border-radius: 35px;
+  background-color: black;
+ 
+}
+.button-login:hover{
+  transition: box-shadow 0.3s ease, transform 0.2s ease-in;
+  transform: translateY(-3px); /* float slightly up */
+  box-shadow: 0 6px 10px rgba(0,0,0,0.4);
+}
+.signup-button1{
+  font-size: 18px;
+  font-weight: 600;
+  padding: 5px 10px 5px 10px;
+  text-decoration: none;
+  border-radius: 35px;
+  background-color: black;
+}
+.signup-button1:hover{
+  transition: box-shadow 0.3s ease, transform 0.2s ease-in;
+  transform: translateY(-3px); /* float slightly up */
+  box-shadow: 0 6px 10px rgba(0,0,0,0.4);
+}
+/* ======================================
+   CRUD & Dashboard Theme (matches site)
+====================================== */
+
+/* ---------- Dashboard Container ---------- */
+.dashboard-wrapper {
+  max-width: 900px;
+  margin: 3rem auto;
+  background-color: #0f3d24;
+  padding: 2rem;
+  border-radius: 1rem;
+  box-shadow: 0 6px 12px rgba(0,0,0,0.4);
+  color: pink;
+}
+
+.dashboard-header {
+  text-align: center;
+  font-size: 2rem;
+  font-weight: 700;
+  margin-bottom: 1.5rem;
+  color: pink;
+  text-shadow: 0 2px 4px rgba(0,0,0,0.6);
+}
+
+.dashboard-section {
+  background-color: #14532d;
+  border-radius: 0.75rem;
+  padding: 1.5rem;
+  margin-bottom: 2rem;
+  box-shadow: 0 5px 10px rgba(0,0,0,0.3);
+}
+
+.dashboard-section h3 {
+  font-size: 1.5rem;
+  color: pink;
+  margin-bottom: 0.75rem;
+  border-bottom: 3px solid pink;
+  padding-bottom: 0.5rem;
+}
+
+/* ---------- Input Fields ---------- */
+.crud-input {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  border: 3px solid #14532d;
+  border-radius: 35px;
+  font-size: 1rem;
+  color: #333;
+  outline: none;
+  transition: box-shadow 0.3s ease, transform 0.2s ease-in;
+  transform: translateY(-3px); /* float slightly up */
+  box-shadow: 0 6px 10px rgba(0,0,0,0.4);
+}
+
+.crud-input:focus {
+  border-color: pink;
+  box-shadow: 0 0 0 5px rgba(255,192,203,0.2);
+}
+
+/* ---------- Buttons ---------- */
+.crud-button {
+  background-color: black;
+  color: pink;
+  border: 4.5px solid #14532d;
+  border-radius: 0.5rem;
+  padding: 0.6rem 1.25rem;
+  font-weight: 600;
+  font-size: 1.05rem;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+  cursor: pointer;
+  transition: box-shadow 0.3s ease, transform 0.2s ease-in;
+  transform: translateY(-3px); /* float slightly up */
+  box-shadow: 0 6px 10px rgba(0,0,0,0.4);
+}
+
+.crud-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 12px rgba(0,0,0,0.45);
+}
+
+.crud-button:active {
+  transform: translateY(0);
+}
+
+/* ---------- Danger Button (Delete Account) ---------- */
+.delete-button {
+  background-color: #7f1d1d;
+  border: 4px solid #450a0a;
+  color: pink;
+  font-weight: 700;
+  padding: 0.75rem 1.5rem;
+}
+
+.delete-button:hover {
+  background-color: #991b1b;
+  box-shadow: 0 6px 10px rgba(0,0,0,0.5);
+}
+
+/* ---------- File Upload ---------- */
+.file-upload {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  border: 2px dashed pink;
+  border-radius: 0.75rem;
+  padding: 2rem;
+  background-color: rgba(255,255,255,0.05);
+  cursor: pointer;
+  transition: border-color 0.3s ease, background-color 0.3s ease;
+}
+
+.file-upload:hover {
+  background-color: rgba(255,192,203,0.1);
+  border-color: #ffb6c1;
+}
+
+.file-upload input[type="file"] {
+  display: none;
+}
+
+.upload-label {
+  font-size: 1rem;
+  font-weight: 600;
+  color: pink;
+}
+
+/* ---------- Toggle (Public/Private) ---------- */
+.toggle-container {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 1rem 0;
+}
+
+.toggle-label {
+  color: pink;
+  font-size: 1rem;
+  font-weight: 500;
+}
+
+.toggle-input {
+  appearance: none;
+  width: 45px;
+  height: 24px;
+  background-color: #333;
+  border-radius: 30px;
+  position: relative;
+  cursor: pointer;
+  transition: background-color 0.3s ease;
+}
+
+.toggle-input::before {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 4px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background-color: pink;
+  transition: transform 0.3s ease;
+}
+
+.toggle-input:checked {
+  background-color: #14532d;
+}
+
+.toggle-input:checked::before {
+  transform: translateX(20px);
+}
+
+/* ---------- Posts Display ---------- */
+.posts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 1.25rem;
+  margin-top: 1.5rem;
+}
+
+.post-card {
+  background-color: #14532d;
+  border: 3px solid pink;
+  border-radius: 0.75rem;
+  padding: 1rem;
+  box-shadow: 0 5px 10px rgba(0,0,0,0.3);
+  text-align: center;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.post-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 14px rgba(0,0,0,0.4);
+}
+
+.post-card img,
+.post-card video,
+.post-card audio {
+  max-width: 100%;
+  border-radius: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+/* ---------- Responsive ---------- */
+@media (max-width: 640px) {
+  .dashboard-wrapper {
+    padding: 1rem;
+  }
+
+  .crud-button {
+    width: 100%;
+    text-align: center;
+  }
+
+  .file-upload {
+    padding: 1rem;
+  }
+}
