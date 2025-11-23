@@ -11,11 +11,7 @@
         </p>
 
         <!-- Auth Buttons -->
-        <div class="auth-buttons-container">
-            <router-link v-if="!user.name" to="/signup" id="auth-space" class="auth-button">Sign Up</router-link>
-            <router-link v-if="!user.name" to="/login" id="auth-space1" class="auth-button">Login</router-link>
-            <router-link v-if="user.name" to="/profile" id="auth-space2" class="auth-button">Go to Profile</router-link>
-        </div>
+
     </div>
 </template>
 

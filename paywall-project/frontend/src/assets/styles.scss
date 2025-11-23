@@ -1,0 +1,275 @@
+/* SCSS */
+@use './variables' as *; // Import variables, * allows direct usage
+
+/* ==========================
+   Global Styles
+========================== */
+body {
+  font-family: $font-main;
+  background-color: $color-bg-main;
+  margin: 0;
+}
+
+/* ==========================
+   Navbar & Nav Links
+========================== */
+nav {
+  background-color: $color-black;
+  box-shadow: $shadow-light;
+  padding: $space-lg;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  position: sticky;
+  top: 0;
+  z-index: 50;
+}
+
+.nav-link {
+  margin: 0 $space-sm;
+  padding: $space-sm $space-md;
+  background-color: $color-black;
+  color: $color-pink;
+  font-weight: 600;
+  border: $border-bold solid $color-green-dark;
+  border-radius: $radius-sm;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: $shadow-medium;
+  cursor: pointer;
+  transition: box-shadow $transition-medium ease, transform $transition-fast ease-in;
+  transform: translateY(-3px);
+}
+
+.nav-link:hover {
+  box-shadow: $shadow-heavy;
+  transform: translateY(-2px);
+  color: $color-green-hover;
+}
+
+.nav-link:active {
+  transform: translateY(0);
+}
+
+/* ==========================
+   Form Styles
+========================== */
+.signup-wrapper {
+  display: flex;
+  max-width: 400px;
+  margin: auto;
+}
+
+.signup-form {
+  display: flex;
+  flex-direction: column;
+  gap: $space-sm;
+}
+
+.signup-input {
+  width: 100%;
+  padding: $space-sm $space-md;
+  border: $border-thin solid $color-gray-border;
+  margin: $space-xs 0 $space-sm 0;
+  border-radius: $radius-sm;
+  outline: none;
+  transition: box-shadow $transition-medium ease, transform $transition-fast ease-in;
+  transform: translateY(-3px);
+  box-shadow: $shadow-heavy;
+}
+
+.signup-input:focus {
+  border-color: $color-blue-focus;
+  box-shadow: 0 0 0 4px rgba(59,130,246,0.3);
+}
+
+.signup-button {
+  margin-left: 70px;
+  font-size: $font-size-md;
+  width: 65%;
+  padding: $space-sm 0;
+  background-color: $color-green-dark;
+  color: $color-white;
+  font-weight: 600;
+  border-radius: $radius-sm;
+  transition: background-color $transition-fast;
+  cursor: pointer;
+}
+
+.signup-button:hover {
+  background-color: $color-green-darker;
+}
+
+.signup-error {
+  color: $color-red-error;
+  font-size: $font-size-sm;
+}
+
+/* ==========================
+   Buttons (Auth, CRUD, Dashboard)
+========================== */
+.auth-button,
+.crud-button,
+.button-login,
+.signup-button1 {
+  background-color: $color-black;
+  color: $color-pink;
+  border: $border-bold solid $color-green-dark;
+  border-radius: $radius-sm;
+  padding: $space-sm $space-md;
+  font-weight: 600;
+  font-size: 20px;
+  cursor: pointer;
+  box-shadow: $shadow-medium;
+  transition: box-shadow $transition-medium ease, transform $transition-fast ease-in;
+  transform: translateY(-3px);
+}
+.auth-link {
+  text-decoration: none;
+  color: $color-pink;
+}
+.t1-size {
+  font-size: 18px;
+}
+.mt-4{
+  font-size: 20px;
+  font-weight: 600;
+}
+.auth-link:hover {
+  box-shadow: $shadow-heavy;
+  transform: translateY(-2px);
+  color: $color-green-hover;
+}
+/* Auth Form Styles */
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: $space-sm;
+  padding: $space-md;
+}
+
+/* Input fields inside auth-form */
+.auth-input {
+  width: 100%;                     // full width of form container
+  padding: $space-md $space-lg;    // uniform padding for all inputs
+  font-size: $font-size-base;      // consistent font size
+  border: $border-thin solid $color-gray-border;
+  border-radius: $radius-sm;       // smaller radius for uniformity
+  text-align: left;
+  outline: none;
+  box-shadow: $shadow-light;       // lighter shadow for consistent look
+  transition: box-shadow $transition-medium ease, transform $transition-fast ease-in;
+  transform: translateY(0);        // remove initial shift
+
+  &:focus {
+    border-color: $color-blue-focus;
+    box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.3);
+    transform: translateY(0);
+  }
+}
+
+/* Buttons inside auth-form */
+.auth-button {
+  font-size: $font-size-md;
+  font-weight: 600;
+  padding: $space-sm $space-lg;
+  margin-top: $space-sm;
+  border-radius: $radius-sm;
+  background-color: $color-black;
+  color: $color-pink;
+  border: $border-bold solid $color-green-dark;
+  cursor: pointer;
+  transition: box-shadow $transition-medium ease, transform $transition-fast ease-in;
+
+  &:hover {
+    color: $color-green-hover; // Pink/mint hover effect
+    box-shadow: $shadow-heavy;
+    transform: translateY(-2px);
+  }
+
+  &:active {
+    transform: translateY(0);
+  }
+}
+
+/* Error text for form */
+.auth-error {
+  color: $color-red-error;
+  font-size: $font-size-sm;
+  margin-top: $space-xs;
+  text-align: center;
+}
+
+.auth-link:active {
+  transform: translateY(0);
+}
+.auth-button:hover,
+.crud-button:hover,
+.button-login:hover,
+.signup-button1:hover {
+  box-shadow: $shadow-heavy;
+  transform: translateY(-2px);
+}
+
+/* Delete / Danger Button */
+.delete-button {
+  background-color: $color-red-dark;
+  border: $border-thick solid $color-red-darker;
+  color: $color-pink;
+  font-weight: 700;
+  padding: $space-sm $space-lg;
+}
+
+.delete-button:hover {
+  background-color: $color-red-hover;
+  box-shadow: $shadow-heavy;
+}
+
+/* Dashboard & Cards */
+.dashboard-wrapper {
+  max-width: 900px;
+  margin: $space-2xl auto;
+  background-color: $color-green-darker;
+  padding: $space-2xl;
+  border-radius: $radius-lg;
+  box-shadow: $shadow-deep;
+  color: $color-pink;
+}
+
+.dashboard-section {
+  background-color: $color-green-dark;
+  border-radius: $radius-md;
+  padding: $space-xl;
+  margin-bottom: $space-2xl;
+  box-shadow: $shadow-medium;
+}
+
+.post-card {
+  background-color: $color-green-dark;
+  border: $border-thick solid $color-pink;
+  border-radius: $radius-md;
+  padding: $space-md;
+  box-shadow: $shadow-medium;
+  transition: transform $transition-medium ease, box-shadow $transition-medium ease;
+}
+
+.post-card:hover {
+  transform: translateY(-4px);
+  box-shadow: $shadow-heavy;
+}
+
+/* Toggle */
+.toggle-input {
+  background-color: $color-gray-dark;
+}
+
+.toggle-input:checked {
+  background-color: $color-green-dark;
+}
+
+.toggle-input::before {
+  background-color: $color-pink;
+}

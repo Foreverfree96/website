@@ -1,7 +1,5 @@
-// middleware/auth.js
 import jwt from "jsonwebtoken";
 import User from "../models/userModel.js";
-
 
 // ==============================
 // 🔒 PROTECT ROUTE (JWT Auth)
@@ -9,11 +7,7 @@ import User from "../models/userModel.js";
 export const protect = async (req, res, next) => {
   let token;
 
-  // Check for Authorization header
-  if (
-    req.headers.authorization &&
-    req.headers.authorization.startsWith("Bearer")
-  ) {
+  if (req.headers.authorization && req.headers.authorization.startsWith("Bearer")) {
     try {
       token = req.headers.authorization.split(" ")[1];
 
@@ -23,7 +17,7 @@ export const protect = async (req, res, next) => {
       // Attach user to request
       req.user = await User.findById(decoded.id).select("-password");
 
-      next(); // Continue to the route
+      next();
     } catch (err) {
       console.error("❌ Auth middleware error:", err);
       return res.status(401).json({ message: "Not authorized" });
@@ -38,7 +32,7 @@ export const protect = async (req, res, next) => {
 // ==============================
 export const paywall = (req, res, next) => {
   if (req.user && req.user.isSubscriber) {
-    next(); // User is a subscriber, allow access
+    next();
   } else {
     res.status(403).json({ message: "Access denied: Subscription required" });
   }

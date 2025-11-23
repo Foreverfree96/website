@@ -1,0 +1,65 @@
+/* ============================================
+   GLOBAL THEME VARIABLES
+============================================ */
+
+/* ---------- Colors ---------- */
+$color-bg-main: #7dbe9d;          
+$color-black: #000000;            
+$color-white: #ffffff;            
+$color-pink: pink;                
+$color-pink-soft: #ffb6c1;        
+$color-green-dark: #14532d;       
+$color-green-darker: #0f3d24;     
+$color-green-hover: rgb(125,190,157);
+
+$color-blue-focus: #3b82f6;       
+$color-blue-link: #2563eb;        
+$color-blue-text-hover: rgb(66,140,165);
+
+$color-gray-border: #d1d5db;      
+$color-gray-dark: #333333;        
+
+$color-red-error: #ef4444;        
+$color-red-dark: #7f1d1d;         
+$color-red-darker: #450a0a;       
+$color-red-hover: #991b1b;        
+
+/* ---------- Shadows ---------- */
+$shadow-light: 0 4px 6px rgba(0,0,0,0.1);
+$shadow-medium: 0 4px 6px rgba(0,0,0,0.3);
+$shadow-heavy: 0 6px 10px rgba(0,0,0,0.4);
+$shadow-deep: 0 8px 12px rgba(0,0,0,0.45);
+
+/* ---------- Typography ---------- */
+$font-main: 'Inter', sans-serif;
+
+$font-size-xs: 0.75rem;  
+$font-size-sm: 0.875rem; 
+$font-size-base: 1rem;   
+$font-size-md: 1.25rem;  
+$font-size-lg: 1.5rem;   
+$font-size-xl: 2rem;     
+$font-size-2xl: 2.5rem;  
+
+/* ---------- Borders & Radius ---------- */
+$radius-sm: 0.375rem;
+$radius-md: 0.5rem;
+$radius-lg: 35px;
+
+$border-thin: 1px;
+$border-default: 3px;
+$border-thick: 4px;
+$border-bold: 4.5px;
+
+/* ---------- Spacing ---------- */
+$space-xs: 0.25rem;
+$space-sm: 0.5rem;
+$space-md: 0.75rem;
+$space-lg: 1rem;
+$space-xl: 1.5rem;
+$space-2xl: 2rem;
+
+/* ---------- Transitions ---------- */
+$transition-fast: 0.2s;
+$transition-medium: 0.3s;
+$transition-slow: 0.5s;

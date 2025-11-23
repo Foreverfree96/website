@@ -14,20 +14,20 @@
             </p>
         </div>
 
-        <!-- ✏️ Change Username -->
+        <!-- Update Username -->
         <div class="mb-4 p-3 border rounded bg-gray-50">
             <h2 class="font-semibold mb-2">Change Username</h2>
             <form @submit.prevent="handleUsernameUpdate" class="flex space-x-2">
                 <input v-model="newUsername" type="text" placeholder="Enter new username"
                     class="border p-2 rounded w-full" required />
-                <button type="submit" class="bg-green-700 text-white px-4 py-2 rounded hover:bg-green-800 transition">
+                <button type="submit" class="bg-green-700 text-white px-4 py-2 rounded hover:bg-green-800">
                     Update
                 </button>
             </form>
             <p v-if="usernameMessage" class="text-green-600 mt-2">{{ usernameMessage }}</p>
         </div>
 
-        <!-- Premium Content Section -->
+        <!-- Premium Content -->
         <div v-if="user.isSubscriber" class="mb-4 p-3 border rounded bg-gray-100">
             <h2 class="font-semibold mb-2">Premium Content</h2>
             <div v-if="premiumContent">{{ premiumContent.message }}</div>
@@ -36,21 +36,20 @@
             </button>
         </div>
 
-        <!-- PayPal Subscription Section -->
+        <!-- PayPal Section -->
         <div v-else id="paypal-button-container" class="mb-4"></div>
 
-        <!-- 🗑️ Delete Account -->
+        <!-- Delete Account -->
         <div class="mt-6 p-3 border rounded bg-red-50">
             <h2 class="font-semibold text-red-600 mb-2">Delete Account</h2>
             <p class="text-sm text-gray-600 mb-3">
                 This will permanently remove your account and all data.
             </p>
-            <button @click="confirmDelete" class="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 transition">
+            <button @click="confirmDelete" class="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700">
                 Delete My Account
             </button>
         </div>
 
-        <!-- Error Messages -->
         <p v-if="errorMessage" class="text-red-500 mt-4">{{ errorMessage }}</p>
     </div>
 </template>
@@ -59,17 +58,16 @@
 import { ref, onMounted } from "vue";
 import { useAuth } from "../composables/useAuth.js";
 
-const { user, getProfile, getPremiumContent, subscribe } = useAuth();
+const { user, getProfile, getPremiumContent, subscribe, deleteAccount, updateUsername } = useAuth();
 const premiumContent = ref(null);
 const errorMessage = ref("");
 const newUsername = ref("");
 const usernameMessage = ref("");
 
-// Load user profile
+// Load profile
 onMounted(async () => {
     try {
         await getProfile();
-
         if (user.isSubscriber) {
             premiumContent.value = await getPremiumContent();
         } else {
@@ -81,7 +79,7 @@ onMounted(async () => {
     }
 });
 
-// 🔄 Reload Premium Content
+// Reload premium content
 const loadPremiumContent = async () => {
     try {
         premiumContent.value = await getPremiumContent();
@@ -91,54 +89,37 @@ const loadPremiumContent = async () => {
     }
 };
 
-// 💳 PayPal Setup
+// PayPal Setup
 const setupPayPalButton = () => {
     if (!window.paypal) return;
 
-    window.paypal
-        .Buttons({
-            createOrder: (data, actions) => {
-                return actions.order.create({
-                    purchase_units: [{ amount: { value: "9.99" } }],
-                });
-            },
-            onApprove: async (data, actions) => {
-                try {
-                    await actions.order.capture();
-                    await subscribe();
-                    alert("Payment successful! Premium content unlocked.");
-                    premiumContent.value = await getPremiumContent();
-                } catch (err) {
-                    console.error("Subscription failed:", err);
-                    alert("Subscription failed. Try again.");
-                }
-            },
-            onError: (err) => {
-                console.error("PayPal error:", err);
-                alert("Payment failed. Please try again.");
-            },
-        })
-        .render("#paypal-button-container");
+    window.paypal.Buttons({
+        createOrder: (data, actions) => {
+            return actions.order.create({ purchase_units: [{ amount: { value: "9.99" } }] });
+        },
+        onApprove: async (data, actions) => {
+            try {
+                await actions.order.capture();
+                await subscribe();
+                alert("Payment successful! Premium content unlocked.");
+                premiumContent.value = await getPremiumContent();
+            } catch (err) {
+                console.error(err);
+                alert("Subscription failed.");
+            }
+        },
+        onError: (err) => {
+            console.error(err);
+            alert("Payment error. Try again.");
+        }
+    }).render("#paypal-button-container");
 };
 
-// ✏️ Update Username
+// Update username
 const handleUsernameUpdate = async () => {
     try {
-        const token = localStorage.getItem("token");
-        const res = await fetch("/api/users/update-username", {
-            method: "PUT",
-            headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${token}`,
-            },
-            body: JSON.stringify({ username: newUsername.value }),
-        });
-
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.message || "Failed to update username");
-
-        usernameMessage.value = "Username updated successfully!";
-        user.username = newUsername.value;
+        const res = await updateUsername(newUsername.value);
+        usernameMessage.value = "Username updated!";
         newUsername.value = "";
     } catch (err) {
         console.error(err);
@@ -146,25 +127,14 @@ const handleUsernameUpdate = async () => {
     }
 };
 
-// 🗑️ Delete Account
+// Delete account
 const confirmDelete = async () => {
-    const confirmed = confirm("Are you sure you want to delete your account? This cannot be undone.");
+    const confirmed = confirm("Are you sure you want to delete your account?");
     if (!confirmed) return;
 
     try {
-        const token = localStorage.getItem("token");
-        const res = await fetch("/api/users/delete-account", {
-            method: "DELETE",
-            headers: {
-                Authorization: `Bearer ${token}`,
-            },
-        });
-
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.message || "Failed to delete account");
-
-        alert("Your account has been deleted.");
-        localStorage.removeItem("token");
+        await deleteAccount();
+        alert("Account deleted.");
         window.location.href = "/signup";
     } catch (err) {
         console.error(err);

@@ -2,7 +2,7 @@
 import { createRouter, createWebHistory } from "vue-router";
 
 // Pages / Components
-import HomePage from "./route/Homepage.vue"; // make sure the filename is exactly Homepage.vue
+import HomePage from "./route/HomePage.vue";
 import SignupPage from "./route/SignupPage.vue";
 import LoginPage from "./route/LoginPage.vue";
 import ProfilePage from "./components/Profile.vue";

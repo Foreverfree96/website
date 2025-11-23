@@ -3,9 +3,9 @@ import User from "../models/userModel.js";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 
-// 🧩 Helper: Generate JWT Token
+// 🧩 Helper: Generate JWT Token (no expiry, only invalidated on logout)
 const generateToken = (id) => {
-  return jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: "30d" });
+  return jwt.sign({ id }, process.env.JWT_SECRET);
 };
 
 // 🟢 REGISTER (Signup)
