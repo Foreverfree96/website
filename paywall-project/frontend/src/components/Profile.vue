@@ -14,6 +14,11 @@
             </p>
         </div>
 
+        <!-- Logout -->
+        <button @click="handleLogout" class="mb-6 bg-black text-white px-4 py-2 rounded hover:bg-gray-800">
+            Logout
+        </button>
+
         <!-- Update Username -->
         <div class="mb-4 p-3 border rounded bg-gray-50">
             <h2 class="font-semibold mb-2">Change Username</h2>
@@ -36,15 +41,12 @@
             </button>
         </div>
 
-        <!-- PayPal Section -->
+        <!-- PayPal -->
         <div v-else id="paypal-button-container" class="mb-4"></div>
 
-        <!-- Delete Account -->
+        <!-- Delete -->
         <div class="mt-6 p-3 border rounded bg-red-50">
             <h2 class="font-semibold text-red-600 mb-2">Delete Account</h2>
-            <p class="text-sm text-gray-600 mb-3">
-                This will permanently remove your account and all data.
-            </p>
             <button @click="confirmDelete" class="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700">
                 Delete My Account
             </button>
@@ -58,7 +60,8 @@
 import { ref, onMounted } from "vue";
 import { useAuth } from "../composables/useAuth.js";
 
-const { user, getProfile, getPremiumContent, subscribe, deleteAccount, updateUsername } = useAuth();
+const { user, getProfile, getPremiumContent, subscribe, deleteAccount, updateUsername, logout } = useAuth();
+
 const premiumContent = ref(null);
 const errorMessage = ref("");
 const newUsername = ref("");
@@ -68,87 +71,60 @@ const usernameMessage = ref("");
 onMounted(async () => {
     try {
         await getProfile();
+
         if (user.isSubscriber) {
             premiumContent.value = await getPremiumContent();
         } else {
             setupPayPalButton();
         }
     } catch (err) {
-        console.error(err);
         errorMessage.value = "Failed to load profile.";
     }
 });
 
-// Reload premium content
-const loadPremiumContent = async () => {
-    try {
-        premiumContent.value = await getPremiumContent();
-    } catch (err) {
-        console.error(err);
-        errorMessage.value = "Failed to load premium content.";
-    }
+// Logout
+const handleLogout = () => {
+    logout();
+    window.location.href = "/login";
 };
 
-// PayPal Setup
+// Premium reload
+const loadPremiumContent = async () => {
+    premiumContent.value = await getPremiumContent();
+};
+
+// PayPal
 const setupPayPalButton = () => {
     if (!window.paypal) return;
 
     window.paypal.Buttons({
-        createOrder: (data, actions) => {
-            return actions.order.create({ purchase_units: [{ amount: { value: "9.99" } }] });
+        createOrder: (_, actions) =>
+            actions.order.create({
+                purchase_units: [{ amount: { value: "9.99" } }],
+            }),
+        onApprove: async (_, actions) => {
+            await actions.order.capture();
+            await subscribe();
+            premiumContent.value = await getPremiumContent();
         },
-        onApprove: async (data, actions) => {
-            try {
-                await actions.order.capture();
-                await subscribe();
-                alert("Payment successful! Premium content unlocked.");
-                premiumContent.value = await getPremiumContent();
-            } catch (err) {
-                console.error(err);
-                alert("Subscription failed.");
-            }
-        },
-        onError: (err) => {
-            console.error(err);
-            alert("Payment error. Try again.");
-        }
     }).render("#paypal-button-container");
 };
 
-// Update username
+// Username update
 const handleUsernameUpdate = async () => {
     try {
-        const res = await updateUsername(newUsername.value);
+        await updateUsername(newUsername.value);
         usernameMessage.value = "Username updated!";
         newUsername.value = "";
     } catch (err) {
-        console.error(err);
         errorMessage.value = err.message;
     }
 };
 
-// Delete account
+// Delete
 const confirmDelete = async () => {
-    const confirmed = confirm("Are you sure you want to delete your account?");
-    if (!confirmed) return;
-
-    try {
-        await deleteAccount();
-        alert("Account deleted.");
-        window.location.href = "/signup";
-    } catch (err) {
-        console.error(err);
-        errorMessage.value = err.message;
-    }
+    if (!confirm("Delete account permanently?")) return;
+    await deleteAccount();
+    window.location.href = "/signup";
 };
 </script>
-
-<style scoped>
-button {
-    transition: all 0.2s ease-in-out;
-}
-
-button:hover {
-    transform: translateY(-2px);
-}
-</style>

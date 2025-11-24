@@ -1,5 +1,4 @@
-/* SCSS */
-@use './variables' as *; // Import variables, * allows direct usage
+@use './variables' as *;
 
 /* ==========================
    Global Styles
@@ -54,167 +53,101 @@ nav {
 }
 
 /* ==========================
-   Form Styles
+   Auth Form
 ========================== */
-.signup-wrapper {
-  display: flex;
-  max-width: 400px;
-  margin: auto;
-}
-
-.signup-form {
+.auth-wrapper {
   display: flex;
   flex-direction: column;
-  gap: $space-sm;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 2rem;
+  gap: 1.5rem;
+  width: 100%;
+  max-width: 400px;
+  margin: 2rem auto;
+  background-color: $color-black;  /* changed from bg-main to dark green */
+  border-radius: $radius-md;
 }
 
-.signup-input {
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  width: 100%;
+  align-items: center;
+   /* lighter green form */
+  padding: $space-xl;
+  border-radius: $radius-md;
+  
+}
+.auth-input {
   width: 100%;
   padding: $space-sm $space-md;
+  border-radius: $radius-sm;
   border: $border-thin solid $color-gray-border;
-  margin: $space-xs 0 $space-sm 0;
-  border-radius: $radius-sm;
   outline: none;
-  transition: box-shadow $transition-medium ease, transform $transition-fast ease-in;
-  transform: translateY(-3px);
-  box-shadow: $shadow-heavy;
+  font-size: $font-size-base;
+  transition: box-shadow $transition-medium ease, border-color $transition-medium ease-in-out;
 }
 
-.signup-input:focus {
-  border-color: $color-blue-focus;
-  box-shadow: 0 0 0 4px rgba(59,130,246,0.3);
+.auth-input:focus {
+  border-color: $color-green-darker;
+  box-shadow: 0 0 0 4px green;
+  opacity: 90%;
 }
 
-.signup-button {
-  margin-left: 70px;
+/* Buttons */
+.auth-button {
+  width: 35%;
+  margin: 0.5rem auto;
+  height: 45px;
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
   font-size: $font-size-md;
-  width: 65%;
-  padding: $space-sm 0;
-  background-color: $color-green-dark;
-  color: $color-white;
   font-weight: 600;
+  padding: $space-sm $space-md;
   border-radius: $radius-sm;
-  transition: background-color $transition-fast;
-  cursor: pointer;
-}
-
-.signup-button:hover {
-  background-color: $color-green-darker;
-}
-
-.signup-error {
-  color: $color-red-error;
-  font-size: $font-size-sm;
-}
-
-/* ==========================
-   Buttons (Auth, CRUD, Dashboard)
-========================== */
-.auth-button,
-.crud-button,
-.button-login,
-.signup-button1 {
   background-color: $color-black;
   color: $color-pink;
   border: $border-bold solid $color-green-dark;
-  border-radius: $radius-sm;
-  padding: $space-sm $space-md;
-  font-weight: 600;
-  font-size: 20px;
   cursor: pointer;
-  box-shadow: $shadow-medium;
-  transition: box-shadow $transition-medium ease, transform $transition-fast ease-in;
-  transform: translateY(-3px);
-}
-.auth-link {
   text-decoration: none;
-  color: $color-pink;
+  transition: box-shadow $transition-medium ease, transform $transition-fast ease-in;
 }
-.t1-size {
-  font-size: 18px;
-}
-.mt-4{
-  font-size: 20px;
-  font-weight: 600;
-}
-.auth-link:hover {
+
+.auth-button:hover {
   box-shadow: $shadow-heavy;
   transform: translateY(-2px);
   color: $color-green-hover;
 }
-/* Auth Form Styles */
-.auth-form {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: $space-sm;
-  padding: $space-md;
-}
 
-/* Input fields inside auth-form */
-.auth-input {
-  width: 100%;                     // full width of form container
-  padding: $space-md $space-lg;    // uniform padding for all inputs
-  font-size: $font-size-base;      // consistent font size
-  border: $border-thin solid $color-gray-border;
-  border-radius: $radius-sm;       // smaller radius for uniformity
-  text-align: left;
-  outline: none;
-  box-shadow: $shadow-light;       // lighter shadow for consistent look
-  transition: box-shadow $transition-medium ease, transform $transition-fast ease-in;
-  transform: translateY(0);        // remove initial shift
-
-  &:focus {
-    border-color: $color-blue-focus;
-    box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.3);
-    transform: translateY(0);
-  }
-}
-
-/* Buttons inside auth-form */
-.auth-button {
-  font-size: $font-size-md;
-  font-weight: 600;
-  padding: $space-sm $space-lg;
-  margin-top: $space-sm;
-  border-radius: $radius-sm;
-  background-color: $color-black;
-  color: $color-pink;
-  border: $border-bold solid $color-green-dark;
-  cursor: pointer;
-  transition: box-shadow $transition-medium ease, transform $transition-fast ease-in;
-
-  &:hover {
-    color: $color-green-hover; // Pink/mint hover effect
-    box-shadow: $shadow-heavy;
-    transform: translateY(-2px);
-  }
-
-  &:active {
-    transform: translateY(0);
-  }
-}
-
-/* Error text for form */
+/* Error Text */
 .auth-error {
-  color: $color-red-error;
-  font-size: $font-size-sm;
-  margin-top: $space-xs;
+  font-weight: 600;
+  color: $color-red-error;   /* bright red for errors */
+  font-size: $font-size-md;
   text-align: center;
 }
 
-.auth-link:active {
-  transform: translateY(0);
+/* Paragraph text inside forms */
+p {
+  color: $color-black;
+  text-align: center;
+  font-size: $font-size-sm;
 }
-.auth-button:hover,
-.crud-button:hover,
-.button-login:hover,
-.signup-button1:hover {
-  box-shadow: $shadow-heavy;
-  transform: translateY(-2px);
+.txt-tag{
+  color: $color-white;
+  font-weight: 600;
+  font-size: $font-size-md;
 }
-
-/* Delete / Danger Button */
+.lgn-sgnup-txt{
+  color:$color-white;
+}
+/* ==========================
+   Dashboard / Cards / Other
+========================== */
 .delete-button {
   background-color: $color-red-dark;
   border: $border-thick solid $color-red-darker;
@@ -228,7 +161,6 @@ nav {
   box-shadow: $shadow-heavy;
 }
 
-/* Dashboard & Cards */
 .dashboard-wrapper {
   max-width: 900px;
   margin: $space-2xl auto;

@@ -3,23 +3,35 @@
 ============================================ */
 
 /* ---------- Colors ---------- */
-$color-bg-main: #7dbe9d;          
+$color-bg-main: #7dbe9d;          // main page background
 $color-black: #000000;            
 $color-white: #ffffff;            
 $color-pink: pink;                
 $color-pink-soft: #ffb6c1;        
 $color-green-dark: #14532d;       
 $color-green-darker: #0f3d24;     
+$color-green-light: #4ade80;      // lighter green for form background
 $color-green-hover: rgb(125,190,157);
 
 $color-blue-focus: #3b82f6;       
 $color-blue-link: #2563eb;        
 $color-blue-text-hover: rgb(66,140,165);
 
-$color-gray-border: #d1d5db;      
-$color-gray-dark: #333333;        
+/* Gray shades */
+$color-gray-100: #f3f4f6;
+$color-gray-200: #e5e7eb;
+$color-gray-300: #d1d5db;
+$color-gray-400: #9ca3af;
+$color-gray-500: #6b7280;
+$color-gray-600: #4b5563;
+$color-gray-700: #374151;
+$color-gray-800: #1f2937;
+$color-gray-900: #111827;
+$color-gray-border: #d1d5db;
+$color-gray-dark: $color-gray-800;
 
-$color-red-error: #ef4444;        
+/* ---------- Error / Danger ---------- */
+$color-red-error: #ef4444;        // error text
 $color-red-dark: #7f1d1d;         
 $color-red-darker: #450a0a;       
 $color-red-hover: #991b1b;        
@@ -32,7 +44,6 @@ $shadow-deep: 0 8px 12px rgba(0,0,0,0.45);
 
 /* ---------- Typography ---------- */
 $font-main: 'Inter', sans-serif;
-
 $font-size-xs: 0.75rem;  
 $font-size-sm: 0.875rem; 
 $font-size-base: 1rem;   
