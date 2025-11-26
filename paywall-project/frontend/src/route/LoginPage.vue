@@ -2,13 +2,13 @@
     <div class="auth-wrapper">
         <h2 class="lgn-sgnup-txt">Login</h2>
         <form @submit.prevent="handleLogin" class="auth-form">
-            <input v-model="username" type="text" placeholder="Username" class="auth-input" required />
+            <input v-model="username" type="text" placeholder="Username/Email" class="auth-input" required />
             <input v-model="password" type="password" placeholder="Password" class="auth-input" required />
 
-            <button type="submit" class="auth-button">Login</button>
+            <button type="submit" class="auth-button button-size">Login</button>
 
             <p class="txt-tag">Don't have an account?</p>
-            <a href="/signup" class="auth-button">Sign Up</a>
+            <a href="/signup" class="auth-button button-size ">Sign Up</a>
         </form>
         <p v-if="error" class="auth-error">{{ error }}</p>
     </div>

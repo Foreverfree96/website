@@ -5,9 +5,8 @@
             <span v-if="user.name">, {{ user.name }}!</span>
             <span v-else> to our site!</span>
         </h1>
-        <p class="mb-6 text-gray-700 text-center max-w-lg">
-            Access premium content, manage your profile, and enjoy our paywall features. Get started by signing up or
-            logging in.
+        <p class="mb-6 text-gray-700  max-w-lg">
+            Get started by signing up or logging in.
         </p>
 
         <!-- Auth Buttons -->

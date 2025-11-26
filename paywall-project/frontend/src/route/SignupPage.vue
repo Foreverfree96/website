@@ -6,11 +6,11 @@
             <input v-model="email" type="email" placeholder="Email" class="auth-input" required />
             <input v-model="password" type="password" placeholder="Password" class="auth-input" required />
 
-            <button type="submit" class="auth-button">Sign Up</button>
+            <button type="submit" class="auth-button button-size">Sign Up</button>
         </form>
 
         <p class="txt-tag">Already have an account?</p>
-        <a href="/login" class="auth-button">Login</a>
+        <a href="/login" class="auth-button button-size1">Login</a>
 
         <p v-if="error" class="auth-error">{{ error }}</p>
     </div>

@@ -62,7 +62,6 @@ nav {
   justify-content: flex-start;
   padding: 2rem;
   gap: 1.5rem;
-  width: 100%;
   max-width: 400px;
   margin: 2rem auto;
   background-color: $color-black;  /* changed from bg-main to dark green */
@@ -73,7 +72,7 @@ nav {
   display: flex;
   flex-direction: column;
   gap: 1rem;
-  width: 100%;
+ 
   align-items: center;
    /* lighter green form */
   padding: $space-xl;
@@ -81,7 +80,6 @@ nav {
   
 }
 .auth-input {
-  width: 100%;
   padding: $space-sm $space-md;
   border-radius: $radius-sm;
   border: $border-thin solid $color-gray-border;
@@ -97,17 +95,14 @@ nav {
 }
 
 /* Buttons */
+
 .auth-button {
-  width: 35%;
-  margin: 0.5rem auto;
-  height: 45px;
   display: inline-flex;
   justify-content: center;
   align-items: center;
   text-align: center;
   font-size: $font-size-md;
   font-weight: 600;
-  padding: $space-sm $space-md;
   border-radius: $radius-sm;
   background-color: $color-black;
   color: $color-pink;
@@ -115,8 +110,137 @@ nav {
   cursor: pointer;
   text-decoration: none;
   transition: box-shadow $transition-medium ease, transform $transition-fast ease-in;
+
+  &:hover {
+    box-shadow: $shadow-heavy;
+    transform: translateY(-2px);
+    color: $color-green-hover;
+  }
+
+  &:active {
+    transform: translateY(0);
+  }
 }
 
+/* Unified size for all buttons */
+.button-size {
+  width: 70%;
+  height: 55px;
+  margin: 0.5rem auto;
+}
+.button-size1{
+  width: 35%;
+  height: 45px;
+}
+.min-h-screen{
+  flex-direction: column;
+  display: flex;
+  align-items: center;
+}
+.mb-6{
+  font-size: 25px;
+  font-weight: 600;
+}
+.p-6{
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+}
+.p-2{
+  
+  border: 3.5px solid $color-red-dark;
+  padding: 8px 0 8px 20px;   /* <-- 20px left padding */
+  border-radius: 10px;
+  font-size: 16px;
+  outline: none;
+  color: $color-black;
+  transition: box-shadow 0.3s ease, transform 0.2s ease-in, color 0.2s ease;
+}
+.text-white{
+  margin-left: 5px;
+}
+.font-semibold {justify-content: space-evenly;
+}
+.mb-2{
+  margin-left: 15px;
+}
+.mb-22 {
+  margin-left: 50px;
+}
+.rounded:focus {
+  outline: none;                 /* removes white glow/outline */
+  box-shadow: none;
+  border: 3.5px solid $color-red-dark;
+
+}
+.p-2::placeholder{
+  padding-left: 0; 
+  font-weight: 600;
+  color: $color-pink;
+  opacity: 1;
+}
+.py-2{
+  background-color: $color-black;
+  color: $color-red-error;
+  cursor: pointer;
+  border-radius: 0.375rem;
+  border: 3.5px solid $color-red-dark;
+  padding: 0.5rem 0.75rem;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+  font-size: 30px;
+
+}
+.p-2:focus {
+  border: 3.5px solid $color-green-dark;   /* GREEN border */
+  color: $color-black;               /* GREEN typing text */
+  transform: translateY(-2px);             /* move up slightly like your buttons */
+  box-shadow: $shadow-medium;
+  
+}
+.mt-4{
+  font-weight: 500;
+  font-size: 25px;
+  color: $color-red-error;
+}
+.mt-2{
+  font-size: 18px;
+  font-weight: 600;
+}
+.mb-4{
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.mb-29{
+  background-color: $color-pink;
+  margin: -2px 0px 20px 0px;
+  padding: 25px;
+  
+  border-radius: 10px 15px 10px 15px;
+  border: 3.5px solid $color-black;
+}
+.text-xl{
+  
+  display: flex;
+  justify-content: space-evenly;
+}
+.textSadjust{
+  
+  font-size: 22px;
+}
+.font-bold{
+  font-size: 35px;
+}
+.fixmargin{
+  margin-left: 15px;
+}
+.py-2:hover{
+  transform: translateY(-2px);
+  color:$color-red-hover;
+  transition: box-shadow 0.3s ease, transform 0.2s ease-in;
+  font-weight: 600px;
+  text-decoration: none;
+}
 .auth-button:hover {
   box-shadow: $shadow-heavy;
   transform: translateY(-2px);
