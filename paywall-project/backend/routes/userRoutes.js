@@ -1,3 +1,4 @@
+// routes/userRoutes.js
 import express from "express";
 import {
   registerUser,
@@ -11,19 +12,26 @@ import { protect, paywall } from "../middleware/auth.js";
 
 const router = express.Router();
 
+// ===========================
 // 🟢 Public Routes
+// ===========================
 router.post("/signup", registerUser);
 router.post("/login", loginUser);
 
+// ===========================
 // 🟣 Protected Routes
+// ===========================
 router.get("/profile", protect, getUserProfile);
-router.post("/subscribe", protect, upgradeToSubscriber);
+router.put("/subscribe", protect, upgradeToSubscriber); // Upgrade subscription
 router.put("/update-username", protect, updateUsername);
 router.delete("/delete-account", protect, deleteUserAccount);
 
-// 💎 Premium Content
-router.get("/premium-content", protect, paywall, (req, res) => {
-  res.json({ message: "Welcome to your paywalled content!" });
+// ===========================
+// 💎 Donations / Protected Content
+// ===========================
+// This route can be used as a placeholder for donations or subscriber-only content
+router.get("/donations-content", protect, paywall, (req, res) => {
+  res.json({ message: "Welcome! This content is for subscribers or donors." });
 });
 
 export default router;

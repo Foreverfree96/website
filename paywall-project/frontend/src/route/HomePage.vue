@@ -6,7 +6,7 @@
             <span v-else> to our site!</span>
         </h1>
         <p class="mb-6 text-gray-700  max-w-lg">
-            Get started by signing up or logging in.
+            Get started by signing up or logging in. Or you can continue as a guest.
         </p>
 
         <!-- Auth Buttons -->

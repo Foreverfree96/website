@@ -1,22 +1,25 @@
-import { ref, reactive } from "vue";
+// src/composables/useAuth.js
+import { ref } from "vue";
 import axios from "axios";
 
 const API_URL = import.meta.env.VITE_API_URL + "/api/users";
 
+// --------------------------------------
+// USER as a ref = FIXES NAVBAR REACTIVITY
+// --------------------------------------
+const user = ref({
+  id: null,
+  username: "",
+  email: "",
+  isSubscriber: false,
+});
+
+const error = ref(null);
+
 export function useAuth() {
-  // Reactive state
-  const user = reactive({
-    id: null,
-    username: "",
-    email: "",
-    isSubscriber: false,
-  });
-
-  const error = ref(null);
-
-  // ---------------------------
-  // Set JWT Header Globally
-  // ---------------------------
+  // -----------------------------
+  // JWT HEADER
+  // -----------------------------
   const setAuthHeader = (token) => {
     if (token) {
       axios.defaults.headers.common["Authorization"] = `Bearer ${token}`;
@@ -25,13 +28,24 @@ export function useAuth() {
     }
   };
 
-  // Load stored token on refresh
+  // -----------------------------
+  // AUTO-LOAD user if token exists
+  // -----------------------------
   const token = localStorage.getItem("jwtToken");
-  if (token) setAuthHeader(token);
+  if (token) {
+    setAuthHeader(token);
 
-  // ---------------------------
-  // Signup
-  // ---------------------------
+    axios
+      .get(`${API_URL}/profile`)
+      .then((res) => {
+        user.value = { ...res.data };
+      })
+      .catch(() => logout());
+  }
+
+  // -----------------------------
+  // SIGNUP
+  // -----------------------------
   const signup = async (username, email, password) => {
     error.value = null;
     try {
@@ -44,19 +58,19 @@ export function useAuth() {
       localStorage.setItem("jwtToken", res.data.token);
       setAuthHeader(res.data.token);
 
-      Object.assign(user, res.data);
+      user.value = { ...res.data };
     } catch (err) {
-      console.error(err);
       error.value = err.response?.data?.message || "Signup failed.";
       throw err;
     }
   };
 
-  // ---------------------------
-  // Login
-  // ---------------------------
+  // -----------------------------
+  // LOGIN
+  // -----------------------------
   const login = async (usernameOrEmail, password) => {
     error.value = null;
+
     try {
       const res = await axios.post(`${API_URL}/login`, {
         username: usernameOrEmail,
@@ -67,65 +81,62 @@ export function useAuth() {
       localStorage.setItem("jwtToken", res.data.token);
       setAuthHeader(res.data.token);
 
-      Object.assign(user, res.data);
+      user.value = { ...res.data }; // KEY FIX
     } catch (err) {
-      console.error(err);
       error.value = err.response?.data?.message || "Login failed.";
       throw err;
     }
   };
 
-  // ---------------------------
-  // Logout
-  // ---------------------------
+  // -----------------------------
+  // LOGOUT
+  // -----------------------------
   const logout = () => {
     localStorage.removeItem("jwtToken");
     setAuthHeader(null);
 
-    // Clear reactive user object
-    Object.assign(user, {
+    user.value = {
       id: null,
       username: "",
       email: "",
       isSubscriber: false,
-    });
+    };
   };
 
-  // ---------------------------
-  // Get Profile
-  // ---------------------------
+  // -----------------------------
+  // GET PROFILE
+  // -----------------------------
   const getProfile = async () => {
     error.value = null;
     try {
       const res = await axios.get(`${API_URL}/profile`);
-      Object.assign(user, res.data);
+      user.value = { ...res.data }; // update whole object
     } catch (err) {
-      console.error(err);
-      error.value =
-        err.response?.data?.message || "Failed to fetch profile.";
+      error.value = "Failed to fetch profile.";
       throw err;
     }
   };
 
-  // ---------------------------
-  // Subscribe (Upgrade User)
-  // ---------------------------
+  // -----------------------------
+  // SUBSCRIBE
+  // -----------------------------
   const subscribe = async () => {
     error.value = null;
     try {
       const res = await axios.post(`${API_URL}/subscribe`);
-      user.isSubscriber = res.data.isSubscriber;
+      user.value = {
+        ...user.value,
+        isSubscriber: res.data.isSubscriber,
+      };
     } catch (err) {
-      console.error(err);
-      error.value =
-        err.response?.data?.message || "Subscription failed.";
+      error.value = "Subscription failed.";
       throw err;
     }
   };
 
-  // ---------------------------
-  // Update Username
-  // ---------------------------
+  // -----------------------------
+  // UPDATE USERNAME
+  // -----------------------------
   const updateUsername = async (newUsername) => {
     error.value = null;
     try {
@@ -133,44 +144,42 @@ export function useAuth() {
         username: newUsername,
       });
 
-      user.username = res.data.username;
+      user.value = {
+        ...user.value,
+        username: res.data.username,
+      };
+
       return res.data;
     } catch (err) {
-      console.error(err);
-      error.value =
-        err.response?.data?.message || "Failed to update username.";
+      error.value = "Failed to update username.";
       throw err;
     }
   };
 
-  // ---------------------------
-  // Delete Account
-  // ---------------------------
+  // -----------------------------
+  // DELETE ACCOUNT
+  // -----------------------------
   const deleteAccount = async () => {
     error.value = null;
     try {
       await axios.delete(`${API_URL}/delete-account`);
-      logout(); // full cleanup
+      logout();
     } catch (err) {
-      console.error(err);
-      error.value =
-        err.response?.data?.message || "Failed to delete account.";
+      error.value = "Failed to delete account.";
       throw err;
     }
   };
 
-  // ---------------------------
-  // Premium Content
-  // ---------------------------
+  // -----------------------------
+  // PREMIUM CONTENT
+  // -----------------------------
   const getPremiumContent = async () => {
     error.value = null;
     try {
       const res = await axios.get(`${API_URL}/premium-content`);
       return res.data;
     } catch (err) {
-      console.error(err);
-      error.value =
-        err.response?.data?.message || "Failed to load premium content.";
+      error.value = "Failed to load premium content.";
       throw err;
     }
   };
