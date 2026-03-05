@@ -11,6 +11,7 @@ import {
   forgotPassword,
   resetPassword,
   forgotUsername,
+  changeEmail,
   checkUsername,
   checkEmail,
 } from "../controllers/userController.js";
@@ -31,6 +32,7 @@ router.get("/check-email", checkEmail);
 router.get("/profile", protect, getUserProfile);
 router.put("/subscribe", protect, upgradeToSubscriber);
 router.put("/update-username", protect, updateUsername);
+router.put("/change-email", protect, changeEmail);
 router.put("/change-password", protect, changePassword);
 router.delete("/delete-account", protect, deleteUserAccount);
 router.get("/donations-total", protect, getDonationsTotal);

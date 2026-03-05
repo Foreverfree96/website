@@ -28,6 +28,14 @@
                 </button>
             </div>
 
+            <!-- Change Email -->
+            <div class="dashboard-section">
+                <h2 class="sizetxt">Change Email</h2>
+                <input v-model="newEmail" type="email" placeholder="New email address" :class="{ 'input-box': true }" />
+                <input v-model="emailPassword" type="password" placeholder="Current password" :class="{ 'input-box': true }" />
+                <button @click="handleChangeEmail" class="btn-black">Update Email</button>
+            </div>
+
             <!-- Change Password -->
             <div class="dashboard-section">
                 <h2 class="sizetxt">Change Password</h2>
@@ -55,7 +63,7 @@
 import { ref, onMounted } from 'vue';
 import { useAuth } from '../composables/useAuth.js';
 
-const { user, getProfile, logout, updateUsername, deleteAccount, getDonationsTotal, changePassword } = useAuth();
+const { user, getProfile, logout, updateUsername, deleteAccount, getDonationsTotal, changePassword, changeEmail } = useAuth();
 
 // Reactive refs
 const newUsername = ref('');
@@ -64,6 +72,8 @@ const donationsTotal = ref(0);
 const currentPassword = ref('');
 const newPassword = ref('');
 const confirmPassword = ref('');
+const newEmail = ref('');
+const emailPassword = ref('');
 
 // Load user profile and donations total
 onMounted(async () => {
@@ -94,6 +104,23 @@ const handleUsernameUpdate = async () => {
         errorMessage.value = 'Username updated successfully!';
     } catch (err) {
         errorMessage.value = err.response?.data?.message || 'Failed to update username.';
+    }
+};
+
+// Change email
+const handleChangeEmail = async () => {
+    errorMessage.value = '';
+    if (!newEmail.value.trim() || !emailPassword.value) {
+        errorMessage.value = 'All fields are required.';
+        return;
+    }
+    try {
+        await changeEmail(newEmail.value.trim(), emailPassword.value);
+        newEmail.value = '';
+        emailPassword.value = '';
+        errorMessage.value = 'Email updated successfully!';
+    } catch (err) {
+        errorMessage.value = err.response?.data?.message || 'Failed to change email.';
     }
 };
 

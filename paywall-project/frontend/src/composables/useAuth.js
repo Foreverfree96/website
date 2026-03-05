@@ -197,6 +197,21 @@ export function useAuth() {
   };
 
   // -----------------------------
+  // CHANGE EMAIL
+  // -----------------------------
+  const changeEmail = async (newEmail, password) => {
+    error.value = null;
+    try {
+      const res = await axios.put(`${API_URL}/change-email`, { newEmail, password });
+      user.value = { ...user.value, email: res.data.email };
+      return res.data;
+    } catch (err) {
+      error.value = err.response?.data?.message || "Failed to change email.";
+      throw err;
+    }
+  };
+
+  // -----------------------------
   // FORGOT PASSWORD
   // -----------------------------
   const forgotPassword = async (email) => {
@@ -251,6 +266,7 @@ export function useAuth() {
     getDonationsTotal,
     getPremiumContent,
     changePassword,
+    changeEmail,
     forgotPassword,
     resetPassword,
   };

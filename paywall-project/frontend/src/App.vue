@@ -5,6 +5,7 @@
       <!-- LEFT SIDE -->
       <div class="flex space-x-4 items-center">
         <router-link id="home-btn" to="/" class="nav-link">Home</router-link>
+        <router-link id="donate-btn" to="/donations" class="nav-link">Donate</router-link>
 
         <!-- When NOT logged in -->
         <template v-if="!isLoggedIn">
@@ -19,7 +20,6 @@
           </router-link>
           <router-link id="profile-btn" to="/profile" class="nav-link">Profile</router-link>
           <router-link id="dashboard-btn" to="/dashboard" class="nav-link">Dashboard</router-link>
-          <router-link id="donate-btn" to="/donations" class="nav-link">Donate</router-link>
         </template>
       </div>
 

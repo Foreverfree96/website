@@ -261,6 +261,33 @@ export const resetPassword = async (req, res) => {
   }
 };
 
+// ─── CHANGE EMAIL ─────────────────────────────────────────────────────
+export const changeEmail = async (req, res) => {
+  try {
+    const { newEmail, password } = req.body;
+    if (!newEmail || !password)
+      return res.status(400).json({ message: "All fields are required" });
+    if (!isValidEmail(newEmail.trim()))
+      return res.status(400).json({ message: "Invalid email address" });
+
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    const match = await bcrypt.compare(password, user.password);
+    if (!match) return res.status(401).json({ message: "Current password is incorrect" });
+
+    const taken = await User.findOne({ email: newEmail.trim().toLowerCase(), _id: { $ne: req.user.id } });
+    if (taken) return res.status(400).json({ message: "Email already in use" });
+
+    user.email = newEmail.trim().toLowerCase();
+    await user.save();
+    res.json({ message: "Email updated successfully", email: user.email });
+  } catch (err) {
+    console.error("❌ Change Email Error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
 // ─── FORGOT USERNAME ──────────────────────────────────────────────────
 export const forgotUsername = async (req, res) => {
   try {
