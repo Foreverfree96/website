@@ -123,7 +123,7 @@ export function useAuth() {
   const subscribe = async () => {
     error.value = null;
     try {
-      const res = await axios.post(`${API_URL}/subscribe`);
+      const res = await axios.put(`${API_URL}/subscribe`);
       user.value = {
         ...user.value,
         isSubscriber: res.data.isSubscriber,
@@ -171,6 +171,18 @@ export function useAuth() {
   };
 
   // -----------------------------
+  // DONATIONS TOTAL
+  // -----------------------------
+  const getDonationsTotal = async () => {
+    try {
+      const res = await axios.get(`${API_URL}/donations-total`);
+      return res.data.donationsTotal;
+    } catch {
+      return 0;
+    }
+  };
+
+  // -----------------------------
   // PREMIUM CONTENT
   // -----------------------------
   const getPremiumContent = async () => {
@@ -194,6 +206,7 @@ export function useAuth() {
     subscribe,
     updateUsername,
     deleteAccount,
+    getDonationsTotal,
     getPremiumContent,
   };
 }

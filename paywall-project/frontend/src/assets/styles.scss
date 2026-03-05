@@ -284,7 +284,13 @@ p {
   background-color: $color-red-hover;
   box-shadow: $shadow-heavy;
 }
-
+.btn-green {
+  background-color: #4caf50;
+  color: #fff;
+  padding: 10px 15px;
+  border-radius: 8px;
+  cursor: pointer;
+}
 .dashboard-wrapper {
   max-width: 900px;
   margin: $space-2xl auto;
@@ -301,7 +307,9 @@ p {
   padding: $space-xl;
   margin-bottom: $space-2xl;
   box-shadow: $shadow-medium;
+  text-align: center;
 }
+
 
 .post-card {
   background-color: $color-green-dark;
@@ -334,4 +342,128 @@ p {
   padding: 15px 10px 15px 10px;
   border-radius: 15px;
  font-size: 25px;
+}
+
+/* ============================================
+   Dashboard & Profile Containers (GLOBAL)
+============================================ */
+
+
+.profile-container {
+  text-align: center;
+  max-width: 600px;
+  margin: 40px auto;
+  padding: 25px;
+
+  background-color: $color-pink; /* pink background */
+  border: 3px solid #000000; /* black border */
+
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.dashboard-container h2,
+.profile-container h2 {
+  
+  margin: 0;
+  font-size: 1.8rem;
+  color: black;
+}
+
+.dashboard-container p,
+.profile-container p {
+  color: black;
+  font-weight: 600;
+}
+
+.dashboard-card{
+  border: 3px solid #000;
+  background-color: $color-pink;
+  border-radius: 14px;
+  padding: 30px;
+  max-width: 600px;
+  width: 100%;
+  margin-top: 23px;
+}
+.dashboard-container{
+  display: flex;
+}
+.btn-black { 
+  background-color: $color-black;
+  color: $color-red-error;
+  cursor: pointer;
+  border-radius: 0.375rem;
+  border: 3.5px solid $color-red-dark;
+  padding: 0.5rem 0.75rem;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+  font-size: 30px;  
+    border-radius: 8px;
+    cursor: pointer;
+   margin-top: 20px;
+    width: 100%;
+
+}
+.sizingForum {
+  width: 300px; /* adjust this number */
+}
+.input-box {
+  width: 100%;                    // full width of the container
+  padding: 10px 15px;             // some extra horizontal padding for comfort
+  border-radius: 10px;            // slightly rounder corners
+  border: 3.5px solid $color-red-dark;  // match your button border
+  margin-bottom: 10px;
+  font-size: 20px;
+  font-weight: 600;
+  outline: none;
+  color: $color-black;            // text color
+  transition: box-shadow 0.3s ease, border-color 0.3s ease, transform 0.2s ease-in;
+
+  &:focus {
+    border-color: $color-green-dark; // change border on focus
+    box-shadow: 0 0 5px $color-green-dark;
+    transform: translateY(-2px);     // subtle "lift" effect like buttons
+  }
+
+  &::placeholder {
+    color: $color-pink;            // placeholder color
+    font-weight: 600;
+    opacity: 1;
+  }
+}
+
+.input-box{
+  margin-top: 25px;
+  font-weight: 600;
+  font-size: 20px;
+  padding: 10px;
+  border-radius: 10px;
+  outline: none;
+  color: black;
+  width: 50%;
+ 
+ 
+}
+.input-box:focus {
+  border: 3.5px solid $color-green-dark;
+  color: 3px black;
+
+}
+.logout-btn{
+ display: flex;
+ text-align: center;
+ justify-content: center;
+ align-items: center;
+ 
+}
+
+.btn-black:hover {
+  transform: translateY(-2px);
+  color:$color-red-hover;
+  transition: box-shadow 0.3s ease, transform 0.2s ease-in;
+  font-weight: 600px;
+  text-decoration: none;
 }

@@ -33,7 +33,7 @@ const handleSignup = async () => {
 
     try {
         await signup(username.value, email.value, password.value);
-        window.location.href = "/profile";
+        window.location.href = "/donations";
     } catch (err) {
         console.error(err.response?.data || err);
     }

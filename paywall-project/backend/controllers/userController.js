@@ -1,43 +1,29 @@
-// controllers/userController.js
 import User from "../models/userModel.js";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 
-// 🧩 Helper: Generate JWT Token (no expiry, only invalidated on logout)
-const generateToken = (id) => {
-  return jwt.sign({ id }, process.env.JWT_SECRET);
-};
+// Generate JWT
+const generateToken = (id) => jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: "7d" });
 
-// 🟢 REGISTER (Signup)
+// REGISTER
 export const registerUser = async (req, res) => {
   try {
     const { username, email, password } = req.body;
-
-    if (!username || !email || !password) {
+    if (!username || !email || !password)
       return res.status(400).json({ message: "All fields are required" });
-    }
 
-    // Check for existing user
     const userExists = await User.findOne({ email });
-    if (userExists) {
-      return res.status(400).json({ message: "User already exists" });
-    }
+    if (userExists) return res.status(400).json({ message: "User already exists" });
 
-    // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Create user
-    const user = await User.create({
-      username,
-      email,
-      password: hashedPassword,
-    });
+    const user = await User.create({ username, email, password: hashedPassword });
 
     res.status(201).json({
-      _id: user._id,
+      id: user._id,
       username: user.username,
       email: user.email,
-      isSubscriber: user.isSubscriber,
+      isSubscriber: user.isSubscriber || false,
       token: generateToken(user._id),
     });
   } catch (err) {
@@ -46,30 +32,22 @@ export const registerUser = async (req, res) => {
   }
 };
 
-// 🔵 LOGIN
+// LOGIN
 export const loginUser = async (req, res) => {
   try {
     const { username, email, password } = req.body;
 
-    // Allow login with username OR email
-    const user = await User.findOne({
-      $or: [{ email }, { username }],
-    });
-
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
+    const user = await User.findOne({ $or: [{ email }, { username }] });
+    if (!user) return res.status(404).json({ message: "User not found" });
 
     const isPasswordMatch = await bcrypt.compare(password, user.password);
-    if (!isPasswordMatch) {
-      return res.status(401).json({ message: "Invalid credentials" });
-    }
+    if (!isPasswordMatch) return res.status(401).json({ message: "Invalid credentials" });
 
     res.json({
-      _id: user._id,
+      id: user._id,
       username: user.username,
       email: user.email,
-      isSubscriber: user.isSubscriber,
+      isSubscriber: user.isSubscriber || false,
       token: generateToken(user._id),
     });
   } catch (err) {
@@ -78,24 +56,28 @@ export const loginUser = async (req, res) => {
   }
 };
 
-// 🟣 GET USER PROFILE
+// GET USER PROFILE
 export const getUserProfile = async (req, res) => {
   try {
-    const user = await User.findById(req.user._id).select("-password");
+    const user = await User.findById(req.user.id).select("-password");
     if (!user) return res.status(404).json({ message: "User not found" });
 
-    res.json(user);
+    res.json({
+      id: user._id,
+      username: user.username,
+      email: user.email,
+      isSubscriber: user.isSubscriber || false,
+    });
   } catch (err) {
     console.error("❌ Get Profile Error:", err);
     res.status(500).json({ message: "Server error", error: err.message });
   }
 };
 
-// 💎 UPGRADE TO SUBSCRIBER
+// UPGRADE TO SUBSCRIBER
 export const upgradeToSubscriber = async (req, res) => {
   try {
-    const user = await User.findById(req.user._id);
-
+    const user = await User.findById(req.user.id);
     if (!user) return res.status(404).json({ message: "User not found" });
 
     user.isSubscriber = true;
@@ -108,10 +90,10 @@ export const upgradeToSubscriber = async (req, res) => {
   }
 };
 
-// 🗑️ DELETE ACCOUNT
+// DELETE ACCOUNT
 export const deleteUserAccount = async (req, res) => {
   try {
-    const user = await User.findByIdAndDelete(req.user._id);
+    const user = await User.findByIdAndDelete(req.user.id);
     if (!user) return res.status(404).json({ message: "User not found" });
 
     res.json({ message: "Account deleted successfully" });
@@ -121,16 +103,26 @@ export const deleteUserAccount = async (req, res) => {
   }
 };
 
-// ✏️ UPDATE USERNAME
+// GET DONATIONS TOTAL
+export const getDonationsTotal = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id).select("donationsTotal");
+    if (!user) return res.status(404).json({ message: "User not found" });
+    res.json({ donationsTotal: user.donationsTotal || 0 });
+  } catch (err) {
+    console.error("❌ Get Donations Total Error:", err);
+    res.status(500).json({ message: "Server error", error: err.message });
+  }
+};
+
+// UPDATE USERNAME
 export const updateUsername = async (req, res) => {
   try {
     const { username } = req.body;
-
-    if (!username || username.trim() === "") {
+    if (!username || username.trim() === "")
       return res.status(400).json({ message: "Username is required" });
-    }
 
-    const user = await User.findById(req.user._id);
+    const user = await User.findById(req.user.id);
     if (!user) return res.status(404).json({ message: "User not found" });
 
     user.username = username.trim();

@@ -25,7 +25,7 @@ const password = ref("");
 const handleLogin = async () => {
     try {
         await login(username.value, password.value);
-        window.location.href = "/profile";
+        window.location.href = "/donations";
     } catch (err) {
         console.error(err);
     }

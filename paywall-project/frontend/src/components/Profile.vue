@@ -1,139 +1,114 @@
 <template>
-    <div class="p-6 max-w-lg mx-auto">
-        <h1 class="text-2xl font-bold mb-4">Profile</h1>
+    <div class="dashboard-container" v-if="user">
+        <!-- Welcome -->
 
-        <!-- User Info -->
-        <div class="mb-4 mb-29">
-            <p class="textSadjust"><strong>Username:</strong> {{ user.username }}</p>
-            <p class="textSadjust"><strong>Email:</strong> {{ user.email }}</p>
-            <p class="textSadjust">
-                <strong>Status:</strong>
-                <span :class="user.hasDonated ? 'text-green-600' : 'text-red-600'">
-                    {{ user.hasDonated ? 'Supporter ❤️' : 'No Donations Yet' }}
-                </span>
-            </p>
-        </div>
 
-        <!-- Logout -->
-        <button @click="handleLogout" class="mb-6 bg-black text-white px-4 py-2 rounded hover:bg-gray-800">
-            Logout
-        </button>
+        <!-- User Info Card -->
+        <div class="dashboard-card">
+            <h1 class="dashboard-title">Welcome, {{ user.username || 'User' }}!</h1>
+            <div class="dashboard-section">
+                <p class="txtsizer"><strong>Username:</strong> {{ user.username }}</p>
+                <p class="txtsizer"><strong>Email:</strong> {{ user.email }}</p>
+                <p>
+                    <strong>Total Donations:</strong> ${{ donationsTotal.toFixed(2) }}
+                </p>
+                <!-- Logout -->
+                <button class="btn-black logout-btn" @click="handleLogout">
+                    Logout
+                </button>
+            </div>
 
-        <!-- Update Username -->
-        <div class="mb-4 p-3 border rounded bg-gray-50">
-            <h2 class="font-semibold mb-22 mb-2">Change Username</h2>
-            <form @submit.prevent="handleUsernameUpdate" class="flex space-x-2">
-                <input v-model="newUsername" type="text" placeholder="Enter new username"
-                    class="border p-2 rounded w-full" required />
-                <button type="submit" class="bg-green-700 text-white px-4 py-2 rounded hover:bg-green-800">
+
+
+            <!-- Update Username -->
+            <div class="dashboard-section">
+                <h2 class="sizetxt">Change Username</h2>
+                <input v-model="newUsername" placeholder="New username"
+                    :class="{ 'input-box': true, [sizingForum]: true }" />
+
+                <button @click="handleUsernameUpdate" class="btn-black">
                     Update
                 </button>
-            </form>
-            <p v-if="usernameMessage" class="text-green-600 mt-2">{{ usernameMessage }}</p>
+            </div>
+
+            <!-- Delete Account -->
+            <div class="dashboard-section delete-box">
+                <button @click="confirmDelete" class="btn-black">
+                    Delete Account
+                </button>
+            </div>
+
+            <!-- Error Message -->
+            <p v-if="errorMessage" class="err-text">{{ errorMessage }}</p>
         </div>
-
-        <!-- Donation Acknowledgment -->
-        <div v-if="user.hasDonated" class="mb-4 p-3 border rounded bg-green-50">
-            <h2 class="font-semibold mb-2">Thank You! ❤️</h2>
-            <p>Your support helps keep this project alive.</p>
-            <button @click="refreshDonationThanks"
-                class="mt-2 bg-blue-600 text-white py-2 px-4 rounded hover:bg-blue-700">
-                Refresh Message
-            </button>
-        </div>
-
-        <!-- Donate Button -->
-        <div v-else id="paypal-button-container" class="mb-4"></div>
-
-        <!-- Delete -->
-        <div class="mt-6 p-3 border rounded bg-red-50">
-            <h2 class="font-semibold text-red-600 mb-2">Delete Account</h2>
-            <button @click="confirmDelete" class="bg-red-600 text-white px-4 fixmargin py-2 rounded hover:bg-red-700">
-                Delete My Account
-            </button>
-        </div>
-
-        <p v-if="errorMessage" class="text-red-500 mt-4">{{ errorMessage }}</p>
     </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from "vue";
-import { useAuth } from "../composables/useAuth.js";
+import { ref, onMounted } from 'vue';
+import { useAuth } from '../composables/useAuth.js';
 
-const {
-    user,
-    getProfile,
-    markDonation,
-    deleteAccount,
-    updateUsername,
-    logout
-} = useAuth();
+const { user, getProfile, logout, updateUsername, deleteAccount, getDonationsTotal } = useAuth();
 
-const errorMessage = ref("");
-const newUsername = ref("");
-const usernameMessage = ref("");
-const donationThanks = ref("Thank you for your support! ❤️");
+// Reactive refs
+const newUsername = ref('');
+const errorMessage = ref('');
+const donationsTotal = ref(0);
 
-// Load profile
+// Load user profile and donations total
 onMounted(async () => {
     try {
         await getProfile();
-
-        if (!user.hasDonated) {
-            setupPayPalButton();
-        }
+        donationsTotal.value = await getDonationsTotal();
     } catch (err) {
-        errorMessage.value = "Failed to load profile.";
+        errorMessage.value = 'Failed to load profile.';
     }
 });
 
 // Logout
 const handleLogout = () => {
     logout();
-    window.location.href = "/login";
+    window.location.href = '/login';
 };
 
-// Refresh donation message (just a visual example)
-const refreshDonationThanks = () => {
-    donationThanks.value = "Your kindness is truly appreciated! 🙏";
-};
-
-// PayPal Donation Button
-const setupPayPalButton = () => {
-    if (!window.paypal) return;
-
-    window.paypal.Buttons({
-        createOrder: (_, actions) =>
-            actions.order.create({
-                purchase_units: [
-                    { amount: { value: "5.00" } }  // donation amount
-                ],
-            }),
-
-        onApprove: async (_, actions) => {
-            await actions.order.capture();
-            await markDonation(); // backend: set user.hasDonated = true
-            donationThanks.value = "Thank you for donating! ❤️";
-        },
-    }).render("#paypal-button-container");
-};
-
-// Username update
+// Update username
 const handleUsernameUpdate = async () => {
     try {
         await updateUsername(newUsername.value);
-        usernameMessage.value = "Username updated!";
-        newUsername.value = "";
+        newUsername.value = '';
     } catch (err) {
         errorMessage.value = err.message;
     }
 };
 
-// Delete
+// Delete account
 const confirmDelete = async () => {
-    if (!confirm("Delete account permanently?")) return;
+    if (!confirm('Delete account permanently?')) return;
     await deleteAccount();
-    window.location.href = "/signup";
+    window.location.href = '/signup';
 };
 </script>
+
+<style scoped>
+.dashboard-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 20px;
+}
+
+
+.dashboard-title {
+    text-align: center;
+    font-size: 35px;
+    font-weight: bold;
+    margin-bottom: 20px;
+}
+
+.dashboard-section {
+    background-color: #fff0f6;
+    border-radius: 10px;
+    padding: 20px;
+    margin-bottom: 20px;
+}
+</style>

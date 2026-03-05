@@ -6,7 +6,8 @@ import {
   getUserProfile,
   upgradeToSubscriber,
   deleteUserAccount,
-  updateUsername
+  updateUsername,
+  getDonationsTotal,
 } from "../controllers/userController.js";
 import { protect, paywall } from "../middleware/auth.js";
 
@@ -25,6 +26,7 @@ router.get("/profile", protect, getUserProfile);
 router.put("/subscribe", protect, upgradeToSubscriber); // Upgrade subscription
 router.put("/update-username", protect, updateUsername);
 router.delete("/delete-account", protect, deleteUserAccount);
+router.get("/donations-total", protect, getDonationsTotal);
 
 // ===========================
 // 💎 Donations / Protected Content
