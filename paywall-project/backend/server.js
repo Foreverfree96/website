@@ -25,7 +25,8 @@ app.use(cors({
     if (!origin) return callback(null, true);
     // Allow any localhost port in development, or the configured frontend URL
     const isLocalhost = /^http:\/\/localhost(:\d+)?$/.test(origin);
-    const isAllowed = isLocalhost || origin === process.env.FRONTEND_URL;
+    const isVercelPreview = /^https:\/\/myportfoliofrontend[a-z0-9-]*\.vercel\.app$/.test(origin);
+    const isAllowed = isLocalhost || isVercelPreview || origin === process.env.FRONTEND_URL;
     if (isAllowed) return callback(null, true);
     callback(new Error("Not allowed by CORS"));
   },
