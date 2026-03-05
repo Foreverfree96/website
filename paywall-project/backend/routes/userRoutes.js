@@ -12,6 +12,7 @@ import {
   resetPassword,
   forgotUsername,
   changeEmail,
+  confirmEmailChange,
   checkUsername,
   checkEmail,
 } from "../controllers/userController.js";
@@ -25,6 +26,7 @@ router.post("/login", loginUser);
 router.post("/forgot-password", forgotPassword);
 router.post("/reset-password/:token", resetPassword);
 router.post("/forgot-username", forgotUsername);
+router.get("/confirm-email-change/:token", confirmEmailChange);
 router.get("/check-username", checkUsername);
 router.get("/check-email", checkEmail);
 

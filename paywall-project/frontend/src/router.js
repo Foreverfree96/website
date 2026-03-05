@@ -12,6 +12,7 @@ import PortfolioPage from "./components/AboutPortfolio.vue";
 import ForgotPassword from "./route/ForgotPassword.vue";
 import ResetPassword from "./route/ResetPassword.vue";
 import ForgotUsername from "./route/ForgotUsername.vue";
+import ConfirmEmailChange from "./route/ConfirmEmailChange.vue";
 
 const routes = [
   { path: "/", component: HomePage },
@@ -24,6 +25,7 @@ const routes = [
   { path: "/forgot-password", component: ForgotPassword },
   { path: "/reset-password/:token", component: ResetPassword },
   { path: "/forgot-username", component: ForgotUsername },
+  { path: "/confirm-email-change/:token", component: ConfirmEmailChange },
   { path: "/:catchAll(.*)", redirect: "/" },
 ];
 

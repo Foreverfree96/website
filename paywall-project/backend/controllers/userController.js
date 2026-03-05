@@ -261,7 +261,7 @@ export const resetPassword = async (req, res) => {
   }
 };
 
-// ─── CHANGE EMAIL ─────────────────────────────────────────────────────
+// ─── CHANGE EMAIL (sends verification to new email) ───────────────────
 export const changeEmail = async (req, res) => {
   try {
     const { newEmail, password } = req.body;
@@ -279,11 +279,63 @@ export const changeEmail = async (req, res) => {
     const taken = await User.findOne({ email: newEmail.trim().toLowerCase(), _id: { $ne: req.user.id } });
     if (taken) return res.status(400).json({ message: "Email already in use" });
 
-    user.email = newEmail.trim().toLowerCase();
+    const rawToken = crypto.randomBytes(32).toString("hex");
+    const hashed = crypto.createHash("sha256").update(rawToken).digest("hex");
+
+    user.pendingEmail = newEmail.trim().toLowerCase();
+    user.emailChangeToken = hashed;
+    user.emailChangeTokenExpiry = Date.now() + 60 * 60 * 1000; // 1 hour
     await user.save();
-    res.json({ message: "Email updated successfully", email: user.email });
+
+    const confirmUrl = `${process.env.FRONTEND_URL}/confirm-email-change/${rawToken}`;
+
+    try {
+      await getResend().emails.send({
+        from: "Austin's Site <onboarding@resend.dev>",
+        to: newEmail.trim().toLowerCase(),
+        subject: "Confirm your new email address",
+        html: `
+          <h2>Confirm Email Change</h2>
+          <p>Click the button below to confirm your new email address:</p>
+          <a href="${confirmUrl}" style="display:inline-block;padding:12px 24px;background:#003087;color:#fff;border-radius:8px;text-decoration:none;font-weight:bold;">Confirm Email</a>
+          <p>This link expires in <strong>1 hour</strong>.</p>
+          <p>If you didn't request this, ignore this email.</p>
+        `,
+      });
+    } catch (emailErr) {
+      console.error("❌ Email send failed:", emailErr.message);
+      console.log("🔗 Confirm URL (dev fallback):", confirmUrl);
+    }
+
+    res.json({ message: "Check your new email to confirm the change." });
   } catch (err) {
     console.error("❌ Change Email Error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+// ─── CONFIRM EMAIL CHANGE ──────────────────────────────────────────────
+export const confirmEmailChange = async (req, res) => {
+  try {
+    const { token } = req.params;
+    const hashed = crypto.createHash("sha256").update(token).digest("hex");
+
+    const user = await User.findOne({
+      emailChangeToken: hashed,
+      emailChangeTokenExpiry: { $gt: Date.now() },
+    });
+
+    if (!user) return res.status(400).json({ message: "Invalid or expired confirmation link" });
+
+    user.email = user.pendingEmail;
+    user.pendingEmail = undefined;
+    user.emailChangeToken = undefined;
+    user.emailChangeTokenExpiry = undefined;
+    await user.save();
+
+    res.json({ message: "Email updated successfully." });
+  } catch (err) {
+    console.error("❌ Confirm Email Change Error:", err);
     res.status(500).json({ message: "Server error" });
   }
 };

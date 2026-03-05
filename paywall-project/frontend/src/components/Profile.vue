@@ -118,7 +118,7 @@ const handleChangeEmail = async () => {
         await changeEmail(newEmail.value.trim(), emailPassword.value);
         newEmail.value = '';
         emailPassword.value = '';
-        errorMessage.value = 'Email updated successfully!';
+        errorMessage.value = 'Check your new email to confirm the change.';
     } catch (err) {
         errorMessage.value = err.response?.data?.message || 'Failed to change email.';
     }

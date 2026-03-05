@@ -9,6 +9,9 @@ const userSchema = new mongoose.Schema(
     donationsTotal: { type: Number, default: 0, min: 0 },
     resetToken: { type: String },
     resetTokenExpiry: { type: Date },
+    pendingEmail: { type: String },
+    emailChangeToken: { type: String },
+    emailChangeTokenExpiry: { type: Date },
   },
   { timestamps: true }
 );
