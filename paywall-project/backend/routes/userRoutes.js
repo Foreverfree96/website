@@ -10,6 +10,7 @@ import {
   changePassword,
   forgotPassword,
   resetPassword,
+  forgotUsername,
   checkUsername,
   checkEmail,
 } from "../controllers/userController.js";
@@ -22,6 +23,7 @@ router.post("/signup", registerUser);
 router.post("/login", loginUser);
 router.post("/forgot-password", forgotPassword);
 router.post("/reset-password/:token", resetPassword);
+router.post("/forgot-username", forgotUsername);
 router.get("/check-username", checkUsername);
 router.get("/check-email", checkEmail);
 

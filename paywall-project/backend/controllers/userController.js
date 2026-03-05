@@ -261,6 +261,37 @@ export const resetPassword = async (req, res) => {
   }
 };
 
+// ─── FORGOT USERNAME ──────────────────────────────────────────────────
+export const forgotUsername = async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ message: "Email is required" });
+
+    const user = await User.findOne({ email: email.trim().toLowerCase() });
+    if (user) {
+      try {
+        await getResend().emails.send({
+          from: "Austin's Site <onboarding@resend.dev>",
+          to: user.email,
+          subject: "Your Username",
+          html: `
+            <h2>Username Reminder</h2>
+            <p>Your username is: <strong>${user.username}</strong></p>
+            <p>If you didn't request this, ignore this email.</p>
+          `,
+        });
+      } catch (emailErr) {
+        console.error("❌ Email send failed:", emailErr.message);
+      }
+    }
+
+    res.json({ message: "If that email is registered, your username has been sent." });
+  } catch (err) {
+    console.error("❌ Forgot Username Error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
 // ─── CHECK USERNAME AVAILABILITY ─────────────────────────────────────
 export const checkUsername = async (req, res) => {
   try {
