@@ -54,17 +54,15 @@ export const loginUser = async (req, res) => {
   try {
     const { username, email, password } = req.body;
 
-    if ((!username && !email) || !password)
+    const identifier = (email || username || "").trim();
+    if (!identifier || !password)
       return res.status(400).json({ message: "Credentials required" });
-    if (typeof password !== "string")
+    if (typeof identifier !== "string" || typeof password !== "string")
       return res.status(400).json({ message: "Invalid input" });
 
-    const query = {};
-    if (email && typeof email === "string") query.email = email.trim().toLowerCase();
-    else if (username && typeof username === "string") query.username = username.trim();
-    else return res.status(400).json({ message: "Invalid input" });
-
-    const user = await User.findOne(query);
+    const user = await User.findOne({
+      $or: [{ email: identifier.toLowerCase() }, { username: identifier }],
+    });
     if (!user) return res.status(401).json({ message: "Invalid credentials" });
 
     const isPasswordMatch = await bcrypt.compare(password, user.password);
