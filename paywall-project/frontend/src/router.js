@@ -9,6 +9,8 @@ import ProfilePage from "./components/Profile.vue";
 import DashboardPage from "./route/Dashboard.vue";
 import DonationsPage from "./route/Donations.vue"; // <-- renamed import
 import PortfolioPage from "./components/AboutPortfolio.vue";
+import ForgotPassword from "./route/ForgotPassword.vue";
+import ResetPassword from "./route/ResetPassword.vue";
 
 const routes = [
   { path: "/", component: HomePage },
@@ -17,7 +19,9 @@ const routes = [
   { path: "/profile", component: ProfilePage },
   { path: "/dashboard", component: DashboardPage },
   { path: "/donations", component: DonationsPage },
-  { path: "/portfolio", component: PortfolioPage },  // <-- updated path
+  { path: "/portfolio", component: PortfolioPage },
+  { path: "/forgot-password", component: ForgotPassword },
+  { path: "/reset-password/:token", component: ResetPassword },
   { path: "/:catchAll(.*)", redirect: "/" },
 ];
 

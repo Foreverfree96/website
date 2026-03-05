@@ -7,6 +7,8 @@ const userSchema = new mongoose.Schema(
     password: { type: String, required: true },
     isSubscriber: { type: Boolean, default: false },
     donationsTotal: { type: Number, default: 0, min: 0 },
+    resetToken: { type: String },
+    resetTokenExpiry: { type: Date },
   },
   { timestamps: true }
 );

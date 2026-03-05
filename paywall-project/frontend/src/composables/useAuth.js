@@ -151,7 +151,7 @@ export function useAuth() {
 
       return res.data;
     } catch (err) {
-      error.value = "Failed to update username.";
+      error.value = err.response?.data?.message || "Failed to update username.";
       throw err;
     }
   };
@@ -165,7 +165,7 @@ export function useAuth() {
       await axios.delete(`${API_URL}/delete-account`);
       logout();
     } catch (err) {
-      error.value = "Failed to delete account.";
+      error.value = err.response?.data?.message || "Failed to delete account.";
       throw err;
     }
   };
@@ -179,6 +179,48 @@ export function useAuth() {
       return res.data.donationsTotal;
     } catch {
       return 0;
+    }
+  };
+
+  // -----------------------------
+  // CHANGE PASSWORD
+  // -----------------------------
+  const changePassword = async (currentPassword, newPassword) => {
+    error.value = null;
+    try {
+      const res = await axios.put(`${API_URL}/change-password`, { currentPassword, newPassword });
+      return res.data;
+    } catch (err) {
+      error.value = err.response?.data?.message || "Failed to change password.";
+      throw err;
+    }
+  };
+
+  // -----------------------------
+  // FORGOT PASSWORD
+  // -----------------------------
+  const forgotPassword = async (email) => {
+    error.value = null;
+    try {
+      const res = await axios.post(`${API_URL}/forgot-password`, { email });
+      return res.data;
+    } catch (err) {
+      error.value = err.response?.data?.message || "Failed to send reset email.";
+      throw err;
+    }
+  };
+
+  // -----------------------------
+  // RESET PASSWORD
+  // -----------------------------
+  const resetPassword = async (token, newPassword) => {
+    error.value = null;
+    try {
+      const res = await axios.post(`${API_URL}/reset-password/${token}`, { newPassword });
+      return res.data;
+    } catch (err) {
+      error.value = err.response?.data?.message || "Failed to reset password.";
+      throw err;
     }
   };
 
@@ -208,5 +250,8 @@ export function useAuth() {
     deleteAccount,
     getDonationsTotal,
     getPremiumContent,
+    changePassword,
+    forgotPassword,
+    resetPassword,
   };
 }

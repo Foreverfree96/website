@@ -1,4 +1,3 @@
-// routes/userRoutes.js
 import express from "express";
 import {
   registerUser,
@@ -8,30 +7,33 @@ import {
   deleteUserAccount,
   updateUsername,
   getDonationsTotal,
+  changePassword,
+  forgotPassword,
+  resetPassword,
+  checkUsername,
+  checkEmail,
 } from "../controllers/userController.js";
 import { protect, paywall } from "../middleware/auth.js";
 
 const router = express.Router();
 
-// ===========================
-// 🟢 Public Routes
-// ===========================
+// ─── Public ───────────────────────────────────────────────────────────
 router.post("/signup", registerUser);
 router.post("/login", loginUser);
+router.post("/forgot-password", forgotPassword);
+router.post("/reset-password/:token", resetPassword);
+router.get("/check-username", checkUsername);
+router.get("/check-email", checkEmail);
 
-// ===========================
-// 🟣 Protected Routes
-// ===========================
+// ─── Protected ────────────────────────────────────────────────────────
 router.get("/profile", protect, getUserProfile);
-router.put("/subscribe", protect, upgradeToSubscriber); // Upgrade subscription
+router.put("/subscribe", protect, upgradeToSubscriber);
 router.put("/update-username", protect, updateUsername);
+router.put("/change-password", protect, changePassword);
 router.delete("/delete-account", protect, deleteUserAccount);
 router.get("/donations-total", protect, getDonationsTotal);
 
-// ===========================
-// 💎 Donations / Protected Content
-// ===========================
-// This route can be used as a placeholder for donations or subscriber-only content
+// ─── Paywall ──────────────────────────────────────────────────────────
 router.get("/donations-content", protect, paywall, (req, res) => {
   res.json({ message: "Welcome! This content is for subscribers or donors." });
 });
