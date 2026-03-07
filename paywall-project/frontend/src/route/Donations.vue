@@ -70,7 +70,7 @@
 <script setup>
 import { ref, computed } from 'vue';
 
-const PAYPAL_LINK = 'https://www.paypal.com/ncp/payment/P752GPNN5PVYS&no_shipping=1';
+const PAYPAL_LINK = 'https://www.paypal.com/ncp/payment/P752GPNN5PVYS';
 
 const presets = [5, 10, 25, 50];
 const selectedAmount = ref(10);
