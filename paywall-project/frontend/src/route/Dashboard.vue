@@ -8,10 +8,6 @@
                 <p><strong>Username:</strong> {{ user.username }}</p>
                 <p><strong>Email:</strong> {{ user.email }}</p>
 
-                <p>
-                    <strong>Total Donations:</strong> ${{ donationsTotal.toFixed(2) }}
-                </p>
-
                 <!-- Logout -->
                 <button class="btn-black logout-btn" @click="handleLogout">
                     Logout
@@ -22,16 +18,14 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
+import { onMounted } from 'vue';
 import { useAuth } from '../composables/useAuth.js';
 
-const { user, getProfile, logout, getDonationsTotal } = useAuth();
-const donationsTotal = ref(0);
+const { user, getProfile, logout } = useAuth();
 
 onMounted(async () => {
     try {
         await getProfile();
-        donationsTotal.value = await getDonationsTotal();
     } catch (err) {
         console.error('Failed to load dashboard:', err);
     }
