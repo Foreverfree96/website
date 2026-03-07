@@ -28,6 +28,23 @@ export const protect = async (req, res, next) => {
 };
 
 // ==============================
+// 🔓 OPTIONAL AUTH (attaches user if token present, passes through otherwise)
+// ==============================
+export const optionalAuth = async (req, res, next) => {
+  const auth = req.headers.authorization;
+  if (auth && auth.startsWith("Bearer")) {
+    try {
+      const token = auth.split(" ")[1];
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      req.user = await User.findById(decoded.id).select("-password");
+    } catch {
+      // invalid token — just continue without user
+    }
+  }
+  next();
+};
+
+// ==============================
 // 💳 PAYWALL CHECK (Subscriber Only)
 // ==============================
 export const paywall = (req, res, next) => {

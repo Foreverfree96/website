@@ -3,6 +3,7 @@ import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import { Resend } from "resend";
+import nodemailer from "nodemailer";
 
 // Generate JWT
 const generateToken = (id) => jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: "7d" });
@@ -16,6 +17,17 @@ let resend;
 const getResend = () => {
   if (!resend) resend = new Resend(process.env.RESEND_API_KEY);
   return resend;
+};
+
+let gmailTransport;
+const getGmail = () => {
+  if (!gmailTransport) {
+    gmailTransport = nodemailer.createTransport({
+      service: "gmail",
+      auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_PASS },
+    });
+  }
+  return gmailTransport;
 };
 
 // ─── REGISTER ───────────────────────────────────────────────────────
@@ -41,22 +53,60 @@ export const registerUser = async (req, res) => {
     if (usernameTaken) return res.status(400).json({ message: "Username already taken" });
 
     const hashedPassword = await bcrypt.hash(password, 12);
+
+    const rawToken = crypto.randomBytes(32).toString("hex");
+    const hashedToken = crypto.createHash("sha256").update(rawToken).digest("hex");
+
     const user = await User.create({
       username: username.trim(),
       email: email.trim().toLowerCase(),
       password: hashedPassword,
+      isVerified: false,
+      emailVerifyToken: hashedToken,
+      emailVerifyTokenExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours
     });
 
-    res.status(201).json({
-      id: user._id,
-      username: user.username,
-      email: user.email,
-      isSubscriber: user.isSubscriber || false,
-      token: generateToken(user._id),
-    });
+    const verifyUrl = `${process.env.FRONTEND_URL}/verify-email/${rawToken}`;
+    try {
+      await getGmail().sendMail({
+        from: `"Austin's Site" <${process.env.GMAIL_USER}>`,
+        to: user.email,
+        subject: "Confirm your email",
+        html: `<p>Hi ${user.username},</p>
+               <p>Click the link below to verify your email and activate your account:</p>
+               <p><a href="${verifyUrl}">${verifyUrl}</a></p>
+               <p>This link expires in 24 hours.</p>`,
+      });
+    } catch (emailErr) {
+      console.error("❌ Verification email failed:", emailErr.message);
+    }
+
+    res.status(201).json({ message: "Check your email to confirm your account before logging in." });
   } catch (err) {
     console.error("❌ Signup Error:", err);
     res.status(500).json({ message: "Server error", debug: err.message });
+  }
+};
+
+// ─── VERIFY EMAIL ─────────────────────────────────────────────────────
+export const verifyEmail = async (req, res) => {
+  try {
+    const hashedToken = crypto.createHash("sha256").update(req.params.token).digest("hex");
+    const user = await User.findOne({
+      emailVerifyToken: hashedToken,
+      emailVerifyTokenExpiry: { $gt: new Date() },
+    });
+    if (!user) return res.status(400).json({ message: "Verification link is invalid or has expired." });
+
+    user.isVerified = true;
+    user.emailVerifyToken = undefined;
+    user.emailVerifyTokenExpiry = undefined;
+    await user.save();
+
+    res.json({ message: "Email verified! You can now log in." });
+  } catch (err) {
+    console.error("❌ Verify Email Error:", err);
+    res.status(500).json({ message: "Server error" });
   }
 };
 
@@ -77,6 +127,9 @@ export const loginUser = async (req, res) => {
     const isPasswordMatch = await bcrypt.compare(password, user.password);
     if (!isPasswordMatch) return res.status(401).json({ message: "Invalid credentials" });
 
+    if (user.isVerified === false)
+      return res.status(403).json({ message: "Please verify your email before logging in." });
+
     res.json({
       id: user._id,
       username: user.username,
@@ -95,7 +148,7 @@ export const getUserProfile = async (req, res) => {
   try {
     const user = await User.findById(req.user.id).select("-password -resetToken -resetTokenExpiry");
     if (!user) return res.status(404).json({ message: "User not found" });
-    res.json({ id: user._id, username: user.username, email: user.email, isSubscriber: user.isSubscriber || false });
+    res.json({ id: user._id, username: user.username, email: user.email, isSubscriber: user.isSubscriber || false, categories: user.categories || [], bio: user.bio || "", socialLinks: user.socialLinks || {} });
   } catch (err) {
     console.error("❌ Get Profile Error:", err);
     res.status(500).json({ message: "Server error" });
@@ -367,6 +420,71 @@ export const forgotUsername = async (req, res) => {
     res.json({ message: "If that email is registered, your username has been sent." });
   } catch (err) {
     console.error("❌ Forgot Username Error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+// ─── GET PUBLIC CREATOR PROFILE ───────────────────────────────────────
+export const getCreatorProfile = async (req, res) => {
+  try {
+    const user = await User.findOne({ username: req.params.username })
+      .select("username bio categories socialLinks followers following createdAt")
+      .lean();
+    if (!user) return res.status(404).json({ message: "User not found" });
+    res.json({ ...user, followerCount: user.followers.length, followingCount: user.following.length });
+  } catch (err) {
+    console.error("❌ Get Creator Profile Error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+// ─── FOLLOW / UNFOLLOW ────────────────────────────────────────────────
+export const toggleFollow = async (req, res) => {
+  try {
+    const target = await User.findOne({ username: req.params.username });
+    if (!target) return res.status(404).json({ message: "User not found" });
+    if (target._id.toString() === req.user.id)
+      return res.status(400).json({ message: "You cannot follow yourself" });
+
+    const me = await User.findById(req.user.id);
+    const isFollowing = me.following.includes(target._id);
+
+    if (isFollowing) {
+      me.following.pull(target._id);
+      target.followers.pull(me._id);
+    } else {
+      me.following.push(target._id);
+      target.followers.push(me._id);
+    }
+
+    await Promise.all([me.save(), target.save()]);
+    res.json({ following: !isFollowing, followerCount: target.followers.length });
+  } catch (err) {
+    console.error("❌ Toggle Follow Error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+// ─── UPDATE CREATOR PROFILE ───────────────────────────────────────────
+export const updateCreatorProfile = async (req, res) => {
+  try {
+    const { bio, category, socialLinks } = req.body;
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    if (bio !== undefined) user.bio = bio.trim().slice(0, 300);
+    if (Array.isArray(req.body.categories)) user.categories = req.body.categories.slice(0, 4);
+    if (socialLinks) {
+      const allowed = ["youtube", "instagram", "twitch", "tiktok", "soundcloud", "facebook"];
+      for (const key of allowed) {
+        if (socialLinks[key] !== undefined) user.socialLinks[key] = socialLinks[key].trim();
+      }
+    }
+
+    await user.save();
+    res.json({ message: "Profile updated", bio: user.bio, categories: user.categories, socialLinks: user.socialLinks });
+  } catch (err) {
+    console.error("❌ Update Creator Profile Error:", err);
     res.status(500).json({ message: "Server error" });
   }
 };

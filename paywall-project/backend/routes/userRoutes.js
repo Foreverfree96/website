@@ -2,6 +2,7 @@ import express from "express";
 import {
   registerUser,
   loginUser,
+  verifyEmail,
   getUserProfile,
   upgradeToSubscriber,
   deleteUserAccount,
@@ -13,6 +14,9 @@ import {
   forgotUsername,
   changeEmail,
   confirmEmailChange,
+  getCreatorProfile,
+  toggleFollow,
+  updateCreatorProfile,
   checkUsername,
   checkEmail,
 } from "../controllers/userController.js";
@@ -23,11 +27,15 @@ const router = express.Router();
 // ─── Public ───────────────────────────────────────────────────────────
 router.post("/signup", registerUser);
 router.post("/login", loginUser);
+router.get("/verify-email/:token", verifyEmail);
 router.post("/forgot-password", forgotPassword);
 router.post("/reset-password/:token", resetPassword);
 router.post("/forgot-username", forgotUsername);
 router.get("/confirm-email-change/:token", confirmEmailChange);
 router.get("/check-username", checkUsername);
+router.get("/creator/:username", getCreatorProfile);
+router.post("/creator/:username/follow", protect, toggleFollow);
+router.put("/update-creator-profile", protect, updateCreatorProfile);
 router.get("/check-email", checkEmail);
 
 // ─── Protected ────────────────────────────────────────────────────────

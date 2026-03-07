@@ -13,6 +13,11 @@ import ForgotPassword from "./route/ForgotPassword.vue";
 import ResetPassword from "./route/ResetPassword.vue";
 import ForgotUsername from "./route/ForgotUsername.vue";
 import ConfirmEmailChange from "./route/ConfirmEmailChange.vue";
+import VerifyEmail from "./route/VerifyEmail.vue";
+import FeedPage from "./route/FeedPage.vue";
+import CreatePost from "./route/CreatePost.vue";
+import PostPage from "./route/PostPage.vue";
+import CreatorProfile from "./route/CreatorProfile.vue";
 
 const routes = [
   { path: "/", component: HomePage },
@@ -26,6 +31,11 @@ const routes = [
   { path: "/reset-password/:token", component: ResetPassword },
   { path: "/forgot-username", component: ForgotUsername },
   { path: "/confirm-email-change/:token", component: ConfirmEmailChange },
+  { path: "/verify-email/:token", component: VerifyEmail },
+  { path: "/feed", component: FeedPage },
+  { path: "/create-post", component: CreatePost },
+  { path: "/post/:id", component: PostPage },
+  { path: "/creator/:username", component: CreatorProfile },
   { path: "/:catchAll(.*)", redirect: "/" },
 ];
 

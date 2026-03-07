@@ -5,7 +5,7 @@
       <!-- LEFT SIDE -->
       <div class="flex space-x-4 items-center">
         <router-link id="home-btn" to="/" class="nav-link">Home</router-link>
-        <router-link id="donate-btn" to="/donations" class="nav-link">Donate</router-link>
+        <router-link id="feed-btn" to="/feed" class="nav-link">Feed</router-link>
 
         <!-- When NOT logged in -->
         <template v-if="!isLoggedIn">
@@ -15,19 +15,18 @@
 
         <!-- When logged in -->
         <template v-else>
-          <router-link id="logout-btn" to="#" class="nav-link" @click.prevent="handleLogout">
-            Logout
-          </router-link>
-          <router-link id="profile-btn" to="/profile" class="nav-link">Profile</router-link>
           <router-link id="dashboard-btn" to="/dashboard" class="nav-link">Dashboard</router-link>
+          <router-link id="profile-btn" to="/profile" class="nav-link">Profile</router-link>
+          <router-link id="donate-btn" to="/donations" class="nav-link">Donate</router-link>
         </template>
       </div>
 
       <!-- RIGHT SIDE -->
-      <div class="ml-auto flex items-center">
-        <router-link id="about-btn" to="/portfolio" class="nav-link">
-          Portfolio
-        </router-link>
+      <div class="ml-auto flex items-center gap-2">
+        <router-link id="about-btn" to="/portfolio" class="nav-link">Portfolio</router-link>
+        <template v-if="isLoggedIn">
+          <router-link id="logout-btn" to="#" class="nav-link" @click.prevent="handleLogout">Logout</router-link>
+        </template>
       </div>
     </nav>
 

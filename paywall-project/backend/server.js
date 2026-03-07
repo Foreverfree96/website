@@ -3,6 +3,7 @@ import express from "express";
 import { config } from "dotenv";
 import { connectDatabase } from "./utils/connectDatabase.js";
 import userRoutes from "./routes/userRoutes.js";
+import postRoutes from "./routes/postRoutes.js";
 import cors from "cors";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
@@ -54,6 +55,7 @@ const paypalLimiter = rateLimit({
 
 // ─── Routes ─────────────────────────────────────────────────────────
 app.use("/api/users", authLimiter, userRoutes);
+app.use("/api/posts", authLimiter, postRoutes);
 
 app.get("/", (req, res) => res.send("Backend is running!"));
 

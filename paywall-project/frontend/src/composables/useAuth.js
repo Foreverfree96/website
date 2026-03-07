@@ -49,16 +49,8 @@ export function useAuth() {
   const signup = async (username, email, password) => {
     error.value = null;
     try {
-      const res = await axios.post(`${API_URL}/signup`, {
-        username,
-        email,
-        password,
-      });
-
-      localStorage.setItem("jwtToken", res.data.token);
-      setAuthHeader(res.data.token);
-
-      user.value = { ...res.data };
+      await axios.post(`${API_URL}/signup`, { username, email, password });
+      // No token — user must verify email before logging in
     } catch (err) {
       error.value = err.response?.data?.message || "Signup failed.";
       throw err;
@@ -197,6 +189,21 @@ export function useAuth() {
   };
 
   // -----------------------------
+  // UPDATE CREATOR PROFILE
+  // -----------------------------
+  const updateCreatorProfile = async (data) => {
+    error.value = null;
+    try {
+      const res = await axios.put(`${API_URL}/update-creator-profile`, data);
+      user.value = { ...user.value, ...res.data };
+      return res.data;
+    } catch (err) {
+      error.value = err.response?.data?.message || "Failed to update profile.";
+      throw err;
+    }
+  };
+
+  // -----------------------------
   // CHANGE EMAIL
   // -----------------------------
   const changeEmail = async (newEmail, password) => {
@@ -267,6 +274,7 @@ export function useAuth() {
     getPremiumContent,
     changePassword,
     changeEmail,
+    updateCreatorProfile,
     forgotPassword,
     resetPassword,
   };

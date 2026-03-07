@@ -25,7 +25,8 @@
         <p class="txt-tag">Already have an account?</p>
         <a href="/login" class="auth-button button-size1">Login</a>
 
-        <p v-if="error" class="auth-error">{{ error }}</p>
+        <p v-if="sent" class="sent-msg">✅ Check your email to confirm your account before logging in.</p>
+    <p v-if="error" class="auth-error">{{ error }}</p>
     </div>
 </template>
 
@@ -40,6 +41,7 @@ const { signup, error } = useAuth();
 const username = ref('');
 const email = ref('');
 const password = ref('');
+const sent = ref(false);
 
 const usernameMsg = ref('');
 const usernameAvailable = ref(true);
@@ -82,7 +84,7 @@ const handleSignup = async () => {
     }
     try {
         await signup(username.value, email.value, password.value);
-        window.location.href = '/portfolio';
+        sent.value = true;
     } catch (err) {
         console.error(err.response?.data || err);
     }
@@ -106,5 +108,12 @@ const handleSignup = async () => {
     font-size: 12px;
     color: #e53935;
     font-weight: 600;
+}
+.sent-msg {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: #14532d;
+    text-align: center;
+    margin-top: 12px;
 }
 </style>
