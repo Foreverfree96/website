@@ -1,0 +1,569 @@
+@use './variables' as *;
+
+/* ==========================
+   Global Reset
+========================== */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html {
+  overflow-x: hidden;
+  width: 100%;
+  /* Belt-and-suspenders: reinforces the meta color-scheme tag for browsers
+     (e.g. Samsung Internet) that check both the meta tag and CSS property */
+  color-scheme: light;
+}
+
+/* ==========================
+   Global Styles
+========================== */
+body {
+  font-family: $font-main;
+  background-color: $color-bg-main;
+  margin: 0;
+  overflow-x: hidden;
+  width: 100%;
+}
+
+/* ==========================
+   Navbar & Nav Links
+========================== */
+nav {
+  background-color: $color-black;
+  box-shadow: $shadow-light;
+  padding: $space-lg;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  position: sticky;
+  top: 0;
+  z-index: 50;
+}
+
+.nav-link {
+  margin: 0 $space-sm;
+  padding: $space-sm $space-md;
+  background-color: $color-black;
+  color: $color-pink;
+  font-weight: 600;
+  border: $border-bold solid $color-green-dark;
+  border-radius: $radius-sm;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: $shadow-medium;
+  cursor: pointer;
+  transition: box-shadow $transition-medium ease, transform $transition-fast ease-in;
+  transform: translateY(-3px);
+}
+
+.nav-link:hover {
+  box-shadow: $shadow-heavy;
+  transform: translateY(-2px);
+  color: $color-green-hover;
+}
+
+.nav-link:active {
+  transform: translateY(0);
+}
+
+/* ==========================
+   Auth Form
+========================== */
+.auth-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 2rem;
+  gap: 1.5rem;
+  max-width: 400px;
+  margin: 2rem auto;
+  background-color: $color-black;  /* changed from bg-main to dark green */
+  border-radius: $radius-md;
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+ 
+  align-items: center;
+   /* lighter green form */
+  padding: $space-xl;
+  border-radius: $radius-md;
+  
+}
+.auth-input {
+  padding: $space-sm $space-md;
+  border-radius: $radius-sm;
+  border: $border-thin solid $color-gray-border;
+  outline: none;
+  font-size: $font-size-base;
+  transition: box-shadow $transition-medium ease, border-color $transition-medium ease-in-out;
+}
+
+.auth-input:focus {
+  border-color: $color-green-darker;
+  box-shadow: 0 0 0 4px green;
+  opacity: 90%;
+}
+
+/* Buttons */
+
+.auth-button {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  font-size: $font-size-md;
+  font-weight: 600;
+  border-radius: $radius-sm;
+  background-color: $color-black;
+  color: $color-pink;
+  border: $border-bold solid $color-green-dark;
+  cursor: pointer;
+  text-decoration: none;
+  transition: box-shadow $transition-medium ease, transform $transition-fast ease-in;
+
+  &:hover {
+    box-shadow: $shadow-heavy;
+    transform: translateY(-2px);
+    color: $color-green-hover;
+  }
+
+  &:active {
+    transform: translateY(0);
+  }
+}
+
+/* Unified size for all buttons */
+.button-size {
+  width: 70%;
+  height: 55px;
+  margin: 0.5rem auto;
+}
+.button-size1{
+  width: 35%;
+  height: 45px;
+}
+.min-h-screen{
+  flex-direction: column;
+  display: flex;
+  align-items: center;
+}
+.mb-6{
+  font-size: 25px;
+  font-weight: 600;
+}
+.p-6{
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+}
+.p-2{
+  
+  border: 3.5px solid $color-red-dark;
+  padding: 8px 0 8px 20px;   /* <-- 20px left padding */
+  border-radius: 10px;
+  font-size: 16px;
+  outline: none;
+  color: $color-black;
+  transition: box-shadow 0.3s ease, transform 0.2s ease-in, color 0.2s ease;
+}
+.text-white{
+  margin-left: 5px;
+}
+.font-semibold {justify-content: space-evenly;
+}
+.mb-2{
+  margin-left: 15px;
+}
+.mb-22 {
+  margin-left: 50px;
+}
+.rounded:focus {
+  outline: none;                 /* removes white glow/outline */
+  box-shadow: none;
+  border: 3.5px solid $color-red-dark;
+
+}
+.p-2::placeholder{
+  padding-left: 0; 
+  font-weight: 600;
+  color: $color-pink;
+  opacity: 1;
+}
+.py-2{
+  background-color: $color-black;
+  color: $color-red-error;
+  cursor: pointer;
+  border-radius: 0.375rem;
+  border: 3.5px solid $color-red-dark;
+  padding: 0.5rem 0.75rem;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+  font-size: 30px;
+
+}
+.p-2:focus {
+  border: 3.5px solid $color-green-dark;   /* GREEN border */
+  color: $color-black;               /* GREEN typing text */
+  transform: translateY(-2px);             /* move up slightly like your buttons */
+  box-shadow: $shadow-medium;
+  
+}
+.mt-4{
+  font-weight: 500;
+  font-size: 25px;
+  color: $color-red-error;
+}
+.mt-2{
+  font-size: 18px;
+  font-weight: 600;
+}
+.mb-4{
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.mb-29{
+  background-color: $color-pink;
+  margin: -2px 0px 20px 0px;
+  padding: 25px;
+  
+  border-radius: 10px 15px 10px 15px;
+  border: 3.5px solid $color-black;
+}
+.text-xl{
+  
+  display: flex;
+  justify-content: space-evenly;
+}
+.textSadjust{
+  
+  font-size: 22px;
+}
+.font-bold{
+  font-size: 35px;
+}
+.fixmargin{
+  margin-left: 15px;
+}
+.py-2:hover{
+  transform: translateY(-2px);
+  color:$color-red-hover;
+  transition: box-shadow 0.3s ease, transform 0.2s ease-in;
+  font-weight: 600px;
+  text-decoration: none;
+}
+.auth-button:hover {
+  box-shadow: $shadow-heavy;
+  transform: translateY(-2px);
+  color: $color-green-hover;
+}
+
+/* Error Text */
+.auth-error {
+  font-weight: 600;
+  color: $color-red-error;   /* bright red for errors */
+  font-size: $font-size-md;
+  text-align: center;
+}
+
+/* Paragraph text inside forms */
+p {
+  color: $color-black;
+  text-align: center;
+  font-size: $font-size-sm;
+}
+.txt-tag{
+  color: $color-white;
+  font-weight: 600;
+  font-size: $font-size-md;
+}
+.lgn-sgnup-txt{
+  color:$color-white;
+}
+/* ==========================
+   Dashboard / Cards / Other
+========================== */
+.delete-button {
+  background-color: $color-red-dark;
+  border: $border-thick solid $color-red-darker;
+  color: $color-pink;
+  font-weight: 700;
+  padding: $space-sm $space-lg;
+}
+
+.delete-button:hover {
+  background-color: $color-red-hover;
+  box-shadow: $shadow-heavy;
+}
+.btn-green {
+  background-color: #4caf50;
+  color: #fff;
+  padding: 10px 15px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.dashboard-wrapper {
+  max-width: 900px;
+  margin: $space-2xl auto;
+  background-color: $color-green-darker;
+  padding: $space-2xl;
+  border-radius: $radius-lg;
+  box-shadow: $shadow-deep;
+  color: $color-pink;
+}
+
+.dashboard-section {
+  background-color: $color-green-dark;
+  border-radius: $radius-md;
+  padding: $space-xl;
+  margin-bottom: $space-2xl;
+  box-shadow: $shadow-medium;
+  text-align: center;
+}
+
+
+.post-card {
+  background-color: $color-green-dark;
+  border: $border-thick solid $color-pink;
+  border-radius: $radius-md;
+  padding: $space-md;
+  box-shadow: $shadow-medium;
+  transition: transform $transition-medium ease, box-shadow $transition-medium ease;
+}
+
+.post-card:hover {
+  transform: translateY(-4px);
+  box-shadow: $shadow-heavy;
+}
+
+/* Toggle */
+.toggle-input {
+  background-color: $color-gray-dark;
+}
+
+.toggle-input:checked {
+  background-color: $color-green-dark;
+}
+
+.toggle-input::before {
+  background-color: $color-pink;
+}
+.txtsize22{
+  background-color: $color-green-dark;
+  padding: 15px 10px 15px 10px;
+  border-radius: 15px;
+ font-size: 25px;
+}
+
+/* ============================================
+   Dashboard & Profile Containers (GLOBAL)
+============================================ */
+
+
+.profile-container {
+  text-align: center;
+  max-width: 600px;
+  margin: 40px auto;
+  padding: 25px;
+
+  background-color: $color-pink; /* pink background */
+  border: 3px solid #000000; /* black border */
+
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.dashboard-container h2,
+.profile-container h2 {
+  
+  margin: 0;
+  font-size: 1.8rem;
+  color: black;
+}
+
+.dashboard-container p,
+.profile-container p {
+  color: black;
+  font-weight: 600;
+}
+
+.dashboard-card{
+  border: 3px solid #000;
+  background-color: $color-pink;
+  border-radius: 14px;
+  padding: 30px;
+  max-width: 600px;
+  width: 100%;
+  margin-top: 23px;
+}
+.dashboard-container{
+  display: flex;
+  flex-wrap: wrap;
+}
+.btn-black { 
+  background-color: $color-black;
+  color: $color-red-error;
+  cursor: pointer;
+  border-radius: 0.375rem;
+  border: 3.5px solid $color-red-dark;
+  padding: 0.5rem 0.75rem;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+  font-size: 30px;  
+    border-radius: 8px;
+    cursor: pointer;
+   margin-top: 20px;
+    width: 100%;
+
+}
+.sizingForum {
+  width: 300px; /* adjust this number */
+}
+.input-box {
+  width: 100%;                    // full width of the container
+  padding: 10px 15px;             // some extra horizontal padding for comfort
+  border-radius: 10px;            // slightly rounder corners
+  border: 3.5px solid $color-red-dark;  // match your button border
+  margin-bottom: 10px;
+  font-size: 20px;
+  font-weight: 600;
+  outline: none;
+  color: $color-black;            // text color
+  transition: box-shadow 0.3s ease, border-color 0.3s ease, transform 0.2s ease-in;
+
+  &:focus {
+    border-color: $color-green-dark; // change border on focus
+    box-shadow: 0 0 5px $color-green-dark;
+    transform: translateY(-2px);     // subtle "lift" effect like buttons
+  }
+
+  &::placeholder {
+    color: $color-pink;            // placeholder color
+    font-weight: 600;
+    opacity: 1;
+  }
+}
+
+.input-box:focus {
+  border: 3.5px solid $color-green-dark;
+  color: 3px black;
+
+}
+.logout-btn{
+ display: flex;
+ text-align: center;
+ justify-content: center;
+ align-items: center;
+ 
+}
+
+.btn-black:hover {
+  transform: translateY(-2px);
+  color:$color-red-hover;
+  transition: box-shadow 0.3s ease, transform 0.2s ease-in;
+  font-weight: 600px;
+  text-decoration: none;
+}
+
+/* ==========================
+   Responsive Breakpoints
+   320 | 360 | 480 | 600 | 768 | 900 | 1024 | 1280 | 1440 | 1920
+========================== */
+
+/* Large desktop (1440px+) */
+@media (min-width: 1440px) {
+  .auth-wrapper    { max-width: 440px; }
+  .dashboard-wrapper { max-width: 1000px; padding: 3rem; }
+  .dashboard-card  { max-width: 680px; }
+  .profile-container { max-width: 680px; }
+}
+
+/* Standard desktop (1280px) */
+@media (max-width: 1280px) {
+  .dashboard-wrapper { max-width: 860px; }
+}
+
+/* Small laptop / large tablet landscape (1024px) */
+@media (max-width: 1024px) {
+  .auth-wrapper    { max-width: 380px; }
+  .dashboard-wrapper { max-width: 780px; padding: 1.5rem; margin: 1.5rem 20px; }
+  .dashboard-card  { padding: 24px; }
+  .profile-container { margin: 30px 20px; }
+  .sizingForum     { width: 260px; }
+}
+
+/* Tablet portrait (768px) */
+@media (max-width: 768px) {
+  .auth-wrapper {
+    margin: 1.5rem 16px;
+    padding: 1.5rem;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+  .auth-form { padding: 0.75rem; }
+  .button-size  { width: 82%; height: 50px; }
+  .button-size1 { width: 52%; height: 42px; }
+  .dashboard-wrapper { margin: 1rem 12px; padding: 1.2rem; border-radius: 12px; }
+  .dashboard-card  { padding: 20px; margin-top: 16px; }
+  .profile-container { margin: 20px 12px; padding: 18px; }
+  .input-box { width: 90%; font-size: 1rem; }
+  .sizingForum { width: 100%; max-width: 100%; }
+}
+
+/* Large phone / small tablet (600px) */
+@media (max-width: 600px) {
+  .auth-wrapper { margin: 1rem 10px; padding: 1.2rem; border-radius: 10px; }
+  .auth-form    { padding: 0.5rem; }
+  .button-size  { width: 90%; height: 48px; font-size: 1rem; }
+  .button-size1 { width: 66%; height: 42px; }
+  .input-box    { width: 100%; font-size: 1rem; margin-top: 16px; }
+  .dashboard-wrapper  { margin: 0.75rem 8px; padding: 1rem; }
+  .dashboard-card     { padding: 16px; }
+  .profile-container  { margin: 12px 8px; padding: 14px; }
+  .txt-tag, .mb-4, .mt-2 { font-size: 1rem; }
+  .font-bold { font-size: 1.8rem; }
+  .mb-29 { padding: 16px; }
+}
+
+/* Phone (480px) */
+@media (max-width: 480px) {
+  .auth-wrapper   { margin: 0.75rem 8px; padding: 1rem; }
+  .button-size    { width: 95%; height: 46px; }
+  .button-size1   { width: 80%; height: 40px; }
+  .input-box      { width: 100%; font-size: 0.95rem; }
+  .dashboard-card { padding: 14px; border-radius: 10px; }
+  .mb-29          { padding: 14px; margin: -2px 0 12px; }
+  .nav-link       { padding: 0.5rem 0.85rem !important; font-size: 0.9rem; }
+}
+
+/* Small phone (360px) */
+@media (max-width: 360px) {
+  .auth-wrapper { margin: 0.35rem 4px; padding: 0.875rem; width: calc(100% - 8px); box-sizing: border-box; }
+  .button-size  { width: 100%; height: 44px; font-size: 0.95rem; }
+  .button-size1 { width: 90%; height: 38px; }
+  .input-box    { width: 100%; font-size: 0.9rem; }
+  .nav-link     { padding: 0.4rem 0.7rem !important; font-size: 0.85rem; }
+}
+
+/* Very small phone (320px — iPhone SE) */
+@media (max-width: 320px) {
+  .auth-wrapper { margin: 0.2rem 2px; padding: 0.75rem; }
+  .button-size  { width: 100%; height: 42px; font-size: 0.9rem; }
+  .nav-link     { padding: 0.35rem 0.6rem !important; font-size: 0.82rem; }
+}
+
+/* Landscape orientation on phones */
+@media (max-height: 500px) and (orientation: landscape) {
+  .auth-wrapper   { margin: 0.5rem auto; padding: 1rem 1.5rem; }
+  .button-size    { height: 42px; }
+  .dashboard-wrapper { margin: 0.5rem 12px; }
+}

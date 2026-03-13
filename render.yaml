@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: paywall-backend
+    runtime: node
+    rootDir: paywall-project/backend
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # Set these in the Render dashboard → Environment:
+      # MONGO_URI
+      # JWT_SECRET
+      # ADMIN_EMAIL
+      # FRONTEND_URL          (your Vercel frontend URL)
+      # PAYPAL_CLIENT_ID
+      # PAYPAL_SECRET
+      # SIGHTENGINE_USER
+      # SIGHTENGINE_SECRET
+      # RESEND_API_KEY
+      # EMAIL_FROM
