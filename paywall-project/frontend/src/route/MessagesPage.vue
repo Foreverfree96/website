@@ -518,15 +518,20 @@ const recoverAll = async () => {
   const toSend = recoverMsgs.value.slice();
   recoverMode.value = false;
   recoverMsgs.value = [];
+  const sent = [];
   for (const m of toSend) {
     if (!m.body?.trim()) continue;
     try {
       const res = await axios.post(`${API}/${activeConvo.value._id}`, { body: m.body });
-      _insertAtOriginalPosition(res.data, m.sentAt);
+      res.data._origSentAt = m.sentAt;
+      sent.push(res.data);
       activeConvo.value.lastMessage = m.body;
       if (m.sentAt) _markRecovered(activeConvo.value._id, m.sentAt);
     } catch { /* silently ignore */ }
   }
+  messages.value = [...messages.value, ...sent].sort((a, b) =>
+    new Date(a._origSentAt || a.createdAt) - new Date(b._origSentAt || b.createdAt)
+  );
   await nextTick();
   scrollBottom();
 };
