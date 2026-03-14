@@ -471,6 +471,8 @@ const _markRecovered = (convoId, sentAt) => {
     const set = _getRecovered(convoId);
     set.add(String(sentAt));
     localStorage.setItem(_recoveredKey(convoId), JSON.stringify([...set]));
+    // Recovery resets the cleared flag — next clear starts fresh with no alert
+    localStorage.removeItem(_clearedKey(convoId));
 };
 
 const enterRecoverMode = async () => {
