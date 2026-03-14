@@ -217,6 +217,11 @@
               selected
             </span>
 
+            <button class="report-select-all-btn" @click="selectAllMessages"
+              v-if="messages.length || snapshotMsgs.length">
+              {{ isAllSelected ? 'Deselect All' : 'Select All ✅' }}
+            </button>
+
             <button class="report-submit-btn" @click="submitReport"
               :disabled="reportSubmitting || !reportReason.trim()">
               {{ reportSubmitting ? 'Sending...' : 'Submit Report' }}
@@ -573,6 +578,24 @@ const toggleReportSelect = (m) => {
   reportSelected.value = s;
   reportError.value = '';
 };
+
+const selectAllMessages = () => {
+  const allMsgs = [...snapshotMsgs.value, ...messages.value];
+  const allKeys = allMsgs.map(m => m._id || m.sentAt?.toString()).filter(Boolean);
+  const capped = allKeys.slice(0, 25);
+  if (isAllSelected.value) {
+    reportSelected.value = new Set();
+  } else {
+    reportSelected.value = new Set(capped);
+  }
+  reportError.value = '';
+};
+
+const isAllSelected = computed(() => {
+  const allMsgs = [...snapshotMsgs.value, ...messages.value];
+  const allKeys = allMsgs.map(m => m._id || m.sentAt?.toString()).filter(Boolean).slice(0, 25);
+  return allKeys.length > 0 && allKeys.every(k => reportSelected.value.has(k));
+});
 
 /**
  * submitReport
@@ -1704,6 +1727,19 @@ const formatTime = (d) => {
   color: #555;
   font-weight: 600;
 }
+
+.report-select-all-btn {
+  background: transparent;
+  color: #7c3aed;
+  border: 1.5px solid #7c3aed;
+  border-radius: 7px;
+  padding: 5px 12px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.report-select-all-btn:hover { background: #ede9fe; }
 
 .report-submit-btn {
   background: #7c3aed;

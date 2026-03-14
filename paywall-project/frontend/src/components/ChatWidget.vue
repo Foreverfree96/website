@@ -147,6 +147,10 @@
                         />
                         <div class="cw-report-actions">
                             <span class="cw-report-hint">{{ reportSelected.size }} message{{ reportSelected.size !== 1 ? 's' : '' }} selected</span>
+                            <button class="cw-report-select-all" @click="selectAllMessages"
+                                v-if="messages.length || snapshotMsgs.length">
+                                {{ isAllSelected ? 'Deselect All' : 'Select All ✅' }}
+                            </button>
                             <!-- Disabled while in-flight or when reason is empty -->
                             <button class="cw-report-submit" @click="submitReport" :disabled="reportSubmitting || !reportReason.trim()">
                                 {{ reportSubmitting ? 'Sending...' : 'Submit Report' }}
@@ -585,6 +589,24 @@ const toggleReportSelect = (m) => {
     reportSelected.value = s;
     reportError.value = '';
 };
+
+const selectAllMessages = () => {
+    const allMsgs = [...snapshotMsgs.value, ...messages.value];
+    const allKeys = allMsgs.map(m => m._id || m.sentAt?.toString()).filter(Boolean);
+    const capped = allKeys.slice(0, 25);
+    if (isAllSelected.value) {
+        reportSelected.value = new Set();
+    } else {
+        reportSelected.value = new Set(capped);
+    }
+    reportError.value = '';
+};
+
+const isAllSelected = computed(() => {
+    const allMsgs = [...snapshotMsgs.value, ...messages.value];
+    const allKeys = allMsgs.map(m => m._id || m.sentAt?.toString()).filter(Boolean).slice(0, 25);
+    return allKeys.length > 0 && allKeys.every(k => reportSelected.value.has(k));
+});
 
 /**
  * submitReport
@@ -1620,6 +1642,18 @@ const formatTime = (d) => {
     cursor: pointer;
     transition: background 0.15s;
 }
+.cw-report-select-all {
+    background: transparent;
+    color: #7c3aed;
+    border: 1.5px solid #7c3aed;
+    border-radius: 6px;
+    padding: 4px 9px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+}
+.cw-report-select-all:hover { background: #ede9fe; }
 .cw-report-submit:hover:not(:disabled) { background: #6d28d9; }
 .cw-report-submit:disabled { opacity: 0.45; cursor: default; }
 .cw-report-err { font-size: 0.76rem; color: #e11d48; font-weight: 600; margin: 0; }
