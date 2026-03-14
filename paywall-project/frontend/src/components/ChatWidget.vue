@@ -500,6 +500,14 @@ const enterRecoverMode = async () => {
  *
  * @param {string} body - The message text to restore.
  */
+// Insert a message into the messages array at the position matching its original sentAt
+const _insertAtOriginalPosition = (msg, originalSentAt) => {
+    const t = new Date(originalSentAt || msg.createdAt);
+    const insertIdx = messages.value.findIndex(m => new Date(m.createdAt) > t);
+    if (insertIdx === -1) messages.value.push(msg);
+    else messages.value.splice(insertIdx, 0, msg);
+};
+
 const restoreMessage = async (body) => {
     if (!body.trim() || !activeConvo.value) return;
     const idx = recoverMsgs.value.findIndex(m => m.body === body);
@@ -508,7 +516,7 @@ const restoreMessage = async (body) => {
     if (!recoverMsgs.value.length) recoverMode.value = false;
     try {
         const res = await axios.post(`${API}/${activeConvo.value._id}`, { body });
-        messages.value.push(res.data);
+        _insertAtOriginalPosition(res.data, sentAt);
         activeConvo.value.lastMessage = body;
         if (sentAt) _markRecovered(activeConvo.value._id, sentAt);
         await nextTick();
@@ -525,9 +533,9 @@ const recoverAll = async () => {
         if (!m.body?.trim()) continue;
         try {
             const res = await axios.post(`${API}/${activeConvo.value._id}`, { body: m.body });
-            if (m.sentAt) _markRecovered(activeConvo.value._id, m.sentAt);
-            messages.value.push(res.data);
+            _insertAtOriginalPosition(res.data, m.sentAt);
             activeConvo.value.lastMessage = m.body;
+            if (m.sentAt) _markRecovered(activeConvo.value._id, m.sentAt);
         } catch { /* silently ignore */ }
     }
     await nextTick();
