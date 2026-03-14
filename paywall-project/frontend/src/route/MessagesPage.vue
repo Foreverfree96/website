@@ -231,6 +231,9 @@
           <p v-if="recoverLoading" class="msg-status">Loading...</p>
           <p v-else-if="!recoverMsgs.length" class="recover-empty">No recoverable messages found.</p>
           <div v-else class="recover-list">
+            <div class="recover-all-row">
+              <button class="recover-all-btn" @click="recoverAll">↩ Send All</button>
+            </div>
             <div v-for="(m, i) in recoverMsgs" :key="i" class="recover-item">
               <span class="recover-body">{{ m.body }}</span>
               <span class="recover-time">{{ formatTime(m.sentAt) }}</span>
@@ -254,30 +257,29 @@
       </template>
     </div>
   </div>
+
+  <!-- ── THEMED CONFIRMATION MODALS ─────────────────────────────────────────
+       All destructive and informational confirmations use the shared AppModal
+       component so styling and behaviour are consistent across the app. -->
+
+  <!-- Clear chat -->
+  <AppModal :show="clearModal" title="Clear Conversation"
+    message="Delete all messages in this chat? This affects both sides and cannot be undone." danger ok-label="Clear All"
+    cancel-label="Cancel" @ok="executeClear" @cancel="clearModal = false" />
+
+  <!-- Block user -->
+  <AppModal :show="blockModal.show" title="Block User" :message="blockModal.msg" danger ok-label="Yes, Block"
+    cancel-label="Cancel" @ok="executeBlock" @cancel="blockModal.show = false" />
+
+  <!-- Unsend message -->
+  <AppModal :show="unsendModal.show" title="Unsend Message" message="Remove this message? This can't be undone." danger
+    ok-label="Unsend" cancel-label="Cancel" @ok="executeUnsend" @cancel="unsendModal.show = false" />
+
+  <!-- Generic alert modal -->
+  <AppModal :show="alertModal.show" :message="alertModal.msg" type="alert" ok-label="OK" @ok="alertModal.show = false"
+    @cancel="alertModal.show = false" />
+
 </template>
-
-
-
-<!-- ── THEMED CONFIRMATION MODALS ──────────────────────────────────────────
-     All destructive and informational confirmations use the shared AppModal
-     component so styling and behaviour are consistent across the app. -->
-
-<!-- Clear chat -->
-<AppModal :show="clearModal" title="Clear Conversation"
-  message="Delete all messages in this chat? This affects both sides and cannot be undone." danger ok-label="Clear All"
-  cancel-label="Cancel" @ok="executeClear" @cancel="clearModal = false" />
-
-<!-- Block user -->
-<AppModal :show="blockModal.show" title="Block User" :message="blockModal.msg" danger ok-label="Yes, Block"
-  cancel-label="Cancel" @ok="executeBlock" @cancel="blockModal.show = false" />
-
-<!-- Unsend message -->
-<AppModal :show="unsendModal.show" title="Unsend Message" message="Remove this message? This can't be undone." danger
-  ok-label="Unsend" cancel-label="Cancel" @ok="executeUnsend" @cancel="unsendModal.show = false" />
-
-<!-- Generic alert modal -->
-<AppModal :show="alertModal.show" :message="alertModal.msg" type="alert" ok-label="OK" @ok="alertModal.show = false"
-  @cancel="alertModal.show = false" />
 
 
 
@@ -489,6 +491,23 @@ const restoreMessage = async (body) => {
     await nextTick();
     scrollBottom();
   } catch { /* silently ignore */ }
+};
+
+const recoverAll = async () => {
+  if (!recoverMsgs.value.length || !activeConvo.value) return;
+  const toSend = recoverMsgs.value.slice();
+  recoverMode.value = false;
+  recoverMsgs.value = [];
+  for (const m of toSend) {
+    if (!m.body?.trim()) continue;
+    try {
+      const res = await axios.post(`${API}/${activeConvo.value._id}`, { body: m.body });
+      messages.value.push(res.data);
+      activeConvo.value.lastMessage = m.body;
+    } catch { /* silently ignore */ }
+  }
+  await nextTick();
+  scrollBottom();
 };
 
 const cancelRecoverMode = () => {
@@ -1498,6 +1517,22 @@ const formatTime = (d) => {
   flex-direction: column;
   gap: 8px;
 }
+.recover-all-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 4px;
+}
+.recover-all-btn {
+  padding: 6px 14px;
+  background: #1a56db;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.recover-all-btn:hover { background: #1e40af; }
 
 .recover-item {
   display: flex;

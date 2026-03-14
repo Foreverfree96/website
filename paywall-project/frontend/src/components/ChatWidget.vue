@@ -159,6 +159,9 @@
                         <p v-if="recoverLoading" class="cw-status">Loading...</p>
                         <p v-else-if="!recoverMsgs.length" class="cw-recover-empty">No recoverable messages found.</p>
                         <div v-else class="cw-recover-list">
+                            <div class="cw-recover-all-row">
+                                <button class="cw-recover-all-btn" @click="recoverAll">↩ Send All</button>
+                            </div>
                             <div v-for="(m, i) in recoverMsgs" :key="i" class="cw-recover-item">
                                 <span class="cw-recover-body">{{ m.body }}</span>
                                 <span class="cw-recover-time">{{ formatTime(m.sentAt) }}</span>
@@ -500,6 +503,23 @@ const restoreMessage = async (body) => {
         await nextTick();
         scrollBottom();
     } catch { /* silently ignore */ }
+};
+
+const recoverAll = async () => {
+    if (!recoverMsgs.value.length || !activeConvo.value) return;
+    const toSend = recoverMsgs.value.slice();
+    recoverMode.value = false;
+    recoverMsgs.value = [];
+    for (const m of toSend) {
+        if (!m.body?.trim()) continue;
+        try {
+            const res = await axios.post(`${API}/${activeConvo.value._id}`, { body: m.body });
+            messages.value.push(res.data);
+            activeConvo.value.lastMessage = m.body;
+        } catch { /* silently ignore */ }
+    }
+    await nextTick();
+    scrollBottom();
 };
 
 /** Closes the recover panel without restoring anything. */
@@ -1412,6 +1432,22 @@ const formatTime = (d) => {
     flex-direction: column;
     gap: 6px;
 }
+.cw-recover-all-row {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 4px;
+}
+.cw-recover-all-btn {
+    padding: 5px 12px;
+    background: #1a56db;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+.cw-recover-all-btn:hover { background: #1e40af; }
 
 .cw-recover-item {
     display: flex;
