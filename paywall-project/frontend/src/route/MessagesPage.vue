@@ -440,7 +440,7 @@ const enterReportMode = async () => {
   if (activeConvo.value) {
     try {
       const res = await axios.get(`${API}/${activeConvo.value._id}/snapshot`);
-      snapshotMsgs.value = res.data;
+      snapshotMsgs.value = (res.data || []).slice().sort((a, b) => new Date(a.sentAt) - new Date(b.sentAt));
     } catch { snapshotMsgs.value = []; }
   }
 };
@@ -468,9 +468,9 @@ const enterRecoverMode = async () => {
     const res = await axios.get(`${API}/${activeConvo.value._id}/snapshot`);
     const myId       = user.value?.id?.toString() || user.value?._id?.toString();
     const myUsername = user.value?.username;
-    recoverMsgs.value = (res.data || []).filter(
-      m => m.sender?.toString() === myId || m.senderUsername === myUsername
-    );
+    recoverMsgs.value = (res.data || [])
+      .filter(m => m.sender?.toString() === myId || m.senderUsername === myUsername)
+      .sort((a, b) => new Date(a.sentAt) - new Date(b.sentAt));
   } catch {
     recoverMsgs.value = [];
   } finally {
