@@ -93,9 +93,8 @@
                                     @click="toggleReportSelect(m)"
                                 >
                                     <div class="cw-bubble-row">
-                                        <!-- Purple outline + checkmark badge (CSS ::after) when selected -->
                                         <div class="cw-bubble" :class="{ selected: reportSelected.has(m.sentAt?.toString()) }">
-                                            {{ m.body }}
+                                            {{ m.body }}<span v-if="reportSelected.has(m.sentAt?.toString())" class="cw-report-check"> ✅</span>
                                         </div>
                                     </div>
                                     <span class="cw-time">{{ formatTime(m.sentAt) }}</span>
@@ -116,7 +115,7 @@
                                 >
                                     <div class="cw-bubble-row">
                                         <!-- v-html is safe: linkify() escapes HTML before injecting <a> tags -->
-                                        <div class="cw-bubble" :class="{ selected: reportMode && reportSelected.has(m._id) }" v-html="linkify(m.body)"></div>
+                                        <div class="cw-bubble" :class="{ selected: reportMode && reportSelected.has(m._id) }"><span v-html="linkify(m.body)"></span><span v-if="reportMode && reportSelected.has(m._id)" class="cw-report-check"> ✅</span></div>
                                         <!-- Unsend button: fades in on hover via CSS; only visible for own messages -->
                                         <button
                                             v-if="!reportMode && m.sender._id === userId"
@@ -1576,21 +1575,8 @@ const formatTime = (d) => {
     outline: 2.5px solid #7c3aed;
     outline-offset: 1px;
 }
-.cw-bubble.selected::after {
-    content: '✓';
-    position: absolute;
-    top: -7px;
-    right: -7px;
-    background: #7c3aed;
-    color: #fff;
-    border-radius: 50%;
-    width: 16px;
-    height: 16px;
-    font-size: 0.65rem;
-    font-weight: 900;
-    display: grid;
-    place-items: center;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.25);
+.cw-report-check {
+    font-size: 0.85em;
     pointer-events: none;
 }
 

@@ -151,7 +151,7 @@
                 <div class="bubble-row">
 
                   <div class="bubble" :class="{ selected: reportSelected.has(m.sentAt?.toString()) }">
-                    {{ m.body }}
+                    {{ m.body }}<span v-if="reportSelected.has(m.sentAt?.toString())" class="report-check"> ✅</span>
                   </div>
 
                 </div>
@@ -176,8 +176,8 @@
                 <div class="bubble-row">
 
                   <!-- Linkified message -->
-                  <div class="bubble" :class="{ selected: reportMode && reportSelected.has(m._id) }"
-                    v-html="linkify(m.body)">
+                  <div class="bubble" :class="{ selected: reportMode && reportSelected.has(m._id) }">
+                    <span v-html="linkify(m.body)"></span><span v-if="reportMode && reportSelected.has(m._id)" class="report-check"> ✅</span>
                   </div>
 
                   <!-- Unsend button -->
@@ -1663,21 +1663,8 @@ const formatTime = (d) => {
   outline-offset: 1px;
 }
 
-.bubble.selected::after {
-  content: '✓';
-  position: absolute;
-  top: -8px;
-  right: -8px;
-  background: #7c3aed;
-  color: #fff;
-  border-radius: 50%;
-  width: 18px;
-  height: 18px;
-  font-size: 0.72rem;
-  font-weight: 900;
-  display: grid;
-  place-items: center;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+.report-check {
+  font-size: 0.9em;
   pointer-events: none;
 }
 
