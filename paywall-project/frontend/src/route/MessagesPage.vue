@@ -202,6 +202,10 @@
         <!-- Report panel -->
         <div v-if="reportMode" class="report-panel">
 
+          <p v-if="reportMode && !messages.length && !snapshotMsgs.length" class="report-no-msgs-notice">
+            No messages available to select — you can still submit a report with a written reason.
+          </p>
+
           <textarea v-model="reportReason" class="report-reason-input" placeholder="Reason for report (required)..."
             maxlength="500" rows="2" />
 
@@ -214,7 +218,7 @@
             </span>
 
             <button class="report-submit-btn" @click="submitReport"
-              :disabled="reportSubmitting || !reportReason.trim() || !reportSelected.size">
+              :disabled="reportSubmitting || !reportReason.trim()">
               {{ reportSubmitting ? 'Sending...' : 'Submit Report' }}
             </button>
 
@@ -574,7 +578,6 @@ const toggleReportSelect = (m) => {
  */
 const submitReport = async () => {
   if (!reportReason.value.trim()) { reportError.value = 'A reason is required.'; return; }
-  if (!reportSelected.value.size) { reportError.value = 'Select at least one message.'; return; }
   reportSubmitting.value = true;
   reportError.value = '';
   try {
@@ -1723,6 +1726,16 @@ const formatTime = (d) => {
   color: #e11d48;
   font-weight: 600;
   margin: 0;
+}
+
+.report-no-msgs-notice {
+  font-size: 0.78rem;
+  color: #6d28d9;
+  background: #ede9fe;
+  border: 1px solid #c4b5fd;
+  border-radius: 6px;
+  padding: 6px 10px;
+  margin: 0 0 4px;
 }
 
 /* ── Mobile ── */

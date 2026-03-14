@@ -132,9 +132,12 @@
                     </div>
 
                     <!-- ── REPORT SUBMIT PANEL ──────────────────────────────────────────
-               Visible only in report mode.  Requires a written reason AND at
-               least one selected message before the submit button is enabled. -->
+               Visible only in report mode.  A written reason is required;
+               message selection is optional if no messages are available. -->
                     <div v-if="reportMode" class="cw-report-panel">
+                        <p v-if="!messages.length && !snapshotMsgs.length" class="cw-report-no-msgs">
+                            No messages available to select — you can still submit a report with a written reason.
+                        </p>
                         <textarea
                             v-model="reportReason"
                             class="cw-report-reason"
@@ -144,8 +147,8 @@
                         />
                         <div class="cw-report-actions">
                             <span class="cw-report-hint">{{ reportSelected.size }} message{{ reportSelected.size !== 1 ? 's' : '' }} selected</span>
-                            <!-- Disabled while in-flight, or when reason is empty, or no messages selected -->
-                            <button class="cw-report-submit" @click="submitReport" :disabled="reportSubmitting || !reportReason.trim() || !reportSelected.size">
+                            <!-- Disabled while in-flight or when reason is empty -->
+                            <button class="cw-report-submit" @click="submitReport" :disabled="reportSubmitting || !reportReason.trim()">
                                 {{ reportSubmitting ? 'Sending...' : 'Submit Report' }}
                             </button>
                         </div>
@@ -585,7 +588,6 @@ const toggleReportSelect = (m) => {
  */
 const submitReport = async () => {
     if (!reportReason.value.trim()) { reportError.value = 'A reason is required.'; return; }
-    if (!reportSelected.value.size) { reportError.value = 'Select at least one message.'; return; }
     reportSubmitting.value = true;
     reportError.value = '';
     try {
@@ -1616,6 +1618,7 @@ const formatTime = (d) => {
 .cw-report-submit:hover:not(:disabled) { background: #6d28d9; }
 .cw-report-submit:disabled { opacity: 0.45; cursor: default; }
 .cw-report-err { font-size: 0.76rem; color: #e11d48; font-weight: 600; margin: 0; }
+.cw-report-no-msgs { font-size: 0.72rem; color: #6d28d9; background: #ede9fe; border: 1px solid #c4b5fd; border-radius: 5px; padding: 5px 8px; margin: 0 0 4px; }
 
 /* ── Mobile + Tablet (incl. OnePlus Open) ── */
 @media (max-width: 900px) {

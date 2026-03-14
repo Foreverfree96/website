@@ -355,16 +355,13 @@ export const clearConversation = async (req, res) => {
       sentAt: m.createdAt,
     }));
 
-    // forceWipe=true (sent on the second/warned clear) wipes the snapshot entirely
-    // so recover shows nothing after the user explicitly confirmed the warning.
-    // Otherwise: replace with fresh entries if any exist, or preserve if chat was empty.
-    const forceWipe = req.query.forceWipe === 'true';
-    if (forceWipe) {
-      convo.clearedSnapshot = [];
-    } else if (newEntries.length > 0) {
+    // Always update the snapshot with the most recent messages before wiping,
+    // so admins still have evidence even if the user clears multiple times.
+    // The snapshot is a moderation tool and is never wiped by user actions.
+    if (newEntries.length > 0) {
       convo.clearedSnapshot = newEntries;
     }
-    // else: keep convo.clearedSnapshot unchanged
+    // else: keep convo.clearedSnapshot unchanged (preserve any prior snapshot)
 
     // Delete all message documents for this conversation
     await Message.deleteMany({ conversation: convo._id });
@@ -501,8 +498,7 @@ export const reportDm = async (req, res) => {
   try {
     const { reason, messages: msgSnapshots } = req.body;
     if (!reason?.trim()) return res.status(400).json({ message: "A reason is required." });
-    if (!Array.isArray(msgSnapshots) || msgSnapshots.length === 0)
-      return res.status(400).json({ message: "Select at least one message." });
+    if (!Array.isArray(msgSnapshots)) return res.status(400).json({ message: "Invalid messages format." });
     if (msgSnapshots.length > 25)
       return res.status(400).json({ message: "You can select up to 25 messages." });
 
