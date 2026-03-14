@@ -92,6 +92,12 @@
         <MediaEmbed v-if="form.mediaUrl" :mediaUrl="form.mediaUrl" :embedType="detectedType" />
       </template>
 
+      <!-- ── Private post toggle ── -->
+      <label class="tos-label">
+        <input type="checkbox" v-model="form.isPrivate" class="tos-checkbox" />
+        <span>🔒 Make this post <strong>private</strong> (only visible to you)</span>
+      </label>
+
       <!-- ── Community guidelines consent ── -->
       <!--
         The submit button is disabled until agreedToTos is true.
@@ -143,13 +149,14 @@
  * detail page via router.push.
  */
 import { ref, onMounted, nextTick } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRouter, useRoute } from 'vue-router';
 import axios from 'axios';
 import { usePosts } from '../composables/usePosts.js';
 import { useAuth } from '../composables/useAuth.js';
 import MediaEmbed from '../components/MediaEmbed.vue';
 
 const router = useRouter();
+const route  = useRoute();
 
 // ─── COMPOSABLES ──────────────────────────────────────────────────────────────
 
@@ -396,7 +403,7 @@ const allCategories = ['Music', 'Videos', 'Streamer', 'Pictures', 'Blogger / Wri
  *   imageUrl — optional direct image URL; used when category === 'Pictures'.
  *   category — the selected category slug; empty string = no category.
  */
-const form = ref({ title: '', body: '', mediaUrl: '', imageUrl: '', category: '' });
+const form = ref({ title: '', body: '', mediaUrl: '', imageUrl: '', category: '', isPrivate: false });
 
 /**
  * detectedType
@@ -447,6 +454,8 @@ const imageError = ref(false);
 onMounted(() => {
   const userCats = user.value?.categories || [];
   if (userCats.length === 1) form.value.category = userCats[0];
+  // Auto-check Private when navigated from Dashboard's "🔒 Private Post" button
+  if (route.query.private === 'true') form.value.isPrivate = true;
 });
 
 // ─── EMBED DETECTION ──────────────────────────────────────────────────────────

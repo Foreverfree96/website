@@ -20,10 +20,12 @@
 
 import express from "express";
 import {
-  getNotifications, // GET  /             — paginated notification feed
-  getUnreadCount,   // GET  /unread-count — count of unread items
-  markAllRead,      // PUT  /read-all     — bulk mark-as-read
-  markOneRead,      // PUT  /:id/read     — mark a single notification read
+  getNotifications, // GET    /             — paginated notification feed
+  getUnreadCount,   // GET    /unread-count — count of unread items
+  markAllRead,      // PUT    /read-all     — bulk mark-as-read
+  markOneRead,      // PUT    /:id/read     — mark a single notification read
+  deleteOne,        // DELETE /:id          — permanently delete one notification
+  deleteAll,        // DELETE /             — permanently delete all notifications
 } from "../controllers/notificationController.js";
 import { protect } from "../middleware/auth.js";
 
@@ -60,5 +62,19 @@ router.put("/read-all", protect, markAllRead);
  * Called when the user clicks an individual notification item.
  */
 router.put("/:id/read", protect, markOneRead);
+
+/**
+ * DELETE /
+ * Permanently removes all notifications for the current user.
+ * Called when the user clicks "Clear All".
+ */
+router.delete("/", protect, deleteAll);
+
+/**
+ * DELETE /:id
+ * Permanently removes a single notification by its MongoDB ObjectId.
+ * Called when the user clicks the × button on an individual notification.
+ */
+router.delete("/:id", protect, deleteOne);
 
 export default router;

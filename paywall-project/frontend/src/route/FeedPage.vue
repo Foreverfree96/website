@@ -8,6 +8,21 @@
       <router-link v-if="user.id" to="/create-post" class="auth-button create-btn">+ New Post</router-link>
     </div>
 
+    <!-- ── Search bar ── -->
+    <div class="feed-search-row">
+      <input
+        v-model="searchQuery"
+        type="search"
+        placeholder="Search posts by title, text, category, or author..."
+        class="feed-search-input"
+        @input="onSearchInput"
+      />
+      <div class="feed-sort-toggle">
+        <button :class="['sort-btn', { active: sortBy === '' }]"     @click="setSort('')">Recent</button>
+        <button :class="['sort-btn', { active: sortBy === 'popular' }]" @click="setSort('popular')">Popular</button>
+      </div>
+    </div>
+
     <!-- ── Category filter tabs ── -->
     <!--
       Each tab calls selectCategory, which resets to page 1 and re-fetches.
@@ -116,6 +131,12 @@ import { usePosts } from '../composables/usePosts.js';
 import { useAuth } from '../composables/useAuth.js';
 import MediaEmbed from '../components/MediaEmbed.vue';
 
+// Debounce helper — waits `ms` ms after last call before firing `fn`
+const debounce = (fn, ms) => {
+  let t;
+  return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
+};
+
 // ─── COMPOSABLES ──────────────────────────────────────────────────────────────
 
 /**
@@ -174,6 +195,14 @@ const categoryEmoji = {
  */
 const activeCategory = ref('');
 
+// ─── SEARCH & SORT STATE ──────────────────────────────────────────────────────
+
+/** Current text in the search input (bound via v-model). */
+const searchQuery = ref('');
+
+/** Active sort: '' = newest first, 'popular' = most likes first. */
+const sortBy = ref('');
+
 // ─── PAGINATION STATE ─────────────────────────────────────────────────────────
 
 /**
@@ -200,7 +229,7 @@ const totalPages = ref(1);
  * All category and pagination helpers call this after updating their state.
  */
 const load = async () => {
-  const res = await fetchPosts(activeCategory.value, page.value);
+  const res = await fetchPosts(activeCategory.value, page.value, searchQuery.value, sortBy.value);
   if (res) totalPages.value = res.pages;
 };
 
@@ -224,6 +253,19 @@ const selectCategory = (cat) => {
  */
 const changePage = (p) => {
   page.value = p;
+  load();
+};
+
+/** Debounced handler for search input — resets to page 1 then reloads. */
+const onSearchInput = debounce(() => {
+  page.value = 1;
+  load();
+}, 400);
+
+/** Called when sort toggle is clicked. */
+const setSort = (s) => {
+  sortBy.value = s;
+  page.value = 1;
   load();
 };
 
@@ -305,6 +347,52 @@ onMounted(() => {
   padding: 10px 20px;
   font-size: 1rem;
   margin: 0;
+}
+
+/* Search + sort row */
+.feed-search-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.feed-search-input {
+  flex: 1;
+  min-width: 180px;
+  padding: 9px 14px;
+  border: 3px solid #000;
+  border-radius: 10px;
+  font-size: 0.92rem;
+  font-weight: 500;
+  background: #fff;
+  color: #000;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.feed-search-input:focus { border-color: #14532d; }
+
+.feed-sort-toggle {
+  display: flex;
+  gap: 4px;
+}
+
+.sort-btn {
+  padding: 7px 14px;
+  border-radius: 8px;
+  border: 3px solid #000;
+  background: #000;
+  color: pink;
+  font-weight: 700;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.sort-btn.active, .sort-btn:hover {
+  background: #14532d;
+  border-color: #14532d;
+  color: #fff;
 }
 
 /* Horizontal scrollable row of category filter buttons */

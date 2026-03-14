@@ -143,3 +143,44 @@ export const markOneRead = async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 };
+
+// ─── DELETE ONE NOTIFICATION ──────────────────────────────────────────────────
+
+/**
+ * DELETE /api/notifications/:id  (protected)
+ *
+ * Permanently deletes a single notification belonging to the current user.
+ *
+ * @param {import("express").Request}  req
+ * @param {import("express").Response} res
+ */
+export const deleteOne = async (req, res) => {
+  try {
+    const result = await Notification.deleteOne({ _id: req.params.id, recipient: req.user.id });
+    if (result.deletedCount === 0) return res.status(404).json({ message: "Notification not found" });
+    res.json({ message: "Notification deleted" });
+  } catch (err) {
+    console.error("❌ Delete Notification Error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+// ─── DELETE ALL NOTIFICATIONS ─────────────────────────────────────────────────
+
+/**
+ * DELETE /api/notifications  (protected)
+ *
+ * Permanently deletes every notification for the authenticated user.
+ *
+ * @param {import("express").Request}  req
+ * @param {import("express").Response} res
+ */
+export const deleteAll = async (req, res) => {
+  try {
+    await Notification.deleteMany({ recipient: req.user.id });
+    res.json({ message: "All notifications cleared" });
+  } catch (err) {
+    console.error("❌ Clear Notifications Error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};

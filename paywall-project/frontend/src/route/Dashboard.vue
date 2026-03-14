@@ -5,6 +5,7 @@
       <h1 class="dash-title">My Dashboard</h1>
       <div class="dash-actions">
         <router-link to="/create-post" class="auth-button dash-btn">+ New Post</router-link>
+        <router-link to="/create-post?private=true" class="auth-button dash-btn dash-btn--private">🔒 Private Post</router-link>
         <router-link to="/feed" class="auth-button dash-btn">Feed</router-link>
       </div>
     </div>
@@ -29,17 +30,54 @@
       </div>
     </div>
 
+    <!-- ── Search + filter + sort row ── -->
+    <div class="dash-filter-row">
+      <input
+        v-model="dashSearch"
+        type="search"
+        placeholder="Search your posts..."
+        class="dash-search-input"
+      />
+      <div class="dash-filter-tabs">
+        <button
+          v-for="cat in ['All', ...categories]" :key="cat"
+          :class="['dash-tab', { active: dashCat === (cat === 'All' ? '' : cat) }]"
+          @click="dashCat = cat === 'All' ? '' : cat"
+        >{{ cat }}</button>
+      </div>
+      <div class="dash-sort-toggle">
+        <button :class="['sort-btn', { active: dashSort === 'recent' }]"  @click="dashSort = 'recent'">Recent</button>
+        <button :class="['sort-btn', { active: dashSort === 'popular' }]" @click="dashSort = 'popular'">Popular</button>
+      </div>
+    </div>
+
     <!-- Loading / empty states -->
     <p v-if="loading" class="feed-status">Loading your posts...</p>
     <p v-else-if="!allPosts.length" class="feed-status">No posts yet. <router-link to="/create-post" class="create-link">Create your first post →</router-link></p>
 
+    <!-- Comments modal -->
+    <div v-if="commentsModal.show" class="dash-modal-overlay" @click.self="commentsModal.show = false">
+      <div class="dash-modal">
+        <div class="dash-modal-header">
+          <span class="dash-modal-title">💬 Comments</span>
+          <button class="dash-modal-close" @click="commentsModal.show = false">×</button>
+        </div>
+        <div v-if="!commentsModal.comments.length" class="dash-modal-empty">No comments yet.</div>
+        <div v-else class="dash-modal-list">
+          <div v-for="c in commentsModal.comments" :key="c._id" class="dash-modal-item">
+            <span class="dash-modal-user">@{{ c.author?.username || 'Unknown' }}</span>
+            <span class="dash-modal-text">{{ c.body }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <template v-else>
-      <!-- Private posts section — only shown when there are private posts -->
-      <div v-if="privatePosts.length" class="post-group">
+      <!-- Private posts section — only shown when there are private posts matching current filter -->
+      <div v-if="filteredPrivate.length" class="post-group">
         <h2 class="group-title">🔒 Private Posts</h2>
         <div class="posts-grid">
-          <div v-for="p in privatePosts" :key="p._id" class="dash-post-card private" @click="goToPost(p._id)">
-            <!-- Optional thumbnail from imageUrl -->
+          <div v-for="p in filteredPrivate" :key="p._id" class="dash-post-card private" @click="goToPost(p._id)">
             <img v-if="p.imageUrl" :src="p.imageUrl" class="card-thumb" alt="" />
             <div class="card-body">
               <div class="card-top">
@@ -51,8 +89,7 @@
               <p v-if="p.body" class="card-preview">{{ truncate(p.body, 80) }}</p>
               <div class="card-footer">
                 <span>❤️ {{ p.likes.length }}</span>
-                <span>💬 {{ p.comments.length }}</span>
-                <!-- Lock icon reinforces private status -->
+                <span class="comments-btn" @click.stop="openComments(p)">💬 {{ p.comments.length }}</span>
                 <span class="private-tag">🔒</span>
               </div>
             </div>
@@ -60,11 +97,11 @@
         </div>
       </div>
 
-      <!-- Public posts section — only shown when there are public posts -->
-      <div v-if="publicPosts.length" class="post-group">
+      <!-- Public posts section — only shown when there are public posts matching current filter -->
+      <div v-if="filteredPublic.length" class="post-group">
         <h2 class="group-title">🌐 Public Posts</h2>
         <div class="posts-grid">
-          <div v-for="p in publicPosts" :key="p._id" class="dash-post-card" @click="goToPost(p._id)">
+          <div v-for="p in filteredPublic" :key="p._id" class="dash-post-card" @click="goToPost(p._id)">
             <img v-if="p.imageUrl" :src="p.imageUrl" class="card-thumb" alt="" />
             <div class="card-body">
               <div class="card-top">
@@ -76,12 +113,15 @@
               <p v-if="p.body" class="card-preview">{{ truncate(p.body, 80) }}</p>
               <div class="card-footer">
                 <span>❤️ {{ p.likes.length }}</span>
-                <span>💬 {{ p.comments.length }}</span>
+                <span class="comments-btn" @click.stop="openComments(p)">💬 {{ p.comments.length }}</span>
               </div>
             </div>
           </div>
         </div>
       </div>
+
+      <!-- Empty state after filtering -->
+      <p v-if="!filteredPrivate.length && !filteredPublic.length" class="feed-status">No posts match your search.</p>
     </template>
   </div>
 </template>
@@ -97,12 +137,13 @@
  * The page is only rendered when `user.id` is present; Vue-Router guards
  * should redirect unauthenticated visitors before they reach this route.
  */
-import { computed, onMounted } from 'vue';
-import { useRouter } from 'vue-router';
+import { computed, ref, onMounted } from 'vue';
+import { useRouter, useRoute } from 'vue-router';
 import { useAuth } from '../composables/useAuth.js';
 import { usePosts } from '../composables/usePosts.js';
 
 const router = useRouter();
+const route  = useRoute();
 
 // ─── COMPOSABLES ─────────────────────────────────────────────────────────────
 
@@ -117,8 +158,31 @@ const { posts: allPosts, loading, fetchMyPosts } = usePosts();
 
 // ─── COMPUTED STATS ──────────────────────────────────────────────────────────
 
+// ─── FILTER / SEARCH / SORT STATE ────────────────────────────────────────────
+
+const categories = ['Music', 'Videos', 'Streamer', 'Pictures', 'Blogger / Writer'];
+
+/** Text typed in the dashboard search input (client-side filter). */
+const dashSearch = ref('');
+
+/** Selected category filter: '' = all. */
+const dashCat = ref('');
+
+/** Sort order: 'recent' or 'popular'. */
+const dashSort = ref('recent');
+
+// ─── COMMENTS MODAL STATE ────────────────────────────────────────────────────
+
+const commentsModal = ref({ show: false, comments: [] });
+
+const openComments = (post) => {
+  commentsModal.value = { show: true, comments: post.comments || [] };
+};
+
+// ─── COMPUTED STATS & FILTERED POSTS ─────────────────────────────────────────
+
 // Separate posts into public and private for the two card sections.
-const publicPosts = computed(() => allPosts.value.filter(p => !p.isPrivate));
+const publicPosts  = computed(() => allPosts.value.filter(p => !p.isPrivate));
 const privatePosts = computed(() => allPosts.value.filter(p => p.isPrivate));
 
 // Sum of all likes across every post owned by this user.
@@ -126,6 +190,30 @@ const totalLikes = computed(() => allPosts.value.reduce((sum, p) => sum + p.like
 
 // Sum of all comments across every post owned by this user.
 const totalComments = computed(() => allPosts.value.reduce((sum, p) => sum + p.comments.length, 0));
+
+/**
+ * Apply search + category filter + sort to a base post array.
+ * Used for both public and private post sections.
+ */
+const applyFilters = (base) => {
+  let arr = base;
+  if (dashCat.value) arr = arr.filter(p => p.category === dashCat.value);
+  if (dashSearch.value.trim()) {
+    const q = dashSearch.value.trim().toLowerCase();
+    arr = arr.filter(p =>
+      p.title?.toLowerCase().includes(q) ||
+      p.body?.toLowerCase().includes(q) ||
+      p.category?.toLowerCase().includes(q)
+    );
+  }
+  if (dashSort.value === 'popular') {
+    arr = [...arr].sort((a, b) => b.likes.length - a.likes.length);
+  }
+  return arr;
+};
+
+const filteredPublic  = computed(() => applyFilters(publicPosts.value));
+const filteredPrivate = computed(() => applyFilters(privatePosts.value));
 
 // ─── LIFECYCLE ───────────────────────────────────────────────────────────────
 
@@ -184,6 +272,166 @@ const formatDate = (d) => new Date(d).toLocaleDateString();
   padding: 8px 18px;
   font-size: 0.9rem;
   margin: 0;
+}
+.dash-btn--private {
+  border-color: #7f1d1d !important;
+  color: #ff9999 !important;
+}
+.dash-btn--private:hover { color: #ffd0d0 !important; }
+
+/* ── Filter row ── */
+.dash-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.dash-search-input {
+  flex: 1;
+  min-width: 160px;
+  padding: 8px 12px;
+  border: 3px solid #000;
+  border-radius: 10px;
+  font-size: 0.88rem;
+  font-weight: 500;
+  background: #fff;
+  color: #000;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.dash-search-input:focus { border-color: #14532d; }
+
+.dash-filter-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.dash-tab {
+  padding: 5px 11px;
+  border-radius: 16px;
+  border: 2px solid #000;
+  background: #000;
+  color: pink;
+  font-weight: 600;
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.dash-tab.active, .dash-tab:hover {
+  background: #14532d;
+  border-color: #14532d;
+  color: #fff;
+}
+
+.dash-sort-toggle { display: flex; gap: 4px; }
+
+.sort-btn {
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 2px solid #000;
+  background: #000;
+  color: pink;
+  font-weight: 700;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.sort-btn.active, .sort-btn:hover {
+  background: #14532d;
+  border-color: #14532d;
+  color: #fff;
+}
+
+/* Comments button inside card footer */
+.comments-btn {
+  cursor: pointer;
+  transition: color 0.15s;
+}
+.comments-btn:hover { color: #14532d; }
+
+/* ── Comments modal ── */
+.dash-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.dash-modal {
+  background: #fff;
+  border: 3px solid #000;
+  border-radius: 16px;
+  width: 100%;
+  max-width: 420px;
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.dash-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 2px solid #000;
+  background: pink;
+}
+
+.dash-modal-title { font-size: 1rem; font-weight: 700; color: #000; }
+
+.dash-modal-close {
+  background: none;
+  border: none;
+  font-size: 1.4rem;
+  font-weight: 700;
+  cursor: pointer;
+  color: #000;
+  line-height: 1;
+}
+
+.dash-modal-empty {
+  padding: 24px;
+  text-align: center;
+  font-weight: 600;
+  color: #555;
+}
+
+.dash-modal-list {
+  overflow-y: auto;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.dash-modal-item {
+  background: #f9f9f9;
+  border: 2px solid #000;
+  border-radius: 10px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.dash-modal-user {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #14532d;
+}
+
+.dash-modal-text {
+  font-size: 0.88rem;
+  color: #000;
+  word-break: break-word;
 }
 
 .dash-stats {

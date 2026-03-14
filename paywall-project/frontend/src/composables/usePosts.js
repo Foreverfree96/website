@@ -53,14 +53,14 @@ export function usePosts() {
    * @param {string} category - Category slug to filter by (optional)
    * @param {number} page     - 1-based page number (default 1)
    */
-  const fetchPosts = async (category = "", page = 1) => {
+  const fetchPosts = async (category = "", page = 1, q = "", sort = "") => {
     loading.value = true;
     error.value = "";
     try {
       const params = { page, limit: 20 };
-      // Only include the category param when it has a value — omitting it
-      // tells the backend to return posts from all categories
       if (category) params.category = category;
+      if (q)        params.q = q;
+      if (sort)     params.sort = sort;
       const res = await axios.get(API_URL, { params });
       posts.value = res.data.posts;
       return res.data; // includes total count / hasMore for pagination

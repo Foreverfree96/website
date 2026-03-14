@@ -137,6 +137,28 @@ export function useNotifications() {
     } catch {}
   };
 
+  /** Permanently deletes a single notification. */
+  const deleteOneNotif = async (id) => {
+    try {
+      await axios.delete(`${API_URL}/${id}`);
+      const idx = notifications.value.findIndex(n => n._id === id);
+      if (idx !== -1) {
+        const wasUnread = !notifications.value[idx].read;
+        notifications.value.splice(idx, 1);
+        if (wasUnread) unreadCount.value = Math.max(0, unreadCount.value - 1);
+      }
+    } catch {}
+  };
+
+  /** Permanently deletes all notifications for the current user. */
+  const deleteAllNotifs = async () => {
+    try {
+      await axios.delete(API_URL);
+      notifications.value = [];
+      unreadCount.value = 0;
+    } catch {}
+  };
+
   // ── Socket.io: Connect ──────────────────────────────────────────────────────
 
   /**
@@ -263,6 +285,8 @@ export function useNotifications() {
     fetchNotifications,
     markAllRead,
     markOneRead,
+    deleteOneNotif,
+    deleteAllNotifs,
     connectSocket,
     disconnectSocket,
     addDmHandler,

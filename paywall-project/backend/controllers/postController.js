@@ -114,7 +114,7 @@ const moderateImage = async (imageUrl) => {
  */
 export const getPosts = async (req, res) => {
   try {
-    const { category, page = 1, limit = 20 } = req.query;
+    const { category, page = 1, limit = 20, q, sort } = req.query;
 
     // Base filter: exclude flagged posts and explicitly private posts
     const filter = { moderationStatus: { $ne: "flagged" }, isPrivate: { $ne: true } };
@@ -129,16 +129,52 @@ export const getPosts = async (req, res) => {
       filter.author = { $nin: privateUsers.map(u => u._id) };
     }
 
-    const posts = (await Post.find(filter)
-      .sort({ createdAt: -1 })
-      .skip((page - 1) * limit)        // pagination offset
-      .limit(parseInt(limit))
-      .populate("author", "username categories")
-      .lean())
-      .filter(p => p.author);           // drop posts whose author document was deleted
+    // Full-text search: match title, body, category (regex), or author username
+    if (q && q.trim()) {
+      const matchingAuthors = await User.find({ username: { $regex: q.trim(), $options: "i" } })
+        .select("_id").lean();
+      const orClauses = [
+        { title:    { $regex: q.trim(), $options: "i" } },
+        { body:     { $regex: q.trim(), $options: "i" } },
+        { category: { $regex: q.trim(), $options: "i" } },
+      ];
+      if (matchingAuthors.length) orClauses.push({ author: { $in: matchingAuthors.map(u => u._id) } });
+      filter.$or = orClauses;
+    }
 
+    const lim = parseInt(limit);
+    const pg  = parseInt(page);
     const total = await Post.countDocuments(filter);
-    res.json({ posts, total, page: parseInt(page), pages: Math.ceil(total / limit) });
+
+    let posts;
+    if (sort === "popular") {
+      // Aggregate to sort by likes count descending
+      posts = await Post.aggregate([
+        { $match: filter },
+        { $addFields: { likesCount: { $size: "$likes" } } },
+        { $sort: { likesCount: -1, createdAt: -1 } },
+        { $skip: (pg - 1) * lim },
+        { $limit: lim },
+        { $lookup: {
+            from: "users",
+            localField: "author",
+            foreignField: "_id",
+            as: "author",
+            pipeline: [{ $project: { username: 1, categories: 1 } }],
+        }},
+        { $unwind: { path: "$author", preserveNullAndEmptyArrays: false } },
+      ]);
+    } else {
+      posts = (await Post.find(filter)
+        .sort({ createdAt: -1 })
+        .skip((pg - 1) * lim)
+        .limit(lim)
+        .populate("author", "username categories")
+        .lean())
+        .filter(p => p.author);           // drop posts whose author document was deleted
+    }
+
+    res.json({ posts, total, page: pg, pages: Math.ceil(total / lim) });
   } catch (err) {
     console.error("❌ Get Posts Error:", err);
     res.status(500).json({ message: "Server error" });

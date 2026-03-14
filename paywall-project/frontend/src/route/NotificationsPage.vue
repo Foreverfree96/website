@@ -4,14 +4,10 @@
     <!-- ── Page header ── -->
     <div class="notif-header">
       <h1 class="notif-title">Notifications</h1>
-      <!--
-        "Mark all read" is only rendered when there is at least one notification.
-        Clicking it calls markAllRead, which sends a PATCH to the API and zeroes
-        the nav badge in a single action.
-      -->
-      <button v-if="notifications.length" class="mark-read-btn" @click="markAllRead">
-        Mark all read
-      </button>
+      <div v-if="notifications.length" class="notif-header-actions">
+        <button class="mark-read-btn" @click="markAllRead">Mark all read</button>
+        <button class="clear-all-btn" @click="handleClearAll">Clear all</button>
+      </div>
     </div>
 
     <!-- ── Content states ── -->
@@ -41,8 +37,11 @@
           <span class="notif-text">{{ textFor(n) }}</span>
         </div>
 
-        <!-- Right side: formatted creation date pushed to the far right -->
-        <span class="notif-date">{{ formatDate(n.createdAt) }}</span>
+        <!-- Right side: date + delete button -->
+        <div class="notif-card__right">
+          <span class="notif-date">{{ formatDate(n.createdAt) }}</span>
+          <button class="notif-delete-btn" @click.stop="handleDeleteOne(n._id)" title="Delete">×</button>
+        </div>
       </div>
     </div>
 
@@ -93,7 +92,7 @@ const router = useRouter();
  *   markOneRead      — sends PATCH /api/notifications/:id/read for a single
  *                      notification and decrements unreadCount by 1.
  */
-const { notifications, loading, fetchNotifications, markAllRead, markOneRead } = useNotifications();
+const { notifications, loading, fetchNotifications, markAllRead, markOneRead, deleteOneNotif, deleteAllNotifs } = useNotifications();
 
 // ─── LIFECYCLE ────────────────────────────────────────────────────────────────
 
@@ -124,6 +123,9 @@ onMounted(() => fetchNotifications());
  *                           Optional chaining (n.post?._id) guards against
  *                           notifications whose post was deleted.
  */
+const handleDeleteOne = (id) => deleteOneNotif(id);
+const handleClearAll = () => deleteAllNotifs();
+
 const handleClick = async (n) => {
   // Step 1: Mark unread notification as read before navigating.
   if (!n.read) await markOneRead(n._id);
@@ -208,7 +210,13 @@ const formatDate = (d) => new Date(d).toLocaleDateString();
   margin: 0;
 }
 
-.mark-read-btn {
+.notif-header-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.mark-read-btn, .clear-all-btn {
   background: #000;
   color: pink;
   border: 3px solid #14532d;
@@ -220,6 +228,8 @@ const formatDate = (d) => new Date(d).toLocaleDateString();
   transition: transform 0.2s ease;
 }
 .mark-read-btn:hover { transform: translateY(-2px); color: rgb(125, 190, 157); }
+.clear-all-btn { border-color: #7f1d1d; }
+.clear-all-btn:hover { transform: translateY(-2px); color: #ff9999; }
 
 /* Shared loading / empty state style (reuses feed-status name for consistency) */
 .feed-status {
@@ -272,13 +282,36 @@ const formatDate = (d) => new Date(d).toLocaleDateString();
   color: #000;
 }
 
-/* Date stamp — pushed to the right; flex-shrink: 0 stops it from collapsing */
+/* Right side wrapper: date + delete button */
+.notif-card__right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  margin-left: 12px;
+}
+
+/* Date stamp */
 .notif-date {
   font-size: 0.8rem;
   color: #777;
   flex-shrink: 0;
-  margin-left: 12px;
 }
+
+/* × delete button on each notification card */
+.notif-delete-btn {
+  background: none;
+  border: none;
+  color: #bbb;
+  font-size: 1.1rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+  transition: color 0.15s;
+  flex-shrink: 0;
+}
+.notif-delete-btn:hover { color: #e11d48; }
 
 /* ── Responsive ── */
 
