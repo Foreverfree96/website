@@ -482,8 +482,11 @@ const enterRecoverMode = async () => {
 
 const restoreMessage = async (body) => {
   if (!body.trim() || !activeConvo.value) return;
-  recoverMode.value = false;
-  recoverMsgs.value = [];
+  // Remove this message from the list immediately
+  const idx = recoverMsgs.value.findIndex(m => m.body === body);
+  if (idx !== -1) recoverMsgs.value.splice(idx, 1);
+  // Close panel if nothing left
+  if (!recoverMsgs.value.length) recoverMode.value = false;
   try {
     const res = await axios.post(`${API}/${activeConvo.value._id}`, { body });
     messages.value.push(res.data);
