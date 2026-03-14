@@ -344,18 +344,24 @@ export const clearConversation = async (req, res) => {
       return res.status(403).json({ message: "Not a participant" });
 
     // ── Snapshot the last 20 messages before wiping ──────────────────────────
-    // This gives moderators evidence to act on if a DM report is filed later
+    // Merge with any existing snapshot so report mode always has evidence even
+    // after multiple clears (e.g. second clear on an already-empty chat).
     const recentMsgs = await Message.find({ conversation: convo._id })
       .sort({ createdAt: -1 }).limit(20)
       .populate("sender", "username").lean();
 
-    // Reverse to store them oldest-first in the snapshot
-    convo.clearedSnapshot = recentMsgs.reverse().map(m => ({
+    const newEntries = recentMsgs.reverse().map(m => ({
       sender: m.sender._id,
       senderUsername: m.sender.username,
       body: m.body,
       sentAt: m.createdAt,
     }));
+
+    // Merge new entries with the previous snapshot, dedupe by sentAt, keep newest 50
+    const existing = convo.clearedSnapshot || [];
+    const seen = new Set(existing.map(e => String(e.sentAt)));
+    const merged = [...existing, ...newEntries.filter(e => !seen.has(String(e.sentAt)))];
+    convo.clearedSnapshot = merged.slice(-50);
 
     // Delete all message documents for this conversation
     await Message.deleteMany({ conversation: convo._id });
