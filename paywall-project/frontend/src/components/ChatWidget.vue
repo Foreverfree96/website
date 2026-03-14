@@ -479,7 +479,7 @@ const _markRecovered = (convoId, sentAt) => {
     set.add(String(sentAt));
     localStorage.setItem(_recoveredKey(convoId), JSON.stringify([...set]));
     // Recovery resets the cleared flag — next clear starts fresh with no alert
-    sessionStorage.removeItem(_clearedKey(convoId));
+    localStorage.removeItem(_clearedKey(convoId));
 };
 
 const enterRecoverMode = async () => {
@@ -494,11 +494,8 @@ const enterRecoverMode = async () => {
     recoverLoading.value = true;
     try {
         const res = await axios.get(`${API}/${activeConvo.value._id}/snapshot`);
-        const myId       = userId.value?.toString();
-        const myUsername = user.value?.username;
         const alreadyDone = _getRecovered(activeConvo.value._id);
         recoverMsgs.value = (res.data || [])
-            .filter(m => m.sender?.toString() === myId || m.senderUsername === myUsername)
             .filter(m => !alreadyDone.has(String(m.sentAt)))
             .sort((a, b) => new Date(a.sentAt) - new Date(b.sentAt));
     } catch {
@@ -782,6 +779,7 @@ const sendMsg = async () => {
     try {
         const res = await axios.post(`${API}/${activeConvo.value._id}`, { body });
         messages.value.push(res.data);
+        localStorage.removeItem(_clearedKey(activeConvo.value._id));
         // Keep the conversation preview in sync without re-fetching the list
         activeConvo.value.lastMessage = body;
         await nextTick();
@@ -824,8 +822,8 @@ const executeUnsend = async () => {
 // ─── CLEAR CHAT ACTIONS ───────────────────────────────────────────────────────
 
 const _clearedKey    = (id) => `cleared_convo_${id}`;
-const _wasCleared    = (id) => !!sessionStorage.getItem(_clearedKey(id));
-const _markCleared   = (id) => sessionStorage.setItem(_clearedKey(id), '1');
+const _wasCleared    = (id) => !!localStorage.getItem(_clearedKey(id));
+const _markCleared   = (id) => localStorage.setItem(_clearedKey(id), '1');
 const _noRecoverKey  = (id) => `no_recover_${id}`;
 
 /**
@@ -862,8 +860,11 @@ const executeClear = async () => {
         await axios.delete(`${API}/${convoId}/clear`);
         if (wasWarned) {
             // Second clear: block recover (snapshot kept on server for reporting)
-            sessionStorage.removeItem(_clearedKey(convoId));
+            localStorage.removeItem(_clearedKey(convoId));
             localStorage.setItem(_noRecoverKey(convoId), '1');
+            recoverMode.value = false;
+            recoverMsgs.value = [];
+            recoverBlocked.value = true;
         } else {
             // First clear: allow recover, lift any previous block
             _markCleared(convoId);
