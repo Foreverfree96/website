@@ -206,7 +206,7 @@
         <!-- Clear conversation: wipes all messages for both participants -->
         <AppModal
             :show="clearModal"
-            title="Clear Conversation"
+            :title="clearModalTitle"
             :message="clearMsg"
             danger
             ok-label="Clear All"
@@ -816,9 +816,14 @@ const _clearedKey    = (id) => `cleared_convo_${id}`;
 const _wasCleared    = (id) => !!localStorage.getItem(_clearedKey(id));
 const _markCleared   = (id) => localStorage.setItem(_clearedKey(id), '1');
 
+const clearModalTitle = computed(() =>
+    activeConvo.value && _wasCleared(activeConvo.value._id)
+        ? '⚠️ Permanently Unrecoverable'
+        : 'Clear Conversation'
+);
 const clearMsg = computed(() =>
     activeConvo.value && _wasCleared(activeConvo.value._id)
-        ? 'Delete all messages in this chat? This affects both sides and cannot be undone. ⚠️ Warning: this chat was already cleared once — messages are permanently unrecoverable.'
+        ? 'This chat was already cleared once. Any remaining messages are permanently unrecoverable and cannot be restored.'
         : 'Delete all messages in this chat? This affects both sides and cannot be undone.'
 );
 
