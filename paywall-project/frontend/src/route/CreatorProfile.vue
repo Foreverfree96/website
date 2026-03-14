@@ -98,7 +98,7 @@
  * The follow/unfollow button is only shown to logged-in users who are not
  * the profile owner. Guests are redirected to /login on click.
  */
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import axios from 'axios';
 import { usePosts } from '../composables/usePosts.js';
@@ -185,26 +185,33 @@ const platformLabel = (p) => ({
  *
  * Sets creator to null on any API error so the "not found" message renders.
  */
-onMounted(async () => {
+const loadCreator = async (username) => {
+  creator.value = null;
+  pageLoading.value = true;
+  showModal.value = false;
   try {
-    const res = await axios.get(`${API_USERS}/creator/${route.params.username}`);
+    const res = await axios.get(`${API_USERS}/creator/${username}`);
     creator.value = res.data;
     followerCount.value = res.data.followerCount;
 
-    // Check if the logged-in visitor is already following this creator.
     if (user.value.id) {
       isFollowing.value = res.data.followers?.some(f => f._id === user.value.id);
     }
 
-    // Fetch all posts and filter client-side to this creator's posts.
-    // (A dedicated endpoint per creator would be cleaner but this reuses the existing composable.)
     await fetchPosts('', 1);
-    posts.value = posts.value.filter(p => p.author.username === route.params.username);
+    posts.value = posts.value.filter(p => p.author.username === username);
   } catch {
     creator.value = null;
   } finally {
     pageLoading.value = false;
   }
+};
+
+onMounted(() => loadCreator(route.params.username));
+
+// Re-load when navigating between creator profiles without a full page reload
+watch(() => route.params.username, (newUsername) => {
+  if (newUsername) loadCreator(newUsername);
 });
 
 // ─── FOLLOW / UNFOLLOW ───────────────────────────────────────────────────────
