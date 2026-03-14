@@ -837,6 +837,7 @@ const executeClear = async () => {
   const convoId = activeConvo.value?._id;
   clearModal.value = false;
   if (!convoId) return;
+  const wasWarned = _wasCleared(convoId);
   // Snapshot current state for rollback
   const backup = messages.value.slice();
   const backupMsg = activeConvo.value.lastMessage;
@@ -845,7 +846,8 @@ const executeClear = async () => {
   activeConvo.value.lastMessage = '';
   try {
     await axios.delete(`${API}/${convoId}/clear`);
-    _markCleared(convoId);
+    if (wasWarned) localStorage.removeItem(_clearedKey(convoId));
+    else _markCleared(convoId);
   } catch (err) {
     // Rollback both the message array and the preview text
     messages.value = backup;
