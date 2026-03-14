@@ -818,6 +818,46 @@ export const getCreatorProfile = async (req, res) => {
   }
 };
 
+// ─── GET ALL PUBLIC CREATORS ──────────────────────────────────────────────────
+
+/**
+ * GET /api/users/creators  (public)
+ *
+ * Returns a list of all public (non-private) accounts, sorted by follower count
+ * descending so the most popular creators appear first.
+ *
+ * Optional query params:
+ *   ?search=<string>  — case-insensitive prefix match on username
+ *
+ * Each item: { _id, username, bio, categories, followerCount }
+ */
+export const getAllCreators = async (req, res) => {
+  try {
+    const filter = { isPrivateAccount: { $ne: true } };
+    if (req.query.search) {
+      filter.username = { $regex: req.query.search, $options: 'i' };
+    }
+    const users = await User.find(filter)
+      .select('username bio categories followers')
+      .lean();
+
+    const result = users
+      .map(u => ({
+        _id: u._id,
+        username: u.username,
+        bio: u.bio || '',
+        categories: u.categories || [],
+        followerCount: u.followers?.length || 0,
+      }))
+      .sort((a, b) => b.followerCount - a.followerCount);
+
+    res.json(result);
+  } catch (err) {
+    console.error('❌ Get All Creators Error:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
 // ─── GET MUTUAL FOLLOWERS ─────────────────────────────────────────────────────
 
 /**

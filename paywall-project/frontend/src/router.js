@@ -37,6 +37,7 @@ import CreatorProfile from "./route/CreatorProfile.vue";
 import NotificationsPage from "./route/NotificationsPage.vue";
 import AdminPage from "./route/AdminPage.vue";
 import MessagesPage from "./route/MessagesPage.vue";
+import CreatorsPage from "./route/CreatorsPage.vue";
 
 // ── Route definitions ─────────────────────────────────────────────────────────
 
@@ -72,6 +73,9 @@ const routes = [
 
   // Individual post — :id is the MongoDB ObjectId of the post
   { path: "/post/:id", component: PostPage },
+
+  // Browse all public creators
+  { path: "/creators", component: CreatorsPage },
 
   // Public creator profile — :username is the creator's unique username
   { path: "/creator/:username", component: CreatorProfile },

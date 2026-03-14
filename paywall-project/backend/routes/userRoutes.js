@@ -40,6 +40,7 @@ import {
   togglePrivateAccount,// PUT  /toggle-private-account — flip the account privacy flag
   blockUser,           // POST /block/:userId   — add a user to the block list
   unblockUser,         // DELETE /block/:userId — remove a user from the block list
+  getAllCreators,       // GET  /creators        — list all public creator accounts
 } from "../controllers/userController.js";
 import { protect, paywall } from "../middleware/auth.js";
 
@@ -78,6 +79,9 @@ router.get("/confirm-email-change/:token", confirmEmailChange);
 
 /** Check whether a username is already taken (used during sign-up). */
 router.get("/check-username", checkUsername);
+
+/** Browse all public creator accounts (optionally filtered by ?search=). */
+router.get("/creators", getAllCreators);
 
 /** View a creator's public profile, posts, and follower counts. */
 router.get("/creator/:username", getCreatorProfile);

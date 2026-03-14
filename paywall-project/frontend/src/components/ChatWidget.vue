@@ -472,7 +472,7 @@ const _markRecovered = (convoId, sentAt) => {
     set.add(String(sentAt));
     localStorage.setItem(_recoveredKey(convoId), JSON.stringify([...set]));
     // Recovery resets the cleared flag — next clear starts fresh with no alert
-    localStorage.removeItem(_clearedKey(convoId));
+    sessionStorage.removeItem(_clearedKey(convoId));
 };
 
 const enterRecoverMode = async () => {
@@ -812,8 +812,8 @@ const executeUnsend = async () => {
 // ─── CLEAR CHAT ACTIONS ───────────────────────────────────────────────────────
 
 const _clearedKey    = (id) => `cleared_convo_${id}`;
-const _wasCleared    = (id) => !!localStorage.getItem(_clearedKey(id));
-const _markCleared   = (id) => localStorage.setItem(_clearedKey(id), '1');
+const _wasCleared    = (id) => !!sessionStorage.getItem(_clearedKey(id));
+const _markCleared   = (id) => sessionStorage.setItem(_clearedKey(id), '1');
 
 /**
  * openClearConfirm
@@ -848,7 +848,7 @@ const executeClear = async () => {
     try {
         await axios.delete(`${API}/${convoId}/clear${wasWarned ? '?forceWipe=true' : ''}`);
         // Cycle: first clear sets flag (next shows warning), warned clear resets it (next is instant)
-        if (wasWarned) localStorage.removeItem(_clearedKey(convoId));
+        if (wasWarned) sessionStorage.removeItem(_clearedKey(convoId));
         else _markCleared(convoId);
         // Reset the recovered-messages set so the fresh snapshot is fully visible next recover
         localStorage.removeItem(_recoveredKey(convoId));

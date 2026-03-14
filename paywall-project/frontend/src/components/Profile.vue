@@ -91,12 +91,43 @@
                     </button>
                 </div>
 
+                <!-- My Network: followers / following counts with clickable modal -->
+                <div class="dashboard-section">
+                    <h2 class="section-title">My Network</h2>
+                    <div class="net-stats">
+                        <button class="net-stat-btn" @click="openNetModal('followers')">
+                            <span class="net-stat-count">{{ followersList.length }}</span>
+                            <span class="net-stat-label">Followers</span>
+                        </button>
+                        <button class="net-stat-btn" @click="openNetModal('following')">
+                            <span class="net-stat-count">{{ followingList.length }}</span>
+                            <span class="net-stat-label">Following</span>
+                        </button>
+                    </div>
+                </div>
+
                 <!-- Delete Account — styled with danger colours to signal destructiveness -->
                 <div class="dashboard-section delete-box">
                     <h2 class="section-title danger-title">Danger Zone</h2>
                     <p class="section-hint">Permanently deletes your account and all your posts. This cannot be undone.</p>
                     <!-- Opens a confirmation modal rather than deleting immediately -->
                     <button @click="confirmDelete" class="btn-black delete-btn">Delete Account</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Followers / Following Modal -->
+    <div v-if="showNetModal" class="confirm-overlay" @click.self="showNetModal = false">
+        <div class="confirm-box net-modal-box">
+            <div class="net-modal-header">
+                <h2 class="net-modal-title">{{ netModalType === 'followers' ? 'Followers' : 'Following' }}</h2>
+                <button class="modal-close-btn" @click="showNetModal = false">✕</button>
+            </div>
+            <div v-if="!netModalList.length" class="net-modal-empty">No users yet.</div>
+            <div v-else class="net-modal-list">
+                <div v-for="u in netModalList" :key="u._id" class="net-modal-user" @click="goToUser(u.username)">
+                    @{{ u.username }}
                 </div>
             </div>
         </div>
@@ -142,8 +173,13 @@
  * ref from the auth composable) and getDonationsTotal() (stored locally for display).
  */
 
-import { ref, onMounted } from 'vue';
+import { ref, computed, onMounted } from 'vue';
+import { useRouter } from 'vue-router';
+import axios from 'axios';
 import { useAuth } from '../composables/useAuth.js';
+
+const API_USERS = import.meta.env.VITE_API_URL + '/api/users';
+const router = useRouter();
 
 // ─── AUTH COMPOSABLE ──────────────────────────────────────────────────────────
 
@@ -216,6 +252,20 @@ const socialLinks = ref({ youtube: '', instagram: '', twitch: '', tiktok: '', so
 // Lifetime donations received by this creator; fetched in onMounted
 const donationsTotal = ref(0);
 
+// ─── NETWORK STATE (followers / following) ───────────────────────────────────
+
+const followersList  = ref([]);
+const followingList  = ref([]);
+const showNetModal   = ref(false);
+const netModalType   = ref('followers'); // 'followers' | 'following'
+
+const netModalList = computed(() =>
+  netModalType.value === 'followers' ? followersList.value : followingList.value
+);
+
+const openNetModal = (type) => { netModalType.value = type; showNetModal.value = true; };
+const goToUser = (username) => { showNetModal.value = false; router.push(`/creator/${username}`); };
+
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 
 /**
@@ -262,6 +312,15 @@ onMounted(async () => {
         // Populate social link inputs; fall back to empty string for any missing platform
         const sl = user.value.socialLinks || {};
         for (const k of socialPlatforms) socialLinks.value[k] = sl[k] || '';
+
+        // Fetch followers / following lists using the public creator profile endpoint
+        if (user.value.username) {
+            try {
+                const netRes = await axios.get(`${API_USERS}/creator/${user.value.username}`);
+                followersList.value  = netRes.data.followers  || [];
+                followingList.value  = netRes.data.following  || [];
+            } catch { /* non-critical — silently ignore */ }
+        }
     } catch (err) {
         errorMessage.value = 'Failed to load profile.';
     }
@@ -697,6 +756,100 @@ const doDeleteAccount = async () => {
     text-decoration: underline;
     cursor: pointer;
 }
+
+/* ── My Network section ── */
+
+.net-stats {
+    display: flex;
+    gap: 16px;
+}
+
+.net-stat-btn {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    background: #000;
+    color: pink;
+    border: 3px solid #14532d;
+    border-radius: 10px;
+    padding: 12px 8px;
+    cursor: pointer;
+    transition: transform 0.2s ease;
+}
+.net-stat-btn:hover { transform: translateY(-2px); color: rgb(125, 190, 157); }
+
+.net-stat-count {
+    font-size: 1.4rem;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.net-stat-label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+/* ── Network modal overrides ── */
+
+.net-modal-box {
+    max-width: 360px;
+    width: 100%;
+    max-height: 70vh;
+    overflow-y: auto;
+    text-align: left;
+}
+
+.net-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+}
+
+.net-modal-title {
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: #000;
+    margin: 0;
+}
+
+.modal-close-btn {
+    background: none;
+    border: none;
+    font-size: 1.2rem;
+    font-weight: 700;
+    cursor: pointer;
+    color: #7f1d1d;
+}
+
+.net-modal-empty {
+    color: #555;
+    font-size: 0.95rem;
+    text-align: center;
+    padding: 16px 0;
+}
+
+.net-modal-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.net-modal-user {
+    background: #000;
+    color: pink;
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-weight: 700;
+    cursor: pointer;
+    font-size: 0.95rem;
+    transition: transform 0.15s;
+}
+.net-modal-user:hover { transform: translateX(4px); color: rgb(125, 190, 157); }
 
 .confirm-overlay {
     position: fixed;
