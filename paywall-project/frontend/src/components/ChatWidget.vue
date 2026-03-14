@@ -206,10 +206,10 @@
         <!-- Clear conversation: wipes all messages for both participants -->
         <AppModal
             :show="clearModal"
-            :title="clearModalTitle"
-            :message="clearMsg"
+            title="⚠️ Permanently Unrecoverable"
+            message="This chat was already cleared once. Any remaining messages are permanently unrecoverable and cannot be restored."
             danger
-            ok-label="Clear All"
+            ok-label="Clear Anyway"
             cancel-label="Cancel"
             @ok="executeClear"
             @cancel="clearModal = false"
@@ -816,22 +816,19 @@ const _clearedKey    = (id) => `cleared_convo_${id}`;
 const _wasCleared    = (id) => !!localStorage.getItem(_clearedKey(id));
 const _markCleared   = (id) => localStorage.setItem(_clearedKey(id), '1');
 
-const clearModalTitle = computed(() =>
-    activeConvo.value && _wasCleared(activeConvo.value._id)
-        ? '⚠️ Permanently Unrecoverable'
-        : 'Clear Conversation'
-);
-const clearMsg = computed(() =>
-    activeConvo.value && _wasCleared(activeConvo.value._id)
-        ? 'This chat was already cleared once. Any remaining messages are permanently unrecoverable and cannot be restored.'
-        : 'Delete all messages in this chat? This affects both sides and cannot be undone.'
-);
-
 /**
  * openClearConfirm
  * Opens the "Clear Conversation" confirmation modal.
  */
-const openClearConfirm = () => { clearModal.value = true; };
+const openClearConfirm = () => {
+    // First clear: no confirmation, just do it immediately
+    // Second+ clear: show the unrecoverable warning first
+    if (activeConvo.value && _wasCleared(activeConvo.value._id)) {
+        clearModal.value = true;
+    } else {
+        executeClear();
+    }
+};
 
 /**
  * executeClear
