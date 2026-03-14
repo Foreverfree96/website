@@ -264,7 +264,7 @@
 
   <!-- Clear chat -->
   <AppModal :show="clearModal" title="Clear Conversation"
-    message="Delete all messages in this chat? This affects both sides and cannot be undone. ⚠️ Warning: if this chat has already been cleared once, messages are permanently unrecoverable." danger ok-label="Clear All"
+    :message="clearMsg" danger ok-label="Clear All"
     cancel-label="Cancel" @ok="executeClear" @cancel="clearModal = false" />
 
   <!-- Block user -->
@@ -800,6 +800,16 @@ const executeUnsend = async () => {
 
 // ─── CLEAR CHAT ACTIONS ───────────────────────────────────────────────────────
 
+const _clearedKey  = (id) => `cleared_convo_${id}`;
+const _wasCleared  = (id) => !!localStorage.getItem(_clearedKey(id));
+const _markCleared = (id) => localStorage.setItem(_clearedKey(id), '1');
+
+const clearMsg = computed(() =>
+  activeConvo.value && _wasCleared(activeConvo.value._id)
+    ? 'Delete all messages in this chat? This affects both sides and cannot be undone. ⚠️ Warning: this chat was already cleared once — messages are permanently unrecoverable.'
+    : 'Delete all messages in this chat? This affects both sides and cannot be undone.'
+);
+
 /**
  * openClearConfirm
  * Opens the "Clear Conversation" confirmation modal.
@@ -823,6 +833,7 @@ const executeClear = async () => {
   activeConvo.value.lastMessage = '';
   try {
     await axios.delete(`${API}/${convoId}/clear`);
+    _markCleared(convoId);
   } catch (err) {
     // Rollback both the message array and the preview text
     messages.value = backup;
