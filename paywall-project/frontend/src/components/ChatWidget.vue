@@ -505,7 +505,8 @@ const enterRecoverMode = async () => {
 // Insert a message into the messages array at the position matching its original sentAt
 const _insertAtOriginalPosition = (msg, originalSentAt) => {
     const t = new Date(originalSentAt || msg.createdAt);
-    const insertIdx = messages.value.findIndex(m => new Date(m.createdAt) > t);
+    // Use _origSentAt for previously recovered messages so their position is correct too
+    const insertIdx = messages.value.findIndex(m => new Date(m._origSentAt || m.createdAt) > t);
     if (insertIdx === -1) messages.value.push(msg);
     else messages.value.splice(insertIdx, 0, msg);
 };
@@ -518,6 +519,7 @@ const restoreMessage = async (body) => {
     if (!recoverMsgs.value.length) recoverMode.value = false;
     try {
         const res = await axios.post(`${API}/${activeConvo.value._id}`, { body });
+        if (sentAt) res.data._origSentAt = String(sentAt);
         _insertAtOriginalPosition(res.data, sentAt);
         activeConvo.value.lastMessage = body;
         if (sentAt) _markRecovered(activeConvo.value._id, sentAt);
