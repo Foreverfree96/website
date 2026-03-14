@@ -199,5 +199,32 @@ const onSearch = () => {}; // filtered computed handles it
 @media (max-width: 480px) {
   .creators-page { padding: 0 8px 40px; }
   .creator-card { padding: 14px; border-radius: 10px; }
+  .creator-card__username { font-size: 1rem; }
+  .page-title { font-size: 1.3rem; }
+}
+
+/* Small phone (360px) */
+@media (max-width: 360px) {
+  .creators-page { padding: 0 6px 36px; margin: 12px auto; }
+  .page-title { font-size: 1.2rem; margin-bottom: 14px; }
+  .creator-card { padding: 12px; border-radius: 8px; gap: 8px; }
+  .creator-card__username { font-size: 0.95rem; }
+  .creator-card__followers { font-size: 0.74rem; }
+  .badge { font-size: 0.68rem; padding: 2px 8px; }
+  .creator-card__bio { font-size: 0.82rem; }
+  .search-input { padding: 8px 12px; font-size: 0.9rem; margin-bottom: 16px; }
+}
+
+/* Very small phone (320px) */
+@media (max-width: 320px) {
+  .creators-page { padding: 0 4px 32px; }
+  .creator-card { padding: 10px; }
+  .creator-card__username { font-size: 0.9rem; }
+}
+
+/* Landscape phone */
+@media (max-height: 500px) and (orientation: landscape) {
+  .creators-page { margin: 8px auto; }
+  .page-title { font-size: 1.4rem; margin-bottom: 12px; }
 }
 </style>

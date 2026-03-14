@@ -577,6 +577,8 @@ const doDeleteAccount = async () => {
   .social-grid { grid-template-columns: 1fr; gap: 0; }
   .btn-black { padding: 8px 16px; font-size: 0.9rem; }
   .confirm-box { padding: 22px 20px; min-width: 240px; max-width: calc(100% - 32px); }
+  .net-modal-box { max-width: calc(100% - 32px); padding: 18px; }
+  .net-stat-count { font-size: 1.2rem; }
 }
 
 /* Phone */
@@ -586,6 +588,11 @@ const doDeleteAccount = async () => {
   .dashboard-section { padding: 14px; }
   .cat-badge { padding: 5px 11px; font-size: 0.78rem; }
   .confirm-box { padding: 18px 16px; min-width: 220px; }
+  .net-stat-btn { padding: 10px 6px; }
+  .net-stat-count { font-size: 1.1rem; }
+  .net-stat-label { font-size: 0.74rem; }
+  .net-modal-box { padding: 16px; border-radius: 10px; }
+  .net-modal-user { padding: 9px 12px; font-size: 0.9rem; }
 }
 
 /* Small phone (360px) */
@@ -597,6 +604,10 @@ const doDeleteAccount = async () => {
   .confirm-box { padding: 16px 12px; min-width: 200px; }
   .confirm-actions { flex-direction: column; gap: 8px; }
   .confirm-cancel, .confirm-delete { width: 100%; justify-content: center; }
+  .net-stats { gap: 10px; }
+  .net-stat-btn { padding: 9px 4px; }
+  .net-stat-count { font-size: 1rem; }
+  .net-modal-user { padding: 8px 11px; font-size: 0.85rem; }
 }
 
 /* Very small phone (320px) */
@@ -604,6 +615,10 @@ const doDeleteAccount = async () => {
   .profile-page { padding: 0 6px 36px; }
   .dashboard-section { padding: 12px; }
   .profile-title { font-size: 1.1rem; }
+  .net-stats { gap: 8px; }
+  .net-stat-btn { padding: 8px 4px; border-radius: 8px; }
+  .net-stat-count { font-size: 0.95rem; }
+  .net-stat-label { font-size: 0.7rem; }
 }
 
 /* Landscape phone */
