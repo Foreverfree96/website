@@ -29,7 +29,6 @@
         <div class="nav-group nav-left">
           <router-link id="home-btn" to="/" class="nav-link">Home</router-link>
           <router-link id="feed-btn" to="/feed" class="nav-link">Feed</router-link>
-          <router-link id="creators-btn" to="/creators" class="nav-link">Creators</router-link>
 
           <!-- Links shown only when the user is NOT logged in -->
           <template v-if="!isLoggedIn">
@@ -39,6 +38,7 @@
 
           <!-- Links shown only when the user IS logged in -->
           <template v-else>
+            <router-link id="creators-btn" to="/creators" class="nav-link">Creators</router-link>
             <router-link id="dashboard-btn" to="/dashboard" class="nav-link">Dashboard</router-link>
             <router-link id="profile-btn" to="/profile" class="nav-link">Profile</router-link>
             <router-link id="donate-btn" to="/donations" class="nav-link">Donate</router-link>
