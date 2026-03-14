@@ -23,16 +23,22 @@
                     </div>
                     <!-- Action buttons only appear when a conversation is open -->
                     <div v-if="activeConvo" class="cw-header-actions">
-                        <!-- Normal mode: Report / Clear Chat / Block -->
-                        <button v-if="!reportMode" class="cw-report" @click="enterReportMode">🚩 Report</button>
-                        <template v-if="!reportMode">
-                            <button class="cw-clear" @click="openClearConfirm">🗑 Clear Chat</button>
+                        <!-- Normal mode: Report / Recover / Clear Chat / Block -->
+                        <template v-if="!reportMode && !recoverMode">
+                            <button class="cw-report" @click="enterReportMode">🚩 Report</button>
+                            <button class="cw-recover" @click="enterRecoverMode">📥 Recover</button>
+                            <button class="cw-clear" @click="openClearConfirm">🗑 Clear</button>
                             <button class="cw-block" @click="openBlockConfirm">🚫 Block</button>
                         </template>
                         <!-- Report mode: selection counter + Cancel -->
-                        <template v-else>
+                        <template v-else-if="reportMode">
                             <span class="cw-report-count">{{ reportSelected.size }}/25 selected</span>
                             <button class="cw-report-cancel" @click="cancelReportMode">Cancel</button>
+                        </template>
+                        <!-- Recover mode: label + Cancel -->
+                        <template v-else-if="recoverMode">
+                            <span class="cw-report-count">📥 Recover messages</span>
+                            <button class="cw-report-cancel" @click="cancelRecoverMode">Cancel</button>
                         </template>
                     </div>
                 </div>
@@ -144,6 +150,21 @@
                             </button>
                         </div>
                         <p v-if="reportError" class="cw-report-err">{{ reportError }}</p>
+                    </div>
+
+                    <!-- ── RECOVER PANEL ────────────────────────────────────────────────
+               Shows unsent/cleared messages the current user sent.
+               Each item has a Restore button that fills the draft. -->
+                    <div v-if="recoverMode" class="cw-recover-panel">
+                        <p v-if="recoverLoading" class="cw-status">Loading...</p>
+                        <p v-else-if="!recoverMsgs.length" class="cw-recover-empty">No recoverable messages found.</p>
+                        <div v-else class="cw-recover-list">
+                            <div v-for="(m, i) in recoverMsgs" :key="i" class="cw-recover-item">
+                                <span class="cw-recover-body">{{ m.body }}</span>
+                                <span class="cw-recover-time">{{ formatTime(m.sentAt) }}</span>
+                                <button class="cw-restore-btn" @click="restoreMessage(m.body)">↩ Restore</button>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- Undo toast — shown for 5 s after sending a message -->
@@ -401,6 +422,17 @@ const reportError = ref('');
 // Server-side snapshot of unsent/cleared messages fetched when entering report mode
 const snapshotMsgs = ref([]);
 
+// ─── RECOVER MODE STATE ───────────────────────────────────────────────────────
+
+/** Whether the recover panel is open. */
+const recoverMode  = ref(false);
+
+/** Snapshot messages sent by the current user (eligible for restore). */
+const recoverMsgs  = ref([]);
+
+/** True while the snapshot is being fetched for recover mode. */
+const recoverLoading = ref(false);
+
 // ─── REPORT MODE FUNCTIONS ───────────────────────────────────────────────────
 
 /**
@@ -432,6 +464,50 @@ const cancelReportMode = () => {
     reportReason.value = '';
     reportError.value = '';
     snapshotMsgs.value = [];
+};
+
+// ─── RECOVER MODE FUNCTIONS ───────────────────────────────────────────────────
+
+/**
+ * enterRecoverMode
+ * Fetches the conversation snapshot and shows only messages the current user
+ * sent, so they can restore any unsent/cleared text back into the draft.
+ */
+const enterRecoverMode = async () => {
+    if (!activeConvo.value) return;
+    recoverMode.value = true;
+    recoverMsgs.value = [];
+    recoverLoading.value = true;
+    try {
+        const res = await axios.get(`${API}/${activeConvo.value._id}/snapshot`);
+        // Only show messages the current user sent
+        recoverMsgs.value = (res.data || []).filter(
+            m => m.sender?.toString() === userId?.toString() || m.senderUsername === user.username
+        );
+    } catch {
+        recoverMsgs.value = [];
+    } finally {
+        recoverLoading.value = false;
+    }
+};
+
+/**
+ * restoreMessage
+ * Puts a recovered message body back into the draft textarea and closes
+ * the recover panel so the user can edit and re-send it.
+ *
+ * @param {string} body - The message text to restore.
+ */
+const restoreMessage = (body) => {
+    draft.value = body;
+    recoverMode.value = false;
+    nextTick(() => chatInputEl.value?.focus());
+};
+
+/** Closes the recover panel without restoring anything. */
+const cancelRecoverMode = () => {
+    recoverMode.value = false;
+    recoverMsgs.value = [];
 };
 
 /**
@@ -1355,6 +1431,84 @@ const formatTime = (d) => {
     transition: background 0.15s;
 }
 .cw-report:hover { background: #6d28d9; }
+
+/* Recover button — green teal to distinguish from the purple report button */
+.cw-recover {
+    background: #14532d;
+    border: 1px solid #166534;
+    border-radius: 6px;
+    color: #fff;
+    font-size: 0.74rem;
+    font-weight: 700;
+    padding: 4px 9px;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+.cw-recover:hover { background: #166534; }
+
+/* ── Recover panel ── */
+.cw-recover-panel {
+    border-top: 1px solid rgba(0,0,0,0.12);
+    padding: 8px;
+    max-height: 180px;
+    overflow-y: auto;
+    background: #f8fff8;
+}
+
+.cw-recover-empty {
+    text-align: center;
+    font-size: 0.8rem;
+    color: #777;
+    padding: 10px 0;
+}
+
+.cw-recover-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.cw-recover-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: #fff;
+    border: 1.5px solid #14532d;
+    border-radius: 8px;
+    padding: 6px 10px;
+}
+
+.cw-recover-body {
+    flex: 1;
+    font-size: 0.8rem;
+    color: #000;
+    word-break: break-word;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+}
+
+.cw-recover-time {
+    font-size: 0.7rem;
+    color: #888;
+    flex-shrink: 0;
+}
+
+.cw-restore-btn {
+    background: #14532d;
+    color: #fff;
+    border: none;
+    border-radius: 5px;
+    font-size: 0.74rem;
+    font-weight: 700;
+    padding: 3px 8px;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background 0.15s;
+}
+.cw-restore-btn:hover { background: #166534; }
 
 .cw-report-count {
     font-size: 0.74rem;
