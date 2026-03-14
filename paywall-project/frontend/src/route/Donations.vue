@@ -15,7 +15,6 @@
                     <label class="section-label">Choose an amount</label>
                     <div class="amount-grid">
                         <button v-for="preset in presets" :key="preset" class="amount-btn"
-                            <!-- Active style applied when this preset is selected and not in custom mode -->
                             :class="{ active: selectedAmount === preset && !customMode }"
                             @click="selectPreset(preset)">
                             ${{ preset }}
