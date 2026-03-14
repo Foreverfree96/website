@@ -17,11 +17,8 @@
     
     <script type="module" src="/src/main.js"></script>
 
-    <!-- PayPal SDK (replace YOUR_CLIENT_ID with your actual client ID) -->
- <!-- Example -->
- 
-
-
+    <!-- PayPal JS SDK — client-id is injected from the VITE_PAYPAL_CLIENT_ID env var at build time -->
+    <script src="https://www.paypal.com/sdk/js?client-id=%VITE_PAYPAL_CLIENT_ID%&currency=%VITE_PAYPAL_CURRENCY%"></script>
 
   </body>
 </html>
