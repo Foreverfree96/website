@@ -232,7 +232,8 @@
 
         <!-- Recover panel -->
         <div v-if="recoverMode" class="recover-panel">
-          <p v-if="recoverLoading" class="msg-status">Loading...</p>
+          <p v-if="recoverBlocked" class="recover-empty">Recovery is unavailable — this chat was fully wiped.</p>
+          <p v-else-if="recoverLoading" class="msg-status">Loading...</p>
           <p v-else-if="!recoverMsgs.length" class="recover-empty">No recoverable messages found.</p>
           <div v-else class="recover-list">
             <div class="recover-all-row">
@@ -431,6 +432,7 @@ const snapshotMsgs = ref([]);
 const recoverMode    = ref(false);
 const recoverMsgs    = ref([]);
 const recoverLoading = ref(false);
+const recoverBlocked = ref(false);
 
 // ─── REPORT MODE FUNCTIONS ───────────────────────────────────────────────────
 
@@ -481,6 +483,11 @@ const enterRecoverMode = async () => {
   if (!activeConvo.value) return;
   recoverMode.value = true;
   recoverMsgs.value = [];
+  recoverBlocked.value = false;
+  if (localStorage.getItem(_noRecoverKey(activeConvo.value._id))) {
+    recoverBlocked.value = true;
+    return;
+  }
   recoverLoading.value = true;
   try {
     const res = await axios.get(`${API}/${activeConvo.value._id}/snapshot`);
@@ -543,6 +550,7 @@ const recoverAll = async () => {
 const cancelRecoverMode = () => {
   recoverMode.value = false;
   recoverMsgs.value = [];
+  recoverBlocked.value = false;
 };
 
 /**
@@ -808,9 +816,10 @@ const executeUnsend = async () => {
 
 // ─── CLEAR CHAT ACTIONS ───────────────────────────────────────────────────────
 
-const _clearedKey  = (id) => `cleared_convo_${id}`;
-const _wasCleared  = (id) => !!sessionStorage.getItem(_clearedKey(id));
-const _markCleared = (id) => sessionStorage.setItem(_clearedKey(id), '1');
+const _clearedKey   = (id) => `cleared_convo_${id}`;
+const _wasCleared   = (id) => !!sessionStorage.getItem(_clearedKey(id));
+const _markCleared  = (id) => sessionStorage.setItem(_clearedKey(id), '1');
+const _noRecoverKey = (id) => `no_recover_${id}`;
 
 
 /**
@@ -842,9 +851,16 @@ const executeClear = async () => {
   messages.value = [];
   activeConvo.value.lastMessage = '';
   try {
-    await axios.delete(`${API}/${convoId}/clear${wasWarned ? '?forceWipe=true' : ''}`);
-    if (wasWarned) sessionStorage.removeItem(_clearedKey(convoId));
-    else _markCleared(convoId);
+    await axios.delete(`${API}/${convoId}/clear`);
+    if (wasWarned) {
+      // Second clear: block recover (snapshot kept on server for reporting)
+      sessionStorage.removeItem(_clearedKey(convoId));
+      localStorage.setItem(_noRecoverKey(convoId), '1');
+    } else {
+      // First clear: allow recover, lift any previous block
+      _markCleared(convoId);
+      localStorage.removeItem(_noRecoverKey(convoId));
+    }
     // Reset the recovered-messages set so the fresh snapshot is fully visible next recover
     localStorage.removeItem(_recoveredKey(convoId));
   } catch (err) {
