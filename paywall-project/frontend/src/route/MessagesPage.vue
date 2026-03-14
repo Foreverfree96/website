@@ -98,28 +98,21 @@
 
           <div class="chat-header__actions">
 
-            <button v-if="!reportMode" class="report-btn" @click="enterReportMode">
-              🚩 Report
-            </button>
-
-            <template v-if="!reportMode">
-              <button class="clear-btn" @click="openClearConfirm">
-                🗑 Clear Chat
-              </button>
-
-              <button class="block-btn" @click="openBlockConfirm">
-                🚫 Block User
-              </button>
+            <template v-if="!reportMode && !recoverMode">
+              <button class="report-btn" @click="enterReportMode">🚩 Report</button>
+              <button class="recover-btn" @click="enterRecoverMode">📥 Recover</button>
+              <button class="clear-btn" @click="openClearConfirm">🗑 Clear</button>
+              <button class="block-btn" @click="openBlockConfirm">🚫 Block</button>
             </template>
 
-            <template v-else>
-              <span class="report-count-txt">
-                {{ reportSelected.size }}/25 selected
-              </span>
+            <template v-else-if="reportMode">
+              <span class="report-count-txt">{{ reportSelected.size }}/25 selected</span>
+              <button class="report-cancel-btn" @click="cancelReportMode">Cancel</button>
+            </template>
 
-              <button class="report-cancel-btn" @click="cancelReportMode">
-                Cancel
-              </button>
+            <template v-else-if="recoverMode">
+              <span class="report-count-txt">📥 Recover messages</span>
+              <button class="report-cancel-btn" @click="cancelRecoverMode">Cancel</button>
             </template>
 
           </div>
@@ -233,8 +226,21 @@
 
         </div>
 
+        <!-- Recover panel -->
+        <div v-if="recoverMode" class="recover-panel">
+          <p v-if="recoverLoading" class="msg-status">Loading...</p>
+          <p v-else-if="!recoverMsgs.length" class="recover-empty">No recoverable messages found.</p>
+          <div v-else class="recover-list">
+            <div v-for="(m, i) in recoverMsgs" :key="i" class="recover-item">
+              <span class="recover-body">{{ m.body }}</span>
+              <span class="recover-time">{{ formatTime(m.sentAt) }}</span>
+              <button class="restore-btn" @click="restoreMessage(m.body)">↩ Restore</button>
+            </div>
+          </div>
+        </div>
+
         <!-- Message input -->
-        <div v-if="!reportMode" class="chat-input-row">
+        <div v-if="!reportMode && !recoverMode" class="chat-input-row">
 
           <textarea ref="chatInputEl" v-model="draft" class="chat-input" placeholder="Type a message..."
             maxlength="2000" rows="1" @keydown.enter.exact.prevent="sendMsg" />
@@ -412,6 +418,12 @@ const reportError = ref('');
 // Fetched when entering report mode so evidence cannot be hidden before reporting.
 const snapshotMsgs = ref([]);
 
+// ─── RECOVER MODE STATE ───────────────────────────────────────────────────────
+
+const recoverMode    = ref(false);
+const recoverMsgs    = ref([]);
+const recoverLoading = ref(false);
+
 // ─── REPORT MODE FUNCTIONS ───────────────────────────────────────────────────
 
 /**
@@ -443,6 +455,38 @@ const cancelReportMode = () => {
   reportReason.value = '';
   reportError.value = '';
   snapshotMsgs.value = [];
+};
+
+// ─── RECOVER MODE FUNCTIONS ───────────────────────────────────────────────────
+
+const enterRecoverMode = async () => {
+  if (!activeConvo.value) return;
+  recoverMode.value = true;
+  recoverMsgs.value = [];
+  recoverLoading.value = true;
+  try {
+    const res = await axios.get(`${API}/${activeConvo.value._id}/snapshot`);
+    const myId       = user.value?.id?.toString() || user.value?._id?.toString();
+    const myUsername = user.value?.username;
+    recoverMsgs.value = (res.data || []).filter(
+      m => m.sender?.toString() === myId || m.senderUsername === myUsername
+    );
+  } catch {
+    recoverMsgs.value = [];
+  } finally {
+    recoverLoading.value = false;
+  }
+};
+
+const restoreMessage = (body) => {
+  draft.value = body;
+  recoverMode.value = false;
+  nextTick(() => scrollBottom());
+};
+
+const cancelRecoverMode = () => {
+  recoverMode.value = false;
+  recoverMsgs.value = [];
 };
 
 /**
@@ -604,8 +648,9 @@ const openConvo = async (convo) => {
   msgsLoading.value = true;
   hasMore.value = false;
   earliestDate.value = null;
-  // Exit report mode whenever a new conversation is opened
+  // Exit report/recover mode whenever a new conversation is opened
   cancelReportMode();
+  cancelRecoverMode();
   try {
     const res = await axios.get(`${API}/${convo._id}`);
     messages.value = res.data;
@@ -1409,10 +1454,85 @@ const formatTime = (d) => {
   flex-shrink: 0;
   transition: background 0.15s;
 }
+.report-btn:hover { background: #6d28d9; }
 
-.report-btn:hover {
-  background: #6d28d9;
+.recover-btn {
+  background: #14532d;
+  color: #fff;
+  border: 2px solid #166534;
+  border-radius: 7px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  padding: 5px 11px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s;
 }
+.recover-btn:hover { background: #166534; }
+
+/* ── Recover panel ── */
+.recover-panel {
+  border-top: 1px solid rgba(0,0,0,0.12);
+  padding: 10px 14px;
+  max-height: 200px;
+  overflow-y: auto;
+  background: #f8fff8;
+}
+
+.recover-empty {
+  text-align: center;
+  font-size: 0.85rem;
+  color: #777;
+  padding: 12px 0;
+}
+
+.recover-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.recover-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #fff;
+  border: 2px solid #14532d;
+  border-radius: 10px;
+  padding: 8px 12px;
+}
+
+.recover-body {
+  flex: 1;
+  font-size: 0.88rem;
+  color: #000;
+  word-break: break-word;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.recover-time {
+  font-size: 0.75rem;
+  color: #888;
+  flex-shrink: 0;
+}
+
+.restore-btn {
+  background: #14532d;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  padding: 4px 10px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+.restore-btn:hover { background: #166534; }
 
 .report-count-txt {
   font-size: 0.82rem;
