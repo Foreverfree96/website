@@ -461,6 +461,14 @@ const cancelReportMode = () => {
 
 // ─── RECOVER MODE FUNCTIONS ───────────────────────────────────────────────────
 
+const _recoveredKey  = (convoId) => `recovered_msgs_${convoId}`;
+const _getRecovered  = (convoId) => new Set(JSON.parse(localStorage.getItem(_recoveredKey(convoId)) || '[]'));
+const _markRecovered = (convoId, sentAt) => {
+  const set = _getRecovered(convoId);
+  set.add(String(sentAt));
+  localStorage.setItem(_recoveredKey(convoId), JSON.stringify([...set]));
+};
+
 const enterRecoverMode = async () => {
   if (!activeConvo.value) return;
   recoverMode.value = true;
@@ -470,8 +478,10 @@ const enterRecoverMode = async () => {
     const res = await axios.get(`${API}/${activeConvo.value._id}/snapshot`);
     const myId       = user.value?.id?.toString() || user.value?._id?.toString();
     const myUsername = user.value?.username;
+    const alreadyDone = _getRecovered(activeConvo.value._id);
     recoverMsgs.value = (res.data || [])
       .filter(m => m.sender?.toString() === myId || m.senderUsername === myUsername)
+      .filter(m => !alreadyDone.has(String(m.sentAt)))
       .sort((a, b) => new Date(a.sentAt) - new Date(b.sentAt));
   } catch {
     recoverMsgs.value = [];
@@ -482,15 +492,15 @@ const enterRecoverMode = async () => {
 
 const restoreMessage = async (body) => {
   if (!body.trim() || !activeConvo.value) return;
-  // Remove this message from the list immediately
   const idx = recoverMsgs.value.findIndex(m => m.body === body);
+  const sentAt = idx !== -1 ? recoverMsgs.value[idx].sentAt : null;
   if (idx !== -1) recoverMsgs.value.splice(idx, 1);
-  // Close panel if nothing left
   if (!recoverMsgs.value.length) recoverMode.value = false;
   try {
     const res = await axios.post(`${API}/${activeConvo.value._id}`, { body });
     messages.value.push(res.data);
     activeConvo.value.lastMessage = body;
+    if (sentAt) _markRecovered(activeConvo.value._id, sentAt);
     await nextTick();
     scrollBottom();
   } catch { /* silently ignore */ }
@@ -507,6 +517,7 @@ const recoverAll = async () => {
       const res = await axios.post(`${API}/${activeConvo.value._id}`, { body: m.body });
       messages.value.push(res.data);
       activeConvo.value.lastMessage = m.body;
+      if (m.sentAt) _markRecovered(activeConvo.value._id, m.sentAt);
     } catch { /* silently ignore */ }
   }
   await nextTick();
