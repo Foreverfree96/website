@@ -7,12 +7,26 @@
   box-sizing: border-box;
 }
 
+/* Force light mode globally — the `only` keyword tells browsers (incl.
+   Samsung Internet) that dark-mode overrides are NOT permitted */
+:root {
+  color-scheme: only light;
+}
+
 html {
   overflow-x: hidden;
   width: 100%;
-  /* Belt-and-suspenders: reinforces the meta color-scheme tag for browsers
-     (e.g. Samsung Internet) that check both the meta tag and CSS property */
-  color-scheme: light;
+  color-scheme: only light;
+}
+
+/* Explicit color reset for browsers/OS dark mode that ignore color-scheme.
+   Samsung Internet ≤ v12 may still force-invert; this overrides it. */
+@media (prefers-color-scheme: dark) {
+  html, body {
+    background-color: #7dbe9d !important;
+    color: #000000 !important;
+    filter: none !important;
+  }
 }
 
 /* ==========================

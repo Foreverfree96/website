@@ -1315,8 +1315,8 @@ const formatTime = (d) => {
 .cw-bubble.selected::after {
     content: '✓';
     position: absolute;
-    top: -7px;
-    right: -7px;
+    top: 4px;
+    right: 6px;
     background: #7c3aed;
     color: #fff;
     border-radius: 50%;
