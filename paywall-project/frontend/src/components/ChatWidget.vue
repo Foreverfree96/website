@@ -207,7 +207,7 @@
         <AppModal
             :show="clearModal"
             title="Clear Conversation"
-            message="Delete all messages in this chat? This affects both sides and cannot be undone."
+            message="Delete all messages in this chat? This affects both sides and cannot be undone. ⚠️ Warning: if this chat has already been cleared once, messages are permanently unrecoverable."
             danger
             ok-label="Clear All"
             cancel-label="Cancel"

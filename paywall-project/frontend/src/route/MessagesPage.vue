@@ -264,7 +264,7 @@
 
   <!-- Clear chat -->
   <AppModal :show="clearModal" title="Clear Conversation"
-    message="Delete all messages in this chat? This affects both sides and cannot be undone." danger ok-label="Clear All"
+    message="Delete all messages in this chat? This affects both sides and cannot be undone. ⚠️ Warning: if this chat has already been cleared once, messages are permanently unrecoverable." danger ok-label="Clear All"
     cancel-label="Cancel" @ok="executeClear" @cancel="clearModal = false" />
 
   <!-- Block user -->
