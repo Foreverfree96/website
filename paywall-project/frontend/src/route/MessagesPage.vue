@@ -234,7 +234,7 @@
             <div v-for="(m, i) in recoverMsgs" :key="i" class="recover-item">
               <span class="recover-body">{{ m.body }}</span>
               <span class="recover-time">{{ formatTime(m.sentAt) }}</span>
-              <button class="restore-btn" @click="restoreMessage(m.body)">↩ Restore</button>
+              <button class="restore-btn" @click="restoreMessage(m.body)">↩ Send</button>
             </div>
           </div>
         </div>
@@ -478,10 +478,17 @@ const enterRecoverMode = async () => {
   }
 };
 
-const restoreMessage = (body) => {
-  draft.value = body;
+const restoreMessage = async (body) => {
+  if (!body.trim() || !activeConvo.value) return;
   recoverMode.value = false;
-  nextTick(() => scrollBottom());
+  recoverMsgs.value = [];
+  try {
+    const res = await axios.post(`${API}/${activeConvo.value._id}`, { body });
+    messages.value.push(res.data);
+    activeConvo.value.lastMessage = body;
+    await nextTick();
+    scrollBottom();
+  } catch { /* silently ignore */ }
 };
 
 const cancelRecoverMode = () => {

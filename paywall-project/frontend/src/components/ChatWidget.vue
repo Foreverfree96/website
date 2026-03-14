@@ -154,7 +154,7 @@
 
                     <!-- ── RECOVER PANEL ────────────────────────────────────────────────
                Shows unsent/cleared messages the current user sent.
-               Each item has a Restore button that fills the draft. -->
+               Each item has a Send button that re-sends it into the chat. -->
                     <div v-if="recoverMode" class="cw-recover-panel">
                         <p v-if="recoverLoading" class="cw-status">Loading...</p>
                         <p v-else-if="!recoverMsgs.length" class="cw-recover-empty">No recoverable messages found.</p>
@@ -162,7 +162,7 @@
                             <div v-for="(m, i) in recoverMsgs" :key="i" class="cw-recover-item">
                                 <span class="cw-recover-body">{{ m.body }}</span>
                                 <span class="cw-recover-time">{{ formatTime(m.sentAt) }}</span>
-                                <button class="cw-restore-btn" @click="restoreMessage(m.body)">↩ Restore</button>
+                                <button class="cw-restore-btn" @click="restoreMessage(m.body)">↩ Send</button>
                             </div>
                         </div>
                     </div>
@@ -485,16 +485,21 @@ const enterRecoverMode = async () => {
 
 /**
  * restoreMessage
- * Puts a recovered message body back into the draft textarea and closes
- * the recover panel so the user can edit and re-send it.
+ * Sends a recovered message directly back into the chat and closes the panel.
  *
  * @param {string} body - The message text to restore.
  */
-const restoreMessage = (body) => {
-    draft.value = body;
+const restoreMessage = async (body) => {
+    if (!body.trim() || !activeConvo.value) return;
     recoverMode.value = false;
-    // Scroll to bottom so messages are visible; let user tap the input themselves
-    nextTick(() => scrollBottom());
+    recoverMsgs.value = [];
+    try {
+        const res = await axios.post(`${API}/${activeConvo.value._id}`, { body });
+        messages.value.push(res.data);
+        activeConvo.value.lastMessage = body;
+        await nextTick();
+        scrollBottom();
+    } catch { /* silently ignore */ }
 };
 
 /** Closes the recover panel without restoring anything. */

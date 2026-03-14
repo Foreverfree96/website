@@ -305,6 +305,9 @@ const formatDate = (d) => new Date(d).toLocaleDateString();
   font-weight: 700;
   color: #000;
   margin: 0 0 6px;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  max-width: 100%;
 }
 
 .creator-card__badges {
