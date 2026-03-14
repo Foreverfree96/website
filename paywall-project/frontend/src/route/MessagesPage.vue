@@ -842,6 +842,8 @@ const executeClear = async () => {
     await axios.delete(`${API}/${convoId}/clear`);
     if (wasWarned) localStorage.removeItem(_clearedKey(convoId));
     else _markCleared(convoId);
+    // Reset the recovered-messages set so the fresh snapshot is fully visible next recover
+    localStorage.removeItem(_recoveredKey(convoId));
   } catch (err) {
     // Rollback both the message array and the preview text
     messages.value = backup;

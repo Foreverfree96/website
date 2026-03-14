@@ -850,6 +850,8 @@ const executeClear = async () => {
         // Cycle: first clear sets flag (next shows warning), warned clear resets it (next is instant)
         if (wasWarned) localStorage.removeItem(_clearedKey(convoId));
         else _markCleared(convoId);
+        // Reset the recovered-messages set so the fresh snapshot is fully visible next recover
+        localStorage.removeItem(_recoveredKey(convoId));
     } catch {
         // Rollback both the message array and the preview text
         messages.value = backup;
