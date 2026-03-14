@@ -493,7 +493,8 @@ const enterRecoverMode = async () => {
 const restoreMessage = (body) => {
     draft.value = body;
     recoverMode.value = false;
-    nextTick(() => chatInputEl.value?.focus());
+    // Scroll to bottom so messages are visible; let user tap the input themselves
+    nextTick(() => scrollBottom());
 };
 
 /** Closes the recover panel without restoring anything. */
