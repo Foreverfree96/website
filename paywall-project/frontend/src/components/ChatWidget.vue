@@ -115,7 +115,8 @@
                                 >
                                     <div class="cw-bubble-row">
                                         <!-- v-html is safe: linkify() escapes HTML before injecting <a> tags -->
-                                        <div class="cw-bubble" :class="{ selected: reportMode && reportSelected.has(m._id) }"><span v-html="linkify(m.body)"></span><span v-if="reportMode && reportSelected.has(m._id)" class="cw-report-check"> ✅</span></div>
+                                        <div class="cw-bubble" :class="{ selected: reportMode && reportSelected.has(m._id) }"
+                                            v-html="linkify(m.body) + (reportMode && reportSelected.has(m._id) ? ' ✅' : '')"></div>
                                         <!-- Unsend button: fades in on hover via CSS; only visible for own messages -->
                                         <button
                                             v-if="!reportMode && m.sender._id === userId"

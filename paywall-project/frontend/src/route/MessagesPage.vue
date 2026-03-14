@@ -176,8 +176,8 @@
                 <div class="bubble-row">
 
                   <!-- Linkified message -->
-                  <div class="bubble" :class="{ selected: reportMode && reportSelected.has(m._id) }">
-                    <span v-html="linkify(m.body)"></span><span v-if="reportMode && reportSelected.has(m._id)" class="report-check"> ✅</span>
+                  <div class="bubble" :class="{ selected: reportMode && reportSelected.has(m._id) }"
+                    v-html="linkify(m.body) + (reportMode && reportSelected.has(m._id) ? ' ✅' : '')">
                   </div>
 
                   <!-- Unsend button -->
