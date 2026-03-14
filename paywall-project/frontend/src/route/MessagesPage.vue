@@ -494,14 +494,6 @@ const enterRecoverMode = async () => {
   }
 };
 
-const _insertAtOriginalPosition = (msg, originalSentAt) => {
-  const t = new Date(originalSentAt || msg.createdAt);
-  // Use _origSentAt for previously recovered messages so their position is correct too
-  const insertIdx = messages.value.findIndex(m => new Date(m._origSentAt || m.createdAt) > t);
-  if (insertIdx === -1) messages.value.push(msg);
-  else messages.value.splice(insertIdx, 0, msg);
-};
-
 const restoreMessage = async (body) => {
   if (!body.trim() || !activeConvo.value) return;
   const idx = recoverMsgs.value.findIndex(m => m.body === body);
@@ -511,7 +503,9 @@ const restoreMessage = async (body) => {
   try {
     const res = await axios.post(`${API}/${activeConvo.value._id}`, { body });
     if (sentAt) res.data._origSentAt = String(sentAt);
-    _insertAtOriginalPosition(res.data, sentAt);
+    messages.value = [...messages.value, res.data].sort((a, b) =>
+      new Date(a._origSentAt || a.createdAt) - new Date(b._origSentAt || b.createdAt)
+    );
     activeConvo.value.lastMessage = body;
     if (sentAt) _markRecovered(activeConvo.value._id, sentAt);
     await nextTick();
