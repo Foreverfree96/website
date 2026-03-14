@@ -528,7 +528,8 @@ const restoreMessage = async (body) => {
 
 const recoverAll = async () => {
     if (!recoverMsgs.value.length || !activeConvo.value) return;
-    const toSend = recoverMsgs.value.slice();
+    // Sort by original sentAt before sending so they're posted in chronological order
+    const toSend = recoverMsgs.value.slice().sort((a, b) => new Date(a.sentAt) - new Date(b.sentAt));
     recoverMode.value = false;
     recoverMsgs.value = [];
     const sent = [];
@@ -536,14 +537,13 @@ const recoverAll = async () => {
         if (!m.body?.trim()) continue;
         try {
             const res = await axios.post(`${API}/${activeConvo.value._id}`, { body: m.body });
-            // Tag with original time so the final sort can place it correctly
-            res.data._origSentAt = m.sentAt;
+            res.data._origSentAt = String(m.sentAt);
             sent.push(res.data);
             activeConvo.value.lastMessage = m.body;
             if (m.sentAt) _markRecovered(activeConvo.value._id, m.sentAt);
         } catch { /* silently ignore */ }
     }
-    // Merge all messages and sort by original sentAt (recovered) or createdAt (existing)
+    // Merge and re-sort: recovered messages use their original sentAt, existing use createdAt
     messages.value = [...messages.value, ...sent].sort((a, b) =>
         new Date(a._origSentAt || a.createdAt) - new Date(b._origSentAt || b.createdAt)
     );
