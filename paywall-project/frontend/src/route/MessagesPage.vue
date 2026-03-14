@@ -839,7 +839,7 @@ const executeClear = async () => {
   messages.value = [];
   activeConvo.value.lastMessage = '';
   try {
-    await axios.delete(`${API}/${convoId}/clear`);
+    await axios.delete(`${API}/${convoId}/clear${wasWarned ? '?forceWipe=true' : ''}`);
     if (wasWarned) localStorage.removeItem(_clearedKey(convoId));
     else _markCleared(convoId);
     // Reset the recovered-messages set so the fresh snapshot is fully visible next recover

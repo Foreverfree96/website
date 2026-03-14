@@ -846,7 +846,7 @@ const executeClear = async () => {
     messages.value = [];
     activeConvo.value.lastMessage = '';
     try {
-        await axios.delete(`${API}/${convoId}/clear`);
+        await axios.delete(`${API}/${convoId}/clear${wasWarned ? '?forceWipe=true' : ''}`);
         // Cycle: first clear sets flag (next shows warning), warned clear resets it (next is instant)
         if (wasWarned) localStorage.removeItem(_clearedKey(convoId));
         else _markCleared(convoId);

@@ -355,10 +355,13 @@ export const clearConversation = async (req, res) => {
       sentAt: m.createdAt,
     }));
 
-    // If the chat has messages, replace the snapshot with the fresh set (no duplicates).
-    // If the chat is already empty, preserve the existing snapshot so report mode
-    // always has evidence even when clearing an already-empty conversation.
-    if (newEntries.length > 0) {
+    // forceWipe=true (sent on the second/warned clear) wipes the snapshot entirely
+    // so recover shows nothing after the user explicitly confirmed the warning.
+    // Otherwise: replace with fresh entries if any exist, or preserve if chat was empty.
+    const forceWipe = req.query.forceWipe === 'true';
+    if (forceWipe) {
+      convo.clearedSnapshot = [];
+    } else if (newEntries.length > 0) {
       convo.clearedSnapshot = newEntries;
     }
     // else: keep convo.clearedSnapshot unchanged
