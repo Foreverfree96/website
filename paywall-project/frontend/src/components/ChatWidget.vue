@@ -167,14 +167,6 @@
                         </div>
                     </div>
 
-                    <!-- Undo toast — shown for 5 s after sending a message -->
-                    <transition name="cw-toast">
-                        <div v-if="undoToast.show" class="cw-undo-toast">
-                            <span>Message sent</span>
-                            <button class="cw-undo-btn" @click="undoSend">Undo</button>
-                        </div>
-                    </transition>
-
                     <!-- Compose area — hidden during report mode -->
                     <div v-if="!reportMode" class="cw-input-row">
                         <!-- Enter alone sends; Shift+Enter inserts a newline -->
@@ -358,9 +350,6 @@ const msgsLoading = ref(false);
 // Bound to the compose textarea
 const draft = ref('');
 
-/** Undo-send toast: visible for 5 s after a message is sent. */
-const undoToast = ref({ show: false, msg: null, timer: null });
-
 // Template ref for the scrollable message container — used for programmatic scrolling
 const chatEl = ref(null);
 
@@ -481,8 +470,11 @@ const enterRecoverMode = async () => {
     try {
         const res = await axios.get(`${API}/${activeConvo.value._id}/snapshot`);
         // Only show messages the current user sent
+        // snapshot entries have { sender: ObjectId, senderUsername: string }
+        const myId       = userId.value?.toString();
+        const myUsername = user.value?.username;
         recoverMsgs.value = (res.data || []).filter(
-            m => m.sender?.toString() === userId?.toString() || m.senderUsername === user.username
+            m => m.sender?.toString() === myId || m.senderUsername === myUsername
         );
     } catch {
         recoverMsgs.value = [];
@@ -730,35 +722,10 @@ const sendMsg = async () => {
         activeConvo.value.lastMessage = body;
         await nextTick();
         scrollBottom();
-        // Show 5-second undo toast
-        if (undoToast.value.timer) clearTimeout(undoToast.value.timer);
-        undoToast.value = {
-            show: true,
-            msg: res.data,
-            timer: setTimeout(() => { undoToast.value.show = false; }, 5000),
-        };
     } catch { draft.value = body; } // Restore on failure
     chatInputEl.value?.focus();
 };
 
-/**
- * undoSend
- * Called when the user taps "Undo" in the post-send toast.
- * Clears the timer, removes the message optimistically, then DELETEs it.
- */
-const undoSend = async () => {
-    const m = undoToast.value.msg;
-    if (undoToast.value.timer) clearTimeout(undoToast.value.timer);
-    undoToast.value = { show: false, msg: null, timer: null };
-    if (!m || !activeConvo.value) return;
-    const idx = messages.value.findIndex(msg => msg._id === m._id);
-    if (idx !== -1) messages.value.splice(idx, 1);
-    try {
-        await axios.delete(`${API}/${activeConvo.value._id}/${m._id}`);
-    } catch {
-        if (idx !== -1) messages.value.splice(idx, 0, m);
-    }
-};
 
 /**
  * openUnsendConfirm
@@ -1303,34 +1270,6 @@ const formatTime = (d) => {
 .cw-input:focus { border-color: #14532d; }
 .cw-input::placeholder { color: #aaa; font-weight: 500; }
 
-/* ── Undo send toast ── */
-.cw-undo-toast {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    background: #000;
-    color: pink;
-    border-radius: 8px;
-    padding: 6px 12px;
-    font-size: 0.82rem;
-    font-weight: 600;
-    margin: 0 8px 4px;
-}
-.cw-undo-btn {
-    background: none;
-    border: 1.5px solid pink;
-    color: pink;
-    font-size: 0.78rem;
-    font-weight: 700;
-    padding: 2px 9px;
-    border-radius: 5px;
-    cursor: pointer;
-    margin-left: 10px;
-    transition: background 0.15s, color 0.15s;
-}
-.cw-undo-btn:hover { background: pink; color: #000; }
-.cw-toast-enter-active, .cw-toast-leave-active { transition: opacity 0.2s, transform 0.2s; }
-.cw-toast-enter-from, .cw-toast-leave-to { opacity: 0; transform: translateY(4px); }
 
 .cw-send {
     background: #000;
