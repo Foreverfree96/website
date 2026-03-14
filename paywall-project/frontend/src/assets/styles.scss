@@ -286,6 +286,19 @@ p {
 .lgn-sgnup-txt{
   color:$color-white;
 }
+/* Clickable images — show pointer cursor and subtle hover effect */
+.clickable-img {
+  cursor: pointer;
+  transition: opacity 0.2s ease;
+}
+.clickable-img:hover { opacity: 0.88; }
+
+/* Remove default link underline/color on image anchor wrappers */
+.post-image-link {
+  display: block;
+  line-height: 0;
+}
+
 /* ==========================
    Dashboard / Cards / Other
 ========================== */

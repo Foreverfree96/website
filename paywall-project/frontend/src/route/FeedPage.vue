@@ -63,9 +63,9 @@
           Media display priority:
             1. imageUrl — a direct image (for Pictures category posts).
             2. mediaUrl — a platform embed (YouTube, Spotify, etc.).
-          The image/embed also gets .stop so clicking it doesn't navigate away.
+          Image click navigates to the post; embed gets .stop so its controls work.
         -->
-        <img v-if="p.imageUrl" :src="p.imageUrl" class="post-image" alt="Post image" @click.stop />
+        <img v-if="p.imageUrl" :src="p.imageUrl" class="post-image clickable-img" alt="Post image" @click.stop="goToPost(p._id)" />
         <MediaEmbed v-else-if="p.mediaUrl" :mediaUrl="p.mediaUrl" :embedType="p.embedType" @click.stop />
 
         <!-- Footer: like count, comment count, and formatted creation date -->

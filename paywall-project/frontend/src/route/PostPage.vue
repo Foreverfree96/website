@@ -18,8 +18,11 @@
       <h1 v-if="post.title" class="post-full__title">{{ post.title }}</h1>
       <!-- v-html is safe here because renderComment() HTML-escapes the body before injecting spans -->
       <p v-if="post.body" class="post-full__body" v-html="renderComment(post.body)" @click="handleCommentBodyClick" />
-      <!-- Prefer static image; fall back to an embedded media player -->
-      <img v-if="post.imageUrl" :src="post.imageUrl" class="post-image" alt="Post image" />
+      <!-- Prefer static image; fall back to an embedded media player.
+           Wrapping in <a> makes the image clickable — opens full-size in a new tab. -->
+      <a v-if="post.imageUrl" :href="post.imageUrl" target="_blank" rel="noopener noreferrer" class="post-image-link">
+        <img :src="post.imageUrl" class="post-image clickable-img" alt="Post image" />
+      </a>
       <MediaEmbed v-else-if="post.mediaUrl" :mediaUrl="post.mediaUrl" :embedType="post.embedType" />
 
       <!-- ── Post actions bar ── -->
