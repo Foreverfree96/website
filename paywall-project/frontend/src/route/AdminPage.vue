@@ -327,9 +327,10 @@
  *   - "comments", "users", and "dms" are each loaded once and then cached for
  *     the lifetime of this page visit (guarded by *Loaded flags).
  */
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, watch, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import axios from 'axios';
+import { useAuth } from '../composables/useAuth';
 
 // ─── API BASE ─────────────────────────────────────────────────────────────────
 
@@ -337,6 +338,16 @@ import axios from 'axios';
 const API = import.meta.env.VITE_API_URL + '/api/admin';
 
 const router = useRouter();
+const { user } = useAuth();
+
+// ─── ADMIN GUARD ──────────────────────────────────────────────────────────────
+
+// Watch the user object so the redirect fires correctly whether auth is already
+// loaded (direct nav while logged in) or resolves asynchronously (page refresh).
+// id !== null means auth has finished loading — null is the logged-out default.
+watch(user, (u) => {
+  if (u.id !== null && !u.isAdmin) router.replace('/');
+}, { immediate: true, deep: true });
 
 // ─── TAB STATE ────────────────────────────────────────────────────────────────
 

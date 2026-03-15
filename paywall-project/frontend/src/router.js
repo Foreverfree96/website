@@ -15,6 +15,7 @@
 // =============================================================================
 
 import { createRouter, createWebHistory } from "vue-router";
+import { useAuth } from "./composables/useAuth";
 
 // ── Page / Component imports ──────────────────────────────────────────────────
 
@@ -105,6 +106,16 @@ const router = createRouter({
   // fallback (e.g. Vite dev server handles this automatically)
   history: createWebHistory(),
   routes,
+});
+
+// Guard the /admin route — if user is already loaded and is not an admin,
+// redirect immediately. If auth is still loading (id === null on page refresh),
+// the watch inside AdminPage.vue handles the redirect once the profile resolves.
+router.beforeEach((to) => {
+  if (to.path === "/admin") {
+    const { user } = useAuth();
+    if (user.value.id !== null && !user.value.isAdmin) return "/";
+  }
 });
 
 export default router;
