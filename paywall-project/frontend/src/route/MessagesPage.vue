@@ -135,12 +135,12 @@
             <!-- Report mode: snapshot + live merged into one list -->
             <template v-if="reportMode">
 
-              <div v-for="m in snapshotMsgs" :key="'snap-' + m.sentAt" class="bubble-wrap" :class="[
+              <div v-for="m in snapshotMsgs" :key="'snap-' + (m._id || m.sentAt)" class="bubble-wrap" :class="[
                 m.sender?.toString() === user.id?.toString() ? 'mine' : 'theirs',
                 'reportable'
               ]" @click="toggleReportSelect(m)">
                 <div class="bubble-row">
-                  <div class="bubble" :class="{ selected: reportSelected.has(m.sentAt?.toString()) }"
+                  <div class="bubble" :class="{ selected: reportSelected.has(m._id?.toString() || m.sentAt?.toString()) }"
                     v-html="linkify(m.body)">
                   </div>
                 </div>
@@ -152,7 +152,7 @@
                 'reportable'
               ]" @click="toggleReportSelect(m)">
                 <div class="bubble-row">
-                  <div class="bubble" :class="{ selected: reportSelected.has(m._id) }"
+                  <div class="bubble" :class="{ selected: reportSelected.has(m._id?.toString()) }"
                     v-html="linkify(m.body)">
                   </div>
                 </div>
@@ -551,23 +551,23 @@ const cancelRecoverMode = () => {
  * @param {Object} m - Message object; can be a live message (has _id) or
  *                     a snapshot message (has sentAt but no _id).
  */
+const reportKey = (m) => m._id?.toString() || m.sentAt?.toString();
+
 const toggleReportSelect = (m) => {
-  // Use _id for live messages; fall back to sentAt string for snapshot messages
-  const key = m._id || m.sentAt?.toString();
+  const key = reportKey(m);
   const s = new Set(reportSelected.value);
   if (s.has(key)) { s.delete(key); }
   else {
     if (s.size >= 25) { reportError.value = 'Max 25 messages'; return; }
     s.add(key);
   }
-  // Replace the ref value with a new Set so Vue re-renders the selected state
   reportSelected.value = s;
   reportError.value = '';
 };
 
 const selectAllMessages = () => {
   const allMsgs = [...snapshotMsgs.value, ...messages.value];
-  const allKeys = allMsgs.map(m => m._id || m.sentAt?.toString()).filter(Boolean);
+  const allKeys = allMsgs.map(reportKey).filter(Boolean);
   const capped = allKeys.slice(0, 25);
   if (isAllSelected.value) {
     reportSelected.value = new Set();
@@ -579,7 +579,7 @@ const selectAllMessages = () => {
 
 const isAllSelected = computed(() => {
   const allMsgs = [...snapshotMsgs.value, ...messages.value];
-  const allKeys = allMsgs.map(m => m._id || m.sentAt?.toString()).filter(Boolean).slice(0, 25);
+  const allKeys = allMsgs.map(reportKey).filter(Boolean).slice(0, 25);
   return allKeys.length > 0 && allKeys.every(k => reportSelected.value.has(k));
 });
 
@@ -600,7 +600,7 @@ const submitReport = async () => {
     // Build serialised snapshots: normalise sender fields because live messages
     // have a populated sender object while snapshot messages store raw ids/usernames
     const snapshots = allMsgs
-      .filter(m => reportSelected.value.has(m._id || m.sentAt))
+      .filter(m => reportSelected.value.has(reportKey(m)))
       .map(m => ({
         sender: m.sender?._id || m.sender,
         senderUsername: m.sender?.username || m.senderUsername,
