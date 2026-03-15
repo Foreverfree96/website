@@ -983,9 +983,20 @@ const doDeleteAccount = async () => {
     align-items: center;
     border-color: #1db954 !important;
 }
+.spotify-connect-btn:hover,
+.spotify-reconnect-btn:hover {
+    background: #1db954 !important;
+    color: #fff !important;
+    transform: translateY(-2px);
+}
 
 .spotify-disconnect-btn {
     border-color: #7f1d1d !important;
+}
+.spotify-disconnect-btn:hover {
+    background: #7f1d1d !important;
+    color: #fff !important;
+    transform: translateY(-2px);
 }
 
 .confirm-overlay {
