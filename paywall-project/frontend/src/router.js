@@ -113,9 +113,19 @@ const router = createRouter({
 // Guard the /admin route — if user is already loaded and is not an admin,
 // redirect immediately. If auth is still loading (id === null on page refresh),
 // the watch inside AdminPage.vue handles the redirect once the profile resolves.
+const protectedRoutes = ["/feed", "/create-post", "/notifications", "/messages", "/dashboard", "/profile"];
+
 router.beforeEach((to) => {
+  const { user } = useAuth();
+
+  // Redirect unauthenticated users away from protected routes
+  if (protectedRoutes.some(r => to.path.startsWith(r))) {
+    const token = localStorage.getItem("jwtToken");
+    if (!token) return "/login";
+  }
+
+  // Redirect non-admins away from /admin
   if (to.path === "/admin") {
-    const { user } = useAuth();
     if (user.value.id !== null && !user.value.isAdmin) return "/";
   }
 });
