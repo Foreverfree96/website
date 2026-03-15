@@ -586,44 +586,56 @@ onMounted(() => {
 .post-card__footer {
   display: flex;
   align-items: center;
-  gap: 16px;
-  margin-top: 12px;
-  font-size: 0.9rem;
+  gap: 10px;
+  margin-top: 14px;
+  font-size: 1rem;
   font-weight: 600;
   color: #000;
 }
 .like-wrap {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 0;
+  background: #f3f4f6;
+  border: 2px solid #e5e7eb;
+  border-radius: 999px;
+  overflow: hidden;
 }
 .like-btn {
   background: none;
   border: none;
-  padding: 0;
-  font-size: inherit;
-  font-weight: 600;
+  padding: 6px 10px;
+  font-size: 1.05rem;
+  font-weight: 700;
   color: #000;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
-  transition: transform 0.15s;
+  transition: background 0.15s, transform 0.15s;
+  line-height: 1;
 }
-.like-btn:hover { transform: scale(1.15); }
+.like-btn:hover { background: #e5e7eb; transform: scale(1.15); }
 .like-btn--liked { color: #e11d48; }
 .like-count {
-  font-weight: 600;
-  font-size: inherit;
+  font-weight: 700;
+  font-size: 0.95rem;
+  padding: 6px 10px 6px 2px;
+  line-height: 1;
 }
-.like-count--clickable {
-  cursor: pointer;
-  text-decoration: underline dotted;
-}
+.like-count--clickable { cursor: pointer; }
 .like-count--clickable:hover { color: #e11d48; }
 
-.comment-count { font-weight: 600; }
-.comment-count--clickable { cursor: pointer; text-decoration: underline dotted; }
-.comment-count--clickable:hover { color: #7c3aed; }
+.comment-count {
+  font-weight: 700;
+  font-size: 1.05rem;
+  background: #f3f4f6;
+  border: 2px solid #e5e7eb;
+  border-radius: 999px;
+  padding: 6px 12px;
+  line-height: 1;
+}
+.comment-count--clickable { cursor: pointer; }
+.comment-count--clickable:hover { background: #ede9fe; border-color: #7c3aed; color: #7c3aed; }
 
 .comments-modal-box { max-width: 460px; }
 
@@ -788,7 +800,7 @@ onMounted(() => {
   .create-btn { padding: 8px 14px !important; font-size: 0.88rem !important; }
   .post-card { padding: 14px; border-radius: 10px; }
   .post-card__body { font-size: 0.9rem; }
-  .post-card__footer { gap: 10px; font-size: 0.85rem; flex-wrap: wrap; }
+  .post-card__footer { gap: 8px; font-size: 0.95rem; flex-wrap: wrap; }
   .post-image { max-height: 260px; }
   .pagination { gap: 10px; margin-top: 24px; }
   .pag-btn { padding: 7px 14px !important; font-size: 0.87rem !important; }
@@ -802,7 +814,7 @@ onMounted(() => {
   .post-card { padding: 12px; }
   .post-card__title { font-size: 1rem; }
   .post-card__meta { flex-wrap: wrap; gap: 6px; }
-  .post-card__footer { font-size: 0.8rem; gap: 8px; }
+  .post-card__footer { font-size: 0.9rem; gap: 8px; }
   .tab-btn { padding: 5px 11px; font-size: 0.8rem; }
   .post-image { max-height: 220px; }
 }
