@@ -1386,6 +1386,9 @@ const formatDate = (d) => new Date(d).toLocaleDateString();
 @media (max-width: 600px) {
   .user-card { flex-direction: column; gap: 8px; }
   .user-card__meta { align-items: flex-start; text-align: left; }
+  .user-card__actions { justify-content: flex-start; }
+  .restrict-select { flex: 1; min-width: 0; }
+  .btn-restrict, .btn-verify, .btn-ban, .btn-unban, .btn-delete-user { flex: 1; min-width: 0; text-align: center; }
   .admin-page { padding: 0 10px 44px; margin: 14px auto; }
   .admin-title { font-size: 1.3rem; margin-bottom: 14px; }
   .tab-btn { padding: 8px 12px; font-size: 0.88rem; }

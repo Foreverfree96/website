@@ -71,6 +71,7 @@
 // =============================================================================
 
 import { ref } from 'vue';
+import { useRouter } from 'vue-router';
 import { useAuth } from '../composables/useAuth.js';
 import axios from 'axios';
 
@@ -78,6 +79,7 @@ import axios from 'axios';
 // unauthenticated pre-signup calls)
 const API_URL = import.meta.env.VITE_API_URL + '/api/users';
 
+const router = useRouter();
 const { signup, error } = useAuth();
 
 // ── Local form state ───────────────────────────────────────────────────────────
@@ -167,7 +169,7 @@ const handleSignup = async () => {
     loading.value = true;
     try {
         await signup(username.value, email.value, password.value);
-        sent.value = true;
+        router.push('/login');
     } catch (err) {
         console.error(err.response?.data || err);
     } finally {

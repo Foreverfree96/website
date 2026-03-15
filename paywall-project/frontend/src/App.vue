@@ -496,6 +496,7 @@ nav {
   nav { padding: 0 8px; }
   .nav-brand { font-size: 0.95rem; }
   .nav-link { padding: 0.6rem 0.8rem !important; font-size: 0.88rem; }
+  .notif-badge { font-size: 0.6rem; padding: 1px 4px; min-width: 14px; top: 4px; right: 6px; }
 }
 
 /* Very small phone (360px) */

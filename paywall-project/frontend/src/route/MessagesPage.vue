@@ -1015,6 +1015,7 @@ const formatTime = (d) => {
 .msg-page {
   display: flex;
   height: calc(100vh - 56px - 24px);
+  height: calc(100dvh - 56px - 24px);
   max-width: 900px;
   margin: 12px auto 12px;
   border: 3px solid #000;
@@ -1125,7 +1126,7 @@ const formatTime = (d) => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 200px;
+  max-width: 60%;
 }
 
 .convo-badge {
@@ -1777,6 +1778,7 @@ const formatTime = (d) => {
 @media (max-width: 640px) {
   .msg-page {
     height: calc(100vh - 50px - 16px);
+    height: calc(100dvh - 50px - 16px);
     margin: 8px 8px 8px;
     flex-direction: column;
     border-radius: 10px;
@@ -1805,5 +1807,10 @@ const formatTime = (d) => {
     font-size: 0.74rem;
     padding: 4px 9px;
   }
+}
+
+@media (max-width: 480px) {
+  .bubble-wrap { max-width: 88%; }
+  .chat-input-row { padding: 8px 10px; gap: 6px; }
 }
 </style>

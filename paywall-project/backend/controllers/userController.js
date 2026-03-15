@@ -136,32 +136,15 @@ export const registerUser = async (req, res) => {
     // Hash the password with bcrypt (cost factor 10)
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Generate a secure random token; store only its hash in the DB
-    const rawToken = crypto.randomBytes(32).toString("hex");
-    const hashedToken = crypto.createHash("sha256").update(rawToken).digest("hex");
-
-    const user = await User.create({
+    await User.create({
       username: username.trim(),
       email: email.trim().toLowerCase(),
       password: hashedPassword,
-      isVerified: false,
-      emailVerifyToken: hashedToken,
-      emailVerifyTokenExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours
+      isVerified: true,
     });
 
-    const verifyUrl = `${process.env.FRONTEND_URL}/verify-email/${rawToken}`;
-
-    // Respond immediately, then send email in the background
-    res.status(201).json({ message: "Check your email to confirm your account before logging in." });
-
-    sendEmail({
-      to: user.email,
-      subject: "Confirm your email",
-      html: `<p>Hi ${user.username},</p>
-             <p>Click the link below to verify your email and activate your account:</p>
-             <p><a href="${verifyUrl}">${verifyUrl}</a></p>
-             <p>This link expires in 24 hours.</p>`,
-    });
+    // Respond — account is immediately active, no email verification required
+    res.status(201).json({ message: "Account created! You can now log in." });
   } catch (err) {
     console.error("❌ Signup Error:", err);
     res.status(500).json({ message: "Server error", debug: err.message });
@@ -306,10 +289,6 @@ export const loginUser = async (req, res) => {
 
     const isPasswordMatch = await bcrypt.compare(password, user.password);
     if (!isPasswordMatch) return res.status(401).json({ message: "Invalid credentials" });
-
-    // Block unverified accounts from logging in
-    if (user.isVerified === false)
-      return res.status(403).json({ message: "Please verify your email before logging in." });
 
     // Auto-grant admin privileges to the designated admin email if not already set
     if (process.env.ADMIN_EMAIL && user.email === process.env.ADMIN_EMAIL && !user.isAdmin) {

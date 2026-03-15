@@ -1027,6 +1027,7 @@ const formatTime = (d) => {
 .cw {
     position: fixed;
     bottom: 20px;
+    bottom: max(20px, env(safe-area-inset-bottom));
     right: 20px;
     z-index: 9000;
     display: flex;
@@ -1666,6 +1667,7 @@ const formatTime = (d) => {
     .cw-toggle {
         position: fixed;
         bottom: 14px;
+        bottom: max(14px, env(safe-area-inset-bottom));
         right: 14px;
         z-index: 9001;
     }

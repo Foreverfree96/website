@@ -588,6 +588,11 @@ p {
   .nav-link     { padding: 0.35rem 0.6rem !important; font-size: 0.82rem; }
 }
 
+/* iOS Safari: prevent auto-zoom on input focus (triggered when font-size < 16px) */
+@media (max-width: 768px) {
+  input, textarea, select { font-size: 16px !important; }
+}
+
 /* Landscape orientation on phones */
 @media (max-height: 500px) and (orientation: landscape) {
   .auth-wrapper   { margin: 0.5rem auto; padding: 1rem 1.5rem; }

@@ -392,6 +392,7 @@ const formatDate = (d) => new Date(d).toLocaleDateString();
   max-width: 360px;
   max-height: 70vh;
   overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .modal-header {
@@ -439,7 +440,7 @@ const formatDate = (d) => new Date(d).toLocaleDateString();
   font-size: 0.95rem;
   transition: transform 0.15s;
 }
-.modal-user:hover { transform: translateX(4px); color: rgb(125, 190, 157); }
+.modal-user:hover { transform: translateY(-2px); color: rgb(125, 190, 157); }
 
 .social-links {
   display: flex;
