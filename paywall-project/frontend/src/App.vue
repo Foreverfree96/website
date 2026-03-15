@@ -56,7 +56,7 @@
 
             <!-- Mod Panel link — only rendered for admin / moderator accounts -->
             <router-link v-if="isAdmin" id="admin-btn" to="/admin" class="nav-link admin-link">🛡️ Mod</router-link>
-            <router-link v-if="isAdmin" id="analytics-btn" to="/admin?tab=analytics" class="nav-link analytics-link">📊 Analytics</router-link>
+            <router-link v-if="isAdmin" id="analytics-btn" :to="{ path: '/admin', query: { tab: 'analytics' } }" class="nav-link analytics-link">📊 Analytics</router-link>
           </template>
         </div>
 
@@ -415,8 +415,8 @@ nav {
 
 /* Admin / mod link gets a distinct amber colour to stand out */
 .admin-link { color: #92400e !important; font-weight: 700 !important; }
-/* Analytics link — dark green to complement the mod amber */
-.analytics-link { color: #14532d !important; font-weight: 700 !important; }
+/* Analytics link — same amber scheme as the Mod link */
+.analytics-link { color: #92400e !important; font-weight: 700 !important; }
 
 /* ── Responsive breakpoints ── */
 
