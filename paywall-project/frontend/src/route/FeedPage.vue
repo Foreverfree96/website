@@ -597,7 +597,7 @@ onMounted(() => {
   align-items: center;
   gap: 0;
   background: #f3f4f6;
-  border: 2px solid #e5e7eb;
+  border: 2px solid #000;
   border-radius: 999px;
   overflow: hidden;
 }
