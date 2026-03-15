@@ -42,7 +42,7 @@
         <div class="resume">
 
             <!-- Direct download link for the PDF asset -->
-            <a :href="resumeFile" target="_blank" download class="btn-download">
+            <a :href="resumeFile" target="_blank" download class="btn-download" @click="trackResumeDownload">
                 Download Resume
             </a>
 
@@ -94,6 +94,12 @@ const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
 const previewSrc = isMobile
   ? `https://docs.google.com/viewer?url=${encodeURIComponent(window.location.origin + resumePdf)}&embedded=true`
   : resumePdf
+
+// ─── RESUME DOWNLOAD TRACKING ────────────────────────────────────────────────
+
+const trackResumeDownload = () => {
+  fetch(import.meta.env.VITE_API_URL + '/api/track/download', { method: 'POST' }).catch(() => {});
+};
 
 // ─── PROJECTS DATA ───────────────────────────────────────────────────────────
 

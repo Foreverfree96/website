@@ -242,7 +242,7 @@
 
         <!-- Downloads -->
         <div class="analytics-section">
-          <h2 class="analytics-section-title">📥 Project Downloads</h2>
+          <h2 class="analytics-section-title">📥 Resume Downloads</h2>
           <div class="analytics-cards">
             <div class="stat-card stat-card--green">
               <span class="stat-value">{{ analytics.downloads }}</span>
