@@ -45,6 +45,7 @@ import {
   getReportedComments,   // GET    /reported-comments            — comments with reports
   clearCommentReports,   // PUT    /posts/:id/comments/:cId/clear-reports
   adminDeleteUser,       // DELETE /users/:userId                — remove a user account
+  forceVerifyUser,       // PUT    /users/:userId/verify          — force-verify email
   restrictUser,          // PUT    /users/:userId/restrict        — timed restriction
   banUser,               // PUT    /users/:userId/ban             — permanent ban + email block
   getDmReports,          // GET    /dm-reports                   — all DM abuse reports
@@ -140,6 +141,7 @@ router.get("/users", getUsers);
  * Permanently delete a user account and all content associated with it.
  */
 router.delete("/users/:userId", adminDeleteUser);
+router.put("/users/:userId/verify", forceVerifyUser);
 router.put("/users/:userId/restrict", restrictUser);
 router.put("/users/:userId/ban", banUser);
 

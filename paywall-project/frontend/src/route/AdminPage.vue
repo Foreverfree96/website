@@ -61,6 +61,7 @@
                 <option value="none">Lift restriction</option>
               </select>
               <button class="btn-restrict" :disabled="!u._restrictDuration" @click="applyRestrict(u)">Apply</button>
+              <button v-if="!u.isVerified" class="btn-verify" @click="forceVerify(u)">✉️ Verify</button>
               <button v-if="!u.isBanned" class="btn-ban" @click="applyBan(u)">🚫 Ban</button>
               <button v-else class="btn-unban" @click="applyUnban(u)">✅ Unban</button>
               <button class="btn-delete-user" @click="promptDeleteUser(u)">🗑 Delete</button>
@@ -701,6 +702,16 @@ const promptDeleteUser = (u) => {
 
 // ─── RESTRICT / BAN USER ─────────────────────────────────────────────────────
 
+const forceVerify = async (u) => {
+  try {
+    await axios.put(`${API}/users/${u._id}/verify`);
+    u.isVerified = true;
+    alert(`@${u.username} is now verified.`);
+  } catch (err) {
+    alert(err.response?.data?.message || 'Failed to verify.');
+  }
+};
+
 const applyRestrict = async (u) => {
   if (!u._restrictDuration) return;
   try {
@@ -1258,6 +1269,17 @@ const formatDate = (d) => new Date(d).toLocaleDateString();
   cursor: pointer;
 }
 .btn-unban:hover { background: #166534; }
+.btn-verify {
+  background: #1e3a5f;
+  color: #fff;
+  border: 2px solid #000;
+  border-radius: 8px;
+  padding: 4px 10px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.btn-verify:hover { background: #1e40af; }
 
 /* Report reasons */
 .report-reasons-list {

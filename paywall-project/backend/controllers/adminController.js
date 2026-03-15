@@ -350,6 +350,7 @@ export const getUsers = async (req, res) => {
       isOnline: onlineUsers.has(u._id.toString()),
       restrictedUntil: u.restrictedUntil || null,
       isBanned: u.isBanned || false,
+      isVerified: u.isVerified || false,
     }));
 
     res.json(result);
@@ -418,6 +419,23 @@ export const adminDeleteUser = async (req, res) => {
     res.json({ message: "User and all their content removed." });
   } catch (err) {
     console.error("❌ Admin deleteUser Error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+// ─── FORCE VERIFY USER ───────────────────────────────────────────────────────
+
+export const forceVerifyUser = async (req, res) => {
+  try {
+    const user = await User.findById(req.params.userId);
+    if (!user) return res.status(404).json({ message: "User not found" });
+    user.isVerified = true;
+    user.emailVerifyToken = undefined;
+    user.emailVerifyTokenExpiry = undefined;
+    await user.save();
+    res.json({ message: `@${user.username} has been verified.` });
+  } catch (err) {
+    console.error("❌ Admin forceVerify Error:", err);
     res.status(500).json({ message: "Server error" });
   }
 };
