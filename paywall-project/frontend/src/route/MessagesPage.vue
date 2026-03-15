@@ -205,7 +205,7 @@
 
             <button class="report-select-all-btn" @click="selectAllMessages"
               v-if="messages.length || snapshotMsgs.length">
-              {{ isAllSelected ? 'Deselect All' : 'Select All ✅' }}
+              {{ isAllSelected ? 'Deselect All' : 'Select All' }}
             </button>
 
             <button class="report-submit-btn" @click="submitReport"
