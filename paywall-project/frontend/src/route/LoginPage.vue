@@ -32,7 +32,7 @@
 
             <!-- Appeal / resend buttons (shown before appeal is submitted) -->
             <template v-else>
-                <button v-if="isBanned || isRestricted" class="appeal-trigger-btn" @click="showAppealModal = true">
+                <button v-if="(isBanned || isRestricted) && !appealButtonHidden" class="appeal-trigger-btn" @click="showAppealModal = true">
                     Submit an Appeal
                 </button>
                 <button v-if="showResend" class="resend-btn" @click="handleResend" :disabled="resendSent">
@@ -111,6 +111,9 @@ const errorDismissed = ref(false);
 // Persists across modal close — shows "appeal under review" on the banner
 const appealSubmittedBanner = ref(false);
 
+// Hides the Submit Appeal button after the modal is closed without submitting
+const appealButtonHidden = ref(false);
+
 // Appeal modal state
 const showAppealModal     = ref(false);
 const appealText          = ref("");
@@ -131,6 +134,7 @@ const handleLogin = async () => {
     isRestricted.value          = false;
     errorDismissed.value        = false;
     appealSubmittedBanner.value = false;
+    appealButtonHidden.value    = false;
     withdrawMsg.value           = "";
     try {
         await login(username.value, password.value);
@@ -157,10 +161,13 @@ const handleResend = async () => {
 };
 
 const closeAppealModal = () => {
-    // Reset modal-internal state but preserve appealSubmittedBanner
-    // so the banner shows "under review" after the modal is closed
-    if (appealSent.value) appealSubmittedBanner.value = true;
-    if (appealAlreadyExists.value) appealSubmittedBanner.value = true;
+    const submitted = appealSent.value || appealAlreadyExists.value;
+    if (submitted) {
+        appealSubmittedBanner.value = true;
+    } else {
+        // Closed without submitting — hide the appeal button until next login attempt
+        appealButtonHidden.value = true;
+    }
     appealText.value          = "";
     appealError.value         = "";
     appealSent.value          = false;
