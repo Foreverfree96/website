@@ -499,11 +499,7 @@ const switchTab = (name) => {
   else load(); // reported + flagged
 };
 
-// On mount, honour a ?tab= query param from the nav link (one-time init only).
-// After that, tab switches are handled entirely by switchTab — no route watching.
-const initTab = route.query.tab;
 const validTabs = ['reported', 'flagged', 'comments', 'users', 'dms', 'analytics'];
-switchTab(validTabs.includes(initTab) ? initTab : 'reported');
 
 // If the nav link is clicked while already on /admin the query param changes
 // but the component isn't remounted — watch handles that specific case only.
@@ -688,6 +684,11 @@ const promptDeleteUser = (u) => {
 let analyticsInterval = null;
 
 onMounted(() => {
+  // Initialise the correct tab from the URL param — done here (not at module
+  // level) so all const loaders are fully initialised before switchTab runs.
+  const initTab = route.query.tab;
+  switchTab(validTabs.includes(initTab) ? initTab : 'reported');
+
   const sock = getSocket();
   if (sock) {
     // Live online count — fires whenever any user connects or disconnects
