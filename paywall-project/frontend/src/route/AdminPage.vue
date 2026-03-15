@@ -1136,14 +1136,22 @@ const formatDate = (d) => new Date(d).toLocaleDateString();
 
 .admin-tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
   margin-bottom: 24px;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: none; /* Firefox */
   padding-bottom: 4px;
 }
-.admin-tabs::-webkit-scrollbar { display: none; } /* Chrome/Safari */
+
+/* Mobile only: scroll instead of wrap so tabs stay compact */
+@media (max-width: 640px) {
+  .admin-tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .admin-tabs::-webkit-scrollbar { display: none; }
+}
 
 .tab-btn {
   background: #000;
