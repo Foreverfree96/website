@@ -300,18 +300,19 @@ const formatDate = (d) => new Date(d).toLocaleDateString();
 
 /* × delete button on each notification card */
 .notif-delete-btn {
-  background: none;
+  background: #e5e7eb;
   border: none;
-  color: #bbb;
-  font-size: 1.1rem;
-  font-weight: 700;
+  color: #555;
+  font-size: 1.2rem;
+  font-weight: 900;
   line-height: 1;
   cursor: pointer;
-  padding: 0 2px;
-  transition: color 0.15s;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: background 0.15s, color 0.15s, transform 0.15s;
   flex-shrink: 0;
 }
-.notif-delete-btn:hover { color: #e11d48; }
+.notif-delete-btn:hover { background: #e11d48; color: #fff; transform: scale(1.15); }
 
 /* ── Responsive ── */
 
