@@ -28,6 +28,7 @@ export const spotifyLogin = (req, res) => {
     scope:         SCOPES,
     redirect_uri:  process.env.SPOTIFY_REDIRECT_URI,
     state:         userId,
+    show_dialog:   "true",
   });
 
   res.redirect(`https://accounts.spotify.com/authorize?${params}`);
