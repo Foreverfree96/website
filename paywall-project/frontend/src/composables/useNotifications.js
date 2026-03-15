@@ -46,6 +46,9 @@ const notifications = ref([]);
 // Reactive count of unread direct messages (DM badge in nav)
 const dmUnreadCount = ref(0);
 
+// Reactive count of new incoming reports (mod badge in nav, admin only)
+const modUnreadCount = ref(0);
+
 // Arrays of subscriber callbacks invoked when the matching socket event fires.
 // Using arrays allows multiple components to listen without overwriting each other.
 let dmHandlers = [];
@@ -207,6 +210,11 @@ export function useNotifications() {
       clearHandlers.forEach(h => h(data));
     });
 
+    // A new report was submitted — increment the mod badge for admins
+    socket.on("mod:report", () => {
+      modUnreadCount.value += 1;
+    });
+
     // If WebSocket unavailable (e.g. server cold-starting), fall back to polling
     socket.on("connect_error", () => {
       startPollingFallback();
@@ -230,6 +238,7 @@ export function useNotifications() {
     unreadCount.value = 0;
     notifications.value = [];
     dmUnreadCount.value = 0;
+    modUnreadCount.value = 0;
     dmHandlers = [];
     clearHandlers = [];
   };
@@ -268,6 +277,9 @@ export function useNotifications() {
    */
   const setDmCount = (n) => { dmUnreadCount.value = n; };
 
+  /** Resets the mod report badge to 0. Called when an admin visits /admin. */
+  const clearModCount = () => { modUnreadCount.value = 0; };
+
   /**
    * Decrements the DM unread count by `n` (default 1).
    * Math.max(0, ...) prevents the counter from going below zero.
@@ -281,6 +293,7 @@ export function useNotifications() {
     notifications,
     unreadCount,
     dmUnreadCount,
+    modUnreadCount,
     loading,
     fetchNotifications,
     markAllRead,
@@ -292,6 +305,7 @@ export function useNotifications() {
     addDmHandler,
     addClearHandler,
     setDmCount,
+    clearModCount,
     decrementDmCount,
     getSocket: () => socket,
   };

@@ -519,6 +519,10 @@ export const reportDm = async (req, res) => {
     });
 
     res.json({ message: "Report submitted. Thank you." });
+
+    // Notify admins in real-time
+    const { getIo } = await import("../utils/socketEmitter.js");
+    getIo()?.to("admins").emit("mod:report", { type: "dm" });
   } catch (err) {
     console.error("❌ reportDm:", err);
     res.status(500).json({ message: "Server error" });

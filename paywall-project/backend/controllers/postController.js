@@ -720,6 +720,10 @@ export const reportPost = async (req, res) => {
 
     await post.save();
     res.json({ message: "Post reported. Thank you for helping keep the community safe." });
+
+    // Notify admins in real-time
+    const { getIo } = await import("../utils/socketEmitter.js");
+    getIo()?.to("admins").emit("mod:report", { type: "post", postId: post._id });
   } catch (err) {
     console.error("❌ Report Post Error:", err);
     res.status(500).json({ message: "Server error" });
@@ -770,6 +774,10 @@ export const reportComment = async (req, res) => {
     await post.save();
 
     res.json({ message: "Comment reported. Thank you for helping keep the community safe." });
+
+    // Notify admins in real-time
+    const { getIo } = await import("../utils/socketEmitter.js");
+    getIo()?.to("admins").emit("mod:report", { type: "comment", postId: post._id });
   } catch (err) {
     console.error("❌ Report Comment Error:", err);
     res.status(500).json({ message: "Server error" });

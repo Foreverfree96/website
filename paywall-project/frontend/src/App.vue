@@ -55,7 +55,10 @@
             </router-link>
 
             <!-- Mod Panel link — only rendered for admin / moderator accounts -->
-            <router-link v-if="isAdmin" id="admin-btn" to="/admin" class="nav-link admin-link">🛡️ Mod</router-link>
+            <router-link v-if="isAdmin" id="admin-btn" to="/admin" class="nav-link admin-link notif-link" @click="clearModCount">
+              🛡️ Mod
+              <span v-if="modUnreadCount > 0" class="notif-badge">{{ modUnreadCount > 99 ? '99+' : modUnreadCount }}</span>
+            </router-link>
             <router-link v-if="isAdmin" id="analytics-btn" :to="{ path: '/admin', query: { tab: 'analytics' } }" class="nav-link analytics-link">📊 Analytics</router-link>
           </template>
         </div>
@@ -157,10 +160,12 @@ const { user, logout } = useAuth();
 const {
   unreadCount,
   dmUnreadCount,
+  modUnreadCount,
   connectSocket,
   disconnectSocket,
   fetchNotifications,
   setDmCount,
+  clearModCount,
 } = useNotifications();
 
 // ─── DM UNREAD COUNT ─────────────────────────────────────────────────────────
