@@ -102,6 +102,7 @@
               <div class="reported-comment-actions">
                 <button class="btn-clear btn-sm" @click="handleClearCommentReports(p._id, c._id, p)">Clear Reports</button>
                 <button class="btn-remove btn-sm" @click="promptDeleteComment(p._id, c._id, p)">Remove Comment</button>
+                <button v-if="c.author?._id" class="btn-ban btn-sm" @click="quickBan(c.author._id, c.author.username, c.author.email)">🚫 Ban</button>
               </div>
             </div>
           </div>
@@ -177,6 +178,7 @@
           <button class="btn-clear" @click="handleClearReports(p._id)" v-if="p.reportedBy?.length">Clear Reports</button>
           <button class="btn-flag" @click="handleFlag(p._id)" v-if="p.moderationStatus !== 'flagged'">Flag</button>
           <button class="btn-remove" @click="promptDelete(p._id)">Remove Post</button>
+          <button v-if="p.author?._id" class="btn-ban" @click="quickBan(p.author._id, p.author.username, p.author.email)">🚫 Ban Author</button>
         </div>
       </div>
       </div>
@@ -212,6 +214,7 @@
           <div class="mod-card__actions" style="margin-top:10px;">
             <button class="btn-clear" @click="handleDmReport(r._id, 'reviewed')">✅ Mark Reviewed</button>
             <button class="btn-flag" @click="handleDmReport(r._id, 'dismissed')">✕ Dismiss</button>
+            <button v-if="r.reportedUser?._id" class="btn-ban" @click="quickBan(r.reportedUser._id, r.reportedUser.username, r.reportedUser.email)">🚫 Ban User</button>
           </div>
         </div>
       </div>
@@ -717,6 +720,17 @@ const applyBan = (u) => {
     async () => {
       await axios.put(`${API}/users/${u._id}/ban`);
       u.isBanned = true;
+    }
+  );
+};
+
+const quickBan = (userId, username, email) => {
+  const detail = email ? ` and block their email (${email}) from re-registering` : '';
+  openModal(
+    `Ban @${username}?`,
+    `This will permanently ban their account${detail}.`,
+    async () => {
+      await axios.put(`${API}/users/${userId}/ban`);
     }
   );
 };
