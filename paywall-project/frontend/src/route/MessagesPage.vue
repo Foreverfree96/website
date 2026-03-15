@@ -141,7 +141,7 @@
               ]" @click="toggleReportSelect(m)">
                 <div class="bubble-row">
                   <div class="bubble" :class="{ selected: reportSelected.has(m.sentAt?.toString()) }"
-                    v-html="linkify(m.body) + (reportSelected.has(m.sentAt?.toString()) ? ' ✅' : '')">
+                    v-html="linkify(m.body)">
                   </div>
                 </div>
                 <span class="bubble-time">{{ formatTime(m.sentAt) }}</span>
@@ -153,7 +153,7 @@
               ]" @click="toggleReportSelect(m)">
                 <div class="bubble-row">
                   <div class="bubble" :class="{ selected: reportSelected.has(m._id) }"
-                    v-html="linkify(m.body) + (reportSelected.has(m._id) ? ' ✅' : '')">
+                    v-html="linkify(m.body)">
                   </div>
                 </div>
                 <span class="bubble-time">{{ formatTime(m.createdAt) }}</span>
