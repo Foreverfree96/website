@@ -1105,6 +1105,18 @@ onMounted(() => {
   const initTab = route.query.tab;
   switchTab(validTabs.includes(initTab) ? initTab : 'users');
 
+  // Pre-load every tab in the background so data is ready before clicking.
+  Promise.allSettled([
+    load(),
+    loadReportedComments(),
+    loadUsers(),
+    loadDmReports(),
+    loadOnlineUsers(),
+    loadAnalytics(),
+    loadAppeals(),
+    loadAdminLogs(),
+  ]);
+
   const sock = getSocket();
   if (sock) {
     // Live online count — fires whenever any user connects or disconnects
