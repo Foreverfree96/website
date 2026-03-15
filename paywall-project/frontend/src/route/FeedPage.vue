@@ -619,13 +619,13 @@ onMounted(() => {
 .like-count {
   font-weight: 700;
   font-size: 0.95rem;
-  padding: 6px 16px 6px 4px;
+  padding: 6px 16px 6px 8px;
   line-height: 1;
-  background: #fff;
-  color: #000;
+  background: #000;
+  color: #fff;
 }
-.like-count--clickable { cursor: pointer; }
-.like-count--clickable:hover { color: #000; }
+.like-count--clickable { cursor: pointer; transition: transform 0.15s; }
+.like-count--clickable:hover { color: #fff; transform: scale(1.15); }
 
 .comment-count {
   font-weight: 700;
