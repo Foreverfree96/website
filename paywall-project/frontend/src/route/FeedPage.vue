@@ -621,6 +621,8 @@ onMounted(() => {
   font-size: 0.95rem;
   padding: 6px 16px 6px 4px;
   line-height: 1;
+  background: #fff;
+  color: #000;
 }
 .like-count--clickable { cursor: pointer; }
 .like-count--clickable:hover { color: #000; }

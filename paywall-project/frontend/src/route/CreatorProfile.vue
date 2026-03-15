@@ -704,7 +704,7 @@ const showLikers = async (postId) => {
 }
 .like-btn:hover { background: #e5e7eb; transform: scale(1.15); }
 .like-btn--liked { color: #e11d48; }
-.like-count { font-weight: 700; font-size: 0.95rem; padding: 6px 16px 6px 4px; line-height: 1; }
+.like-count { font-weight: 700; font-size: 0.95rem; padding: 6px 16px 6px 4px; line-height: 1; background: #fff; color: #000; }
 .like-count--clickable { cursor: pointer; }
 .like-count--clickable:hover { color: #000; }
 
