@@ -25,6 +25,7 @@ import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import axios from "axios";
+import { siteLog } from "../utils/siteLog.js";
 
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
@@ -154,6 +155,8 @@ export const registerUser = async (req, res) => {
 
     // Respond immediately, then send email in the background
     res.status(201).json({ message: "Check your email to confirm your account before logging in." });
+
+    siteLog({ userId: user._id, username: user.username, action: "User Signed Up", sourceType: "user", sourceUrl: `/creator/${user.username}` });
 
     sendEmail({
       to: user.email,
@@ -1113,6 +1116,8 @@ export const toggleFollow = async (req, res) => {
     }
 
     res.json({ following: !isFollowing, followerCount: target.followers.length });
+
+    siteLog({ userId: me._id, username: me.username, action: isFollowing ? "Unfollowed" : "Followed", targetId: target._id, targetUsername: target.username, sourceType: "user", sourceUrl: `/creator/${target.username}` });
   } catch (err) {
     console.error("❌ Toggle Follow Error:", err);
     res.status(500).json({ message: "Server error" });

@@ -27,8 +27,8 @@ import axios from "axios";
 import Appeal from "../models/appealModel.js";
 import AdminLog from "../models/adminLogModel.js";
 
-/** Helper — fire-and-forget log entry */
-const log = (req, action, target, detail = "") => {
+/** Helper — fire-and-forget admin log entry with optional source link */
+const log = (req, action, target, detail = "", extras = {}) => {
   AdminLog.create({
     admin:         req.user._id,
     adminUsername: req.user.username,
@@ -36,7 +36,21 @@ const log = (req, action, target, detail = "") => {
     targetId:      target?._id || null,
     targetUsername:target?.username || "",
     detail,
-  }).catch(() => {});
+    sourceType:    extras.sourceType || "",
+    sourceId:      extras.sourceId   || null,
+    sourceUrl:     extras.sourceUrl  || "",
+  })
+    .then(() => {
+      // Auto-trim: keep last 100 entries
+      AdminLog.countDocuments().then((n) => {
+        if (n > 100) {
+          AdminLog.find({}).sort({ createdAt: -1 }).skip(100).select("_id").lean()
+            .then((old) => { if (old.length) AdminLog.deleteMany({ _id: { $in: old.map(o => o._id) } }).catch(() => {}); })
+            .catch(() => {});
+        }
+      }).catch(() => {});
+    })
+    .catch(() => {});
 };
 import Notification from "../models/notificationModel.js";
 import DmReport from "../models/dmReportModel.js";
@@ -872,6 +886,36 @@ export const getAdminLogs = async (req, res) => {
     res.json(logs);
   } catch (err) {
     console.error("❌ getAdminLogs Error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+// ─── DISMISS SINGLE LOG ───────────────────────────────────────────────────────
+
+export const dismissLog = async (req, res) => {
+  try {
+    await AdminLog.findByIdAndDelete(req.params.logId);
+    res.json({ message: "Log dismissed." });
+  } catch (err) {
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+// ─── CLEAR / TRIM LOGS ───────────────────────────────────────────────────────
+
+export const clearLogs = async (req, res) => {
+  try {
+    const keepLast = parseInt(req.query.keepLast);
+    if (keepLast && keepLast > 0) {
+      // Trim: delete everything older than the N most recent entries
+      const keep = await AdminLog.find({}).sort({ createdAt: -1 }).limit(keepLast).select("_id").lean();
+      await AdminLog.deleteMany({ _id: { $nin: keep.map((l) => l._id) } });
+      res.json({ message: `Trimmed to latest ${keepLast} logs.` });
+    } else {
+      await AdminLog.deleteMany({});
+      res.json({ message: "All logs cleared." });
+    }
+  } catch (err) {
     res.status(500).json({ message: "Server error" });
   }
 };

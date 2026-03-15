@@ -56,6 +56,8 @@ import {
   getAppeals,            // GET    /appeals                      — list all ban/restriction appeals
   updateAppealStatus,    // PUT    /appeals/:appealId            — approve or dismiss an appeal
   getAdminLogs,          // GET    /logs                         — admin action audit log
+  dismissLog,            // DELETE /logs/:logId                  — dismiss a single log entry
+  clearLogs,             // DELETE /logs                         — clear all or trim logs (?keepLast=N)
 } from "../controllers/adminController.js";
 
 const router = express.Router();
@@ -183,5 +185,7 @@ router.post("/create-test-user", createTestUser);
 router.get("/appeals", getAppeals);
 router.put("/appeals/:appealId", updateAppealStatus);
 router.get("/logs", getAdminLogs);
+router.delete("/logs/:logId", dismissLog);
+router.delete("/logs", clearLogs);
 
 export default router;

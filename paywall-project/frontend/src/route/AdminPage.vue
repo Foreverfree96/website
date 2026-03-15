@@ -422,15 +422,35 @@
     <!-- Logs tab -->
     <template v-if="tab === 'logs'">
       <p v-if="logsLoading" class="feed-status">Loading logs...</p>
-      <p v-else-if="!adminLogs.length" class="feed-status">No admin actions logged yet.</p>
-      <div v-else class="logs-list">
-        <div v-for="entry in adminLogs" :key="entry._id" class="log-row">
-          <span class="log-action">{{ entry.action }}</span>
-          <span v-if="entry.targetUsername" class="log-target">→ @{{ entry.targetUsername }}</span>
-          <span v-if="entry.detail" class="log-detail">{{ entry.detail }}</span>
-          <span class="log-meta">by @{{ entry.adminUsername }} · {{ formatDate(entry.createdAt) }}</span>
+      <template v-else>
+        <div class="logs-toolbar">
+          <span class="logs-count">{{ adminLogs.length }} entr{{ adminLogs.length !== 1 ? 'ies' : 'y' }}</span>
+          <button class="log-trim-btn" @click="trimLogs(15)" :disabled="adminLogs.length <= 15" title="Delete everything except the 15 most recent logs">
+            ✂ Keep Latest 15
+          </button>
+          <button class="log-clear-btn" @click="clearAllLogs" :disabled="!adminLogs.length">
+            🗑 Clear All
+          </button>
         </div>
-      </div>
+        <p v-if="!adminLogs.length" class="feed-status">No activity logged yet.</p>
+        <div v-else class="logs-list">
+          <div
+            v-for="entry in adminLogs"
+            :key="entry._id"
+            class="log-row"
+            :class="{ 'log-row--link': entry.sourceUrl }"
+            @click="entry.sourceUrl && router.push(entry.sourceUrl)"
+            :title="entry.sourceUrl ? 'Click to view source' : ''"
+          >
+            <span v-if="entry.sourceType" class="log-type-icon">{{ logTypeIcon(entry.sourceType) }}</span>
+            <span class="log-action">{{ entry.action }}</span>
+            <span v-if="entry.targetUsername" class="log-target">→ @{{ entry.targetUsername }}</span>
+            <span v-if="entry.detail" class="log-detail">"{{ truncate(entry.detail, 60) }}"</span>
+            <span class="log-meta">by @{{ entry.adminUsername }} · {{ formatDate(entry.createdAt) }}</span>
+            <button class="log-dismiss-btn" @click.stop="dismissLog(entry._id)" title="Dismiss">✕</button>
+          </div>
+        </div>
+      </template>
     </template>
 
     <!-- Toast notification -->
@@ -745,6 +765,34 @@ const loadAdminLogs = async () => {
   } catch { /* silent */ } finally {
     logsLoading.value = false;
   }
+};
+
+const dismissLog = async (logId) => {
+  try {
+    await axios.delete(`${API}/logs/${logId}`);
+    adminLogs.value = adminLogs.value.filter(l => l._id !== logId);
+  } catch { /* silent */ }
+};
+
+const clearAllLogs = async () => {
+  try {
+    await axios.delete(`${API}/logs`);
+    adminLogs.value = [];
+    showToast('All logs cleared.');
+  } catch { showToast('Failed to clear logs.', 'error'); }
+};
+
+const trimLogs = async (keepLast) => {
+  try {
+    await axios.delete(`${API}/logs?keepLast=${keepLast}`);
+    adminLogs.value = adminLogs.value.slice(0, keepLast);
+    showToast(`Trimmed to latest ${keepLast} logs.`);
+  } catch { showToast('Failed to trim logs.', 'error'); }
+};
+
+const logTypeIcon = (type) => {
+  const icons = { post: '📝', user: '👤', comment: '💬', dm: '📨', report: '🚩', signup: '✨', follow: '👥' };
+  return icons[type] || '🔹';
 };
 
 // Jump to the Appeals tab and highlight a specific appeal
@@ -1810,11 +1858,55 @@ const formatDate = (d) => new Date(d).toLocaleDateString();
 .appeal-resolved { font-size: 0.82rem; font-weight: 700; color: #555; margin: 0; text-transform: capitalize; }
 
 /* ── Admin Logs ─────────────────────────────────────────────────────────────── */
+.logs-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.logs-count {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #555;
+  margin-right: auto;
+}
+
+.log-trim-btn {
+  background: #78350f;
+  color: #fff;
+  border: 2px solid #000;
+  border-radius: 8px;
+  padding: 5px 14px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.log-trim-btn:not(:disabled):hover { background: #92400e; }
+.log-trim-btn:disabled { opacity: 0.4; cursor: default; }
+
+.log-clear-btn {
+  background: #7f1d1d;
+  color: #fff;
+  border: 2px solid #000;
+  border-radius: 8px;
+  padding: 5px 14px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.log-clear-btn:not(:disabled):hover { background: #991b1b; }
+.log-clear-btn:disabled { opacity: 0.4; cursor: default; }
+
 .logs-list {
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
+
 .log-row {
   background: pink;
   border: 2px solid #000;
@@ -1825,7 +1917,23 @@ const formatDate = (d) => new Date(d).toLocaleDateString();
   align-items: center;
   gap: 8px;
   font-size: 0.88rem;
+  position: relative;
 }
+
+.log-row--link {
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+}
+.log-row--link:hover {
+  background: #ffd6e7;
+  transform: translateX(2px);
+}
+
+.log-type-icon {
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
 .log-action {
   font-weight: 800;
   color: #000;
@@ -1843,6 +1951,28 @@ const formatDate = (d) => new Date(d).toLocaleDateString();
   font-size: 0.78rem;
   color: #888;
   white-space: nowrap;
+  padding-right: 28px;
+}
+
+.log-dismiss-btn {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: #999;
+  font-size: 0.88rem;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 4px;
+  transition: color 0.15s, background 0.15s;
+  line-height: 1;
+}
+.log-dismiss-btn:hover {
+  color: #b91c1c;
+  background: #fee2e2;
 }
 
 /* Report reasons */
@@ -2009,6 +2139,18 @@ const formatDate = (d) => new Date(d).toLocaleDateString();
   color: #000;
   border: 2px solid #000;
   position: relative;
+  /* Match MessagesPage bubble hover/selected highlight style */
+  outline: 2px solid transparent;
+  outline-offset: 1px;
+  transition: outline-color 0.15s, background 0.15s, color 0.15s;
+  user-select: text;
+}
+
+/* Highlight on text selection — same style as .bubble.selected in MessagesPage */
+.admin-dm-bubble::selection,
+.admin-dm-bubble *::selection {
+  background: #7c3aed;
+  color: #fff;
 }
 
 .admin-dm-time {

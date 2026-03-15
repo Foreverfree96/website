@@ -1777,21 +1777,27 @@ const formatTime = (d) => {
 /* ── Mobile ── */
 @media (max-width: 640px) {
   .msg-page {
-    height: calc(100vh - 50px - 16px);
-    height: calc(100dvh - 50px - 16px);
-    margin: 8px 8px 8px;
+    height: calc(100vh - 56px);
+    height: calc(100dvh - 56px);
+    margin: 0;
     flex-direction: column;
-    border-radius: 10px;
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+    border-bottom: none;
   }
 
   .convo-panel {
     width: 100%;
     border-right: none;
     border-bottom: 3px solid #000;
+    flex: 1;
   }
 
   .chat-panel {
     width: 100%;
+    flex: 1;
+    min-height: 0;
   }
 
   .hidden-mobile {

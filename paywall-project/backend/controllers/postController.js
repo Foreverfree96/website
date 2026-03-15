@@ -21,6 +21,7 @@
 import Post from "../models/postModel.js";
 import { Filter } from "bad-words";
 import fetch from "node-fetch";
+import { siteLog } from "../utils/siteLog.js";
 
 // Single shared profanity filter instance
 const textFilter = new Filter();
@@ -293,6 +294,8 @@ export const createPost = async (req, res) => {
 
     await post.populate("author", "username categories");
     res.status(201).json(post);
+
+    siteLog({ userId: req.user._id, username: req.user.username, action: "Post Created", targetUsername: req.user.username, detail: post.title || "", sourceType: "post", sourceId: post._id, sourceUrl: `/post/${post._id}` });
 
     // ── Fire-and-forget @mention notifications ───────────────────────────────
     // Run asynchronously after the response so latency is not visible to user
@@ -720,6 +723,8 @@ export const reportPost = async (req, res) => {
 
     await post.save();
     res.json({ message: "Post reported. Thank you for helping keep the community safe." });
+
+    siteLog({ userId: req.user._id, username: req.user.username, action: "Post Reported", targetUsername: post.author?.username || "", detail: reason, sourceType: "post", sourceId: post._id, sourceUrl: `/post/${post._id}` });
 
     // Notify admins in real-time
     const { getIo } = await import("../utils/socketEmitter.js");
