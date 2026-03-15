@@ -65,6 +65,7 @@
               </select>
               <button class="btn-restrict" :disabled="!u._restrictDuration" @click="applyRestrict(u)">Apply</button>
               <button v-if="!u.isVerified" class="btn-verify" @click="forceVerify(u)">✉️ Verify</button>
+              <span v-else class="verified-badge">✅ Verified</span>
               <button v-if="!u.isBanned" class="btn-ban" @click="applyBan(u)">🚫 Ban</button>
               <button v-else class="btn-unban" @click="applyUnban(u)">✅ Unban</button>
               <button class="btn-delete-user" @click="promptDeleteUser(u)">🗑 Delete</button>
@@ -1336,6 +1337,16 @@ const formatDate = (d) => new Date(d).toLocaleDateString();
   cursor: pointer;
 }
 .btn-verify:hover { background: #1e40af; }
+.verified-badge {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #14532d;
+  background: #dcfce7;
+  border: 2px solid #16a34a;
+  border-radius: 8px;
+  padding: 4px 10px;
+  white-space: nowrap;
+}
 
 /* Report reasons */
 .report-reasons-list {
