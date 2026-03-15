@@ -1254,13 +1254,13 @@ export const submitAppeal = async (req, res) => {
       const existing = await Appeal.findOne({
         user: user._id,
         type,
-        status: { $in: ["pending", "approved"] },
+        status: "pending",
       });
       if (existing) {
-        const statusMsg = existing.status === "pending"
-          ? "You already have a pending appeal under review. Please wait for a response."
-          : "Your previous appeal was approved. Please contact support if you need further help.";
-        return res.status(409).json({ message: statusMsg, alreadySubmitted: true });
+        return res.status(409).json({
+          message: "You already have a pending appeal under review. Please wait for a response.",
+          alreadySubmitted: true,
+        });
       }
     }
 
