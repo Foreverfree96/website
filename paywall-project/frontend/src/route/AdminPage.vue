@@ -470,7 +470,18 @@ const loadUsers = async () => {
   usersLoading.value = true;
   try {
     const res = await axios.get(`${API}/users`);
-    users.value = res.data;
+    // Fetch online IDs separately so isOnline is always fresh
+    let onlineIds = new Set();
+    try {
+      const ol = await axios.get(`${API}/online-users`);
+      onlineIds = new Set(ol.data.map(u => u._id));
+    } catch {}
+    // Initialise _restrictDuration so v-model has a tracked property from the start
+    users.value = res.data.map(u => ({
+      ...u,
+      _restrictDuration: '',
+      isOnline: onlineIds.has(u._id),
+    }));
   } catch {
     // ignore — user sees an empty list
   } finally {
@@ -735,10 +746,16 @@ const promptDeleteUser = (u) => {
 
 // ─── RESTRICT / BAN USER ─────────────────────────────────────────────────────
 
+// Helper: patch a user object in users.value by _id and merge changes
+const patchUser = (id, changes) => {
+  const idx = users.value.findIndex(x => x._id === id);
+  if (idx !== -1) users.value[idx] = { ...users.value[idx], ...changes };
+};
+
 const forceVerify = async (u) => {
   try {
     await axios.put(`${API}/users/${u._id}/verify`);
-    u.isVerified = true;
+    patchUser(u._id, { isVerified: true });
     alert(`@${u.username} is now verified.`);
   } catch (err) {
     alert(err.response?.data?.message || 'Failed to verify.');
@@ -749,8 +766,7 @@ const applyRestrict = async (u) => {
   if (!u._restrictDuration) return;
   try {
     const res = await axios.put(`${API}/users/${u._id}/restrict`, { duration: u._restrictDuration });
-    u.restrictedUntil = res.data.restrictedUntil;
-    u._restrictDuration = '';
+    patchUser(u._id, { restrictedUntil: res.data.restrictedUntil, _restrictDuration: '' });
     alert(res.data.message);
   } catch (err) {
     alert(err.response?.data?.message || 'Failed to apply restriction.');
@@ -763,7 +779,7 @@ const applyBan = (u) => {
     `This will permanently ban their account and block their email (${u.email}) from re-registering.`,
     async () => {
       await axios.put(`${API}/users/${u._id}/ban`);
-      u.isBanned = true;
+      patchUser(u._id, { isBanned: true });
     }
   );
 };
@@ -782,7 +798,7 @@ const quickBan = (userId, username, email) => {
 const applyUnban = async (u) => {
   try {
     await axios.put(`${API}/users/${u._id}/ban`, { unban: true });
-    u.isBanned = false;
+    patchUser(u._id, { isBanned: false });
   } catch (err) {
     alert(err.response?.data?.message || 'Failed to unban.');
   }
@@ -801,12 +817,17 @@ onMounted(() => {
   const sock = getSocket();
   if (sock) {
     // Live online count — fires whenever any user connects or disconnects
-    sock.on("analytics:online", ({ count, users }) => {
+    sock.on("analytics:online", ({ count, users: onlineList }) => {
       if (analytics.value) {
         analytics.value.users.online  = count;
         analytics.value.users.offline = Math.max(0, analytics.value.users.totalCurrent - count);
       }
-      if (users) onlineUserList.value = users;
+      if (onlineList) {
+        onlineUserList.value = onlineList;
+        // Update isOnline on the users list in real-time
+        const onlineIds = new Set(onlineList.map(u => u._id));
+        users.value = users.value.map(u => ({ ...u, isOnline: onlineIds.has(u._id) }));
+      }
     });
 
     // Live page view — fires whenever any page is visited
