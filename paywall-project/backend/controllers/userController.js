@@ -22,7 +22,7 @@ import User from "../models/userModel.js";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
-import axios from "axios";
+import nodemailer from "nodemailer";
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
@@ -61,19 +61,25 @@ const isValidUsername = (u) => u.length >= 2 && u.length <= 30 && /^[a-zA-Z0-9_]
  * @param {string} options.subject - Email subject line
  * @param {string} options.html    - HTML body content
  */
+const transporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    user: process.env.GMAIL_USER,
+    pass: process.env.GMAIL_PASS.replace(/\s/g, ""),
+  },
+});
+
 const sendEmail = async ({ to, subject, html }) => {
   try {
-    const res = await axios.post("https://api.brevo.com/v3/smtp/email", {
-      sender: { name: "Austin's Site", email: process.env.GMAIL_USER },
-      to: [{ email: to }],
+    await transporter.sendMail({
+      from: `"Austin's Site" <${process.env.GMAIL_USER}>`,
+      to,
       subject,
-      htmlContent: html,
-    }, {
-      headers: { "api-key": process.env.BREVO_API_KEY, "Content-Type": "application/json" },
+      html,
     });
-    console.log("✅ Email sent:", res.data);
+    console.log("✅ Email sent to:", to);
   } catch (err) {
-    console.error("❌ Email send failed:", JSON.stringify(err.response?.data || err.message));
+    console.error("❌ Email send failed:", err.message);
     throw err;
   }
 };
