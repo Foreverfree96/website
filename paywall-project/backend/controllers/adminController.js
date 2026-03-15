@@ -423,6 +423,22 @@ export const adminDeleteUser = async (req, res) => {
   }
 };
 
+// ─── GET ONLINE USERS ────────────────────────────────────────────────────────
+
+export const getOnlineUsers = async (req, res) => {
+  try {
+    const ids = [...onlineUsers];
+    if (!ids.length) return res.json([]);
+    const users = await User.find({ _id: { $in: ids } })
+      .select("username email isAdmin isSubscriber")
+      .lean();
+    res.json(users);
+  } catch (err) {
+    console.error("❌ Admin getOnlineUsers Error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
 // ─── FORCE VERIFY USER ───────────────────────────────────────────────────────
 
 export const forceVerifyUser = async (req, res) => {

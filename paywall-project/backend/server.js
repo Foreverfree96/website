@@ -121,12 +121,19 @@ io.on("connection", async (socket) => {
     if (u?.isAdmin) socket.join("admins");
   } catch {}
 
-  // Push updated online count to all connected admin panels
-  io.to("admins").emit("analytics:online", { count: onlineUsers.size });
+  // Push updated online count + user list to all connected admin panels
+  const emitOnline = async () => {
+    const ids = [...onlineUsers];
+    const users = ids.length
+      ? await User.find({ _id: { $in: ids } }).select("username email isAdmin isSubscriber").lean()
+      : [];
+    io.to("admins").emit("analytics:online", { count: ids.length, users });
+  };
+  emitOnline();
 
   socket.on("disconnect", () => {
     onlineUsers.delete(socket.userId);
-    io.to("admins").emit("analytics:online", { count: onlineUsers.size });
+    emitOnline();
   });
 });
 

@@ -51,6 +51,7 @@ import {
   getDmReports,          // GET    /dm-reports                   — all DM abuse reports
   updateDmReportStatus,  // PUT    /dm-reports/:reportId         — set report status
   getAnalytics,          // GET    /analytics                    — platform-wide metrics
+  getOnlineUsers,        // GET    /online-users                 — currently connected users
 } from "../controllers/adminController.js";
 
 const router = express.Router();
@@ -173,5 +174,6 @@ router.put("/dm-reports/:reportId", updateDmReportStatus);
  * queue sizes, DM report totals, and social graph stats.
  */
 router.get("/analytics", getAnalytics);
+router.get("/online-users", getOnlineUsers);
 
 export default router;

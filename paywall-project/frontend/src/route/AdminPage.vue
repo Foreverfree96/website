@@ -19,6 +19,9 @@
       <button :class="['tab-btn', { active: tab === 'dms' }]" @click="switchTab('dms')">
         📨 DMs ({{ dmReports.length }})
       </button>
+      <button :class="['tab-btn', { active: tab === 'online' }]" @click="switchTab('online')">
+        🟢 Online ({{ onlineUserList.length }})
+      </button>
       <button :class="['tab-btn', { active: tab === 'analytics' }]" @click="switchTab('analytics')">
         📊 Analytics
       </button>
@@ -216,6 +219,24 @@
             <button class="btn-clear" @click="handleDmReport(r._id, 'reviewed')">✅ Mark Reviewed</button>
             <button class="btn-flag" @click="handleDmReport(r._id, 'dismissed')">✕ Dismiss</button>
             <button v-if="r.reportedUser?._id" class="btn-ban" @click="quickBan(r.reportedUser._id, r.reportedUser.username, r.reportedUser.email)">🚫 Ban User</button>
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <!-- Online Users tab -->
+    <template v-if="tab === 'online'">
+      <p v-if="!onlineUserList.length" class="feed-status">No users currently online.</p>
+      <div v-else class="user-list">
+        <div v-for="u in onlineUserList" :key="u._id" class="user-card">
+          <div class="user-card__left">
+            <span class="user-card__username" @click="router.push(`/creator/${u.username}`)">@{{ u.username }}</span>
+            <span v-if="u.isAdmin" class="user-badge admin-badge">🛡️ Mod</span>
+            <span v-if="u.isSubscriber" class="user-badge sub-badge">⭐ Sub</span>
+            <span class="user-badge online-badge">🟢 Online</span>
+          </div>
+          <div class="user-card__meta">
+            <span class="user-card__email">{{ u.email }}</span>
           </div>
         </div>
       </div>
@@ -517,10 +538,11 @@ const switchTab = (name) => {
   else if (name === 'comments') loadReportedComments();
   else if (name === 'users') loadUsers();
   else if (name === 'dms') loadDmReports();
+  else if (name === 'online') loadOnlineUsers();
   else load(); // reported + flagged
 };
 
-const validTabs = ['reported', 'flagged', 'comments', 'users', 'dms', 'analytics'];
+const validTabs = ['reported', 'flagged', 'comments', 'users', 'dms', 'online', 'analytics'];
 
 // If the nav link is clicked while already on /admin the query param changes
 // but the component isn't remounted — watch handles that specific case only.
@@ -602,6 +624,17 @@ const handleClearCommentReports = async (postId, commentId, post) => {
 const handleFlag = async (postId) => {
   await axios.put(`${API}/posts/${postId}/flag`);
   await load();
+};
+
+// ─── ONLINE USERS ─────────────────────────────────────────────────────────────
+
+const onlineUserList = ref([]);
+
+const loadOnlineUsers = async () => {
+  try {
+    const res = await axios.get(`${API}/online-users`);
+    onlineUserList.value = res.data;
+  } catch {}
 };
 
 // ─── DM REPORTS ───────────────────────────────────────────────────────────────
@@ -768,10 +801,12 @@ onMounted(() => {
   const sock = getSocket();
   if (sock) {
     // Live online count — fires whenever any user connects or disconnects
-    sock.on("analytics:online", ({ count }) => {
-      if (!analytics.value) return;
-      analytics.value.users.online  = count;
-      analytics.value.users.offline = Math.max(0, analytics.value.users.totalCurrent - count);
+    sock.on("analytics:online", ({ count, users }) => {
+      if (analytics.value) {
+        analytics.value.users.online  = count;
+        analytics.value.users.offline = Math.max(0, analytics.value.users.totalCurrent - count);
+      }
+      if (users) onlineUserList.value = users;
     });
 
     // Live page view — fires whenever any page is visited
