@@ -22,6 +22,7 @@
 
 import Post from "../models/postModel.js";
 import User from "../models/userModel.js";
+import bcrypt from "bcryptjs";
 import Notification from "../models/notificationModel.js";
 import DmReport from "../models/dmReportModel.js";
 import BannedEmail from "../models/bannedEmailModel.js";
@@ -684,6 +685,44 @@ export const adminFlagPost = async (req, res) => {
     res.json({ message: "Post flagged" });
   } catch (err) {
     console.error("❌ Admin flagPost Error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+// ─── CREATE TEST USER ─────────────────────────────────────────────────────────
+
+/**
+ * POST /api/admin/create-test-user
+ *
+ * Admin-only endpoint that creates a pre-verified user account instantly,
+ * bypassing the email verification flow. Intended for testing only.
+ *
+ * Body: { username, email, password }
+ */
+export const createTestUser = async (req, res) => {
+  try {
+    const { username, email, password } = req.body;
+    if (!username || !email || !password)
+      return res.status(400).json({ message: "username, email, and password are required" });
+
+    const emailTaken = await User.findOne({ email: email.trim().toLowerCase() });
+    if (emailTaken) return res.status(400).json({ message: "Email already in use" });
+
+    const usernameTaken = await User.findOne({ username: new RegExp(`^${username.trim()}$`, "i") });
+    if (usernameTaken) return res.status(400).json({ message: "Username already taken" });
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    const user = await User.create({
+      username: username.trim(),
+      email: email.trim().toLowerCase(),
+      password: hashedPassword,
+      isVerified: true,
+    });
+
+    res.status(201).json({ message: `Test account @${user.username} created.`, username: user.username });
+  } catch (err) {
+    console.error("❌ createTestUser Error:", err);
     res.status(500).json({ message: "Server error" });
   }
 };

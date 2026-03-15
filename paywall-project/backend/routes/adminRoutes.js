@@ -52,6 +52,7 @@ import {
   updateDmReportStatus,  // PUT    /dm-reports/:reportId         — set report status
   getAnalytics,          // GET    /analytics                    — platform-wide metrics
   getOnlineUsers,        // GET    /online-users                 — currently connected users
+  createTestUser,        // POST   /create-test-user             — create pre-verified test account
 } from "../controllers/adminController.js";
 
 const router = express.Router();
@@ -175,5 +176,6 @@ router.put("/dm-reports/:reportId", updateDmReportStatus);
  */
 router.get("/analytics", getAnalytics);
 router.get("/online-users", getOnlineUsers);
+router.post("/create-test-user", createTestUser);
 
 export default router;

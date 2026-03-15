@@ -29,6 +29,23 @@
 
     <!-- Users tab -->
     <template v-if="tab === 'users'">
+
+      <!-- Create test account form -->
+      <div class="test-user-form">
+        <button class="test-user-toggle" @click="showTestForm = !showTestForm">
+          {{ showTestForm ? '▲ Hide' : '➕ Create Test Account' }}
+        </button>
+        <div v-if="showTestForm" class="test-user-fields">
+          <input v-model="testForm.username" class="test-input" placeholder="Username" />
+          <input v-model="testForm.email" class="test-input" placeholder="Email" />
+          <input v-model="testForm.password" class="test-input" placeholder="Password" type="password" />
+          <button class="test-user-submit" :disabled="testLoading" @click="submitTestUser">
+            {{ testLoading ? 'Creating…' : 'Create' }}
+          </button>
+          <span v-if="testMsg" class="test-msg">{{ testMsg }}</span>
+        </div>
+      </div>
+
       <input
         v-model="userSearch"
         class="user-search"
@@ -448,6 +465,30 @@ const usersLoading = ref(false);
 
 // The string the moderator has typed into the user search box.
 const userSearch = ref('');
+
+// ── Test account creation ──────────────────────────────────────────────────────
+const showTestForm = ref(false);
+const testLoading  = ref(false);
+const testMsg      = ref('');
+const testForm     = ref({ username: '', email: '', password: '' });
+
+const submitTestUser = async () => {
+  testMsg.value = '';
+  if (!testForm.value.username || !testForm.value.email || !testForm.value.password) {
+    testMsg.value = 'All fields required.'; return;
+  }
+  testLoading.value = true;
+  try {
+    const res = await axios.post(`${API}/create-test-user`, testForm.value);
+    testMsg.value = res.data.message;
+    testForm.value = { username: '', email: '', password: '' };
+    await loadUsers();
+  } catch (err) {
+    testMsg.value = err.response?.data?.message || 'Failed to create account.';
+  } finally {
+    testLoading.value = false;
+  }
+};
 
 /**
  * filteredUsers
@@ -1346,6 +1387,56 @@ const formatDate = (d) => new Date(d).toLocaleDateString();
   border-radius: 8px;
   padding: 4px 10px;
   white-space: nowrap;
+}
+
+/* Test account creation form */
+.test-user-form {
+  margin-bottom: 16px;
+}
+.test-user-toggle {
+  background: #1e3a5f;
+  color: #fff;
+  border: 2px solid #000;
+  border-radius: 8px;
+  padding: 7px 16px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.test-user-toggle:hover { background: #1e40af; }
+.test-user-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+  align-items: center;
+}
+.test-input {
+  border: 2px solid #000;
+  border-radius: 8px;
+  padding: 7px 12px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  min-width: 140px;
+  flex: 1;
+}
+.test-user-submit {
+  background: #14532d;
+  color: #fff;
+  border: 2px solid #000;
+  border-radius: 8px;
+  padding: 7px 18px;
+  font-size: 0.88rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.test-user-submit:disabled { opacity: 0.5; cursor: default; }
+.test-user-submit:not(:disabled):hover { background: #166534; }
+.test-msg {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #14532d;
 }
 
 /* Report reasons */
