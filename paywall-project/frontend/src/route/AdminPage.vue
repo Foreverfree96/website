@@ -416,7 +416,7 @@ watch(user, (u) => {
 // ─── TAB STATE ────────────────────────────────────────────────────────────────
 
 // Which tab is currently active: 'reported' | 'flagged' | 'comments' | 'users' | 'dms'.
-const tab = ref('reported');
+const tab = ref('users');
 
 // ─── POST / COMMENT DATA ─────────────────────────────────────────────────────
 
@@ -854,7 +854,7 @@ onMounted(() => {
   // Initialise the correct tab from the URL param — done here (not at module
   // level) so all const loaders are fully initialised before switchTab runs.
   const initTab = route.query.tab;
-  switchTab(validTabs.includes(initTab) ? initTab : 'reported');
+  switchTab(validTabs.includes(initTab) ? initTab : 'users');
 
   const sock = getSocket();
   if (sock) {
