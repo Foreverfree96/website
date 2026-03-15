@@ -132,65 +132,51 @@
               </button>
             </div>
 
-            <!-- Snapshot messages -->
-            <template v-if="reportMode && snapshotMsgs.length">
+            <!-- Report mode: snapshot + live merged into one list -->
+            <template v-if="reportMode">
 
-              <p class="snapshot-banner">
-                📋 Unsent / cleared messages (available for reporting)
-              </p>
-
-              <!-- Snapshot bubble -->
-              <!-- Align right if message belongs to current user -->
-              <div v-for="m in snapshotMsgs" :key="m.sentAt" class="bubble-wrap" :class="[
-                m.sender?.toString() === user.id?.toString()
-                  ? 'mine'
-                  : 'theirs',
+              <div v-for="m in snapshotMsgs" :key="'snap-' + m.sentAt" class="bubble-wrap" :class="[
+                m.sender?.toString() === user.id?.toString() ? 'mine' : 'theirs',
                 'reportable'
               ]" @click="toggleReportSelect(m)">
-
                 <div class="bubble-row">
-
-                  <div class="bubble" :class="{ selected: reportSelected.has(m.sentAt?.toString()) }">
-                    {{ m.body }}<span v-if="reportSelected.has(m.sentAt?.toString())" class="report-check"> ✅</span>
+                  <div class="bubble" :class="{ selected: reportSelected.has(m.sentAt?.toString()) }"
+                    v-html="linkify(m.body) + (reportSelected.has(m.sentAt?.toString()) ? ' ✅' : '')">
                   </div>
-
                 </div>
-
-                <span class="bubble-time">
-                  {{ formatTime(m.sentAt) }}
-                </span>
-
+                <span class="bubble-time">{{ formatTime(m.sentAt) }}</span>
               </div>
-            </template>
 
-            <!-- Live messages -->
-            <TransitionGroup name="msg-in" tag="div" class="messages-inner">
-
-              <!-- Message bubble -->
-              <!-- Click enabled only in report mode -->
               <div v-for="m in messages" :key="m._id" class="bubble-wrap" :class="[
                 m.sender._id === user.id ? 'mine' : 'theirs',
-                reportMode ? 'reportable' : ''
-              ]" v-on="reportMode ? { click: () => toggleReportSelect(m) } : {}">
+                'reportable'
+              ]" @click="toggleReportSelect(m)">
+                <div class="bubble-row">
+                  <div class="bubble" :class="{ selected: reportSelected.has(m._id) }"
+                    v-html="linkify(m.body) + (reportSelected.has(m._id) ? ' ✅' : '')">
+                  </div>
+                </div>
+                <span class="bubble-time">{{ formatTime(m.createdAt) }}</span>
+              </div>
+
+            </template>
+
+            <!-- Normal mode: live messages only -->
+            <TransitionGroup v-else name="msg-in" tag="div" class="messages-inner">
+
+              <div v-for="m in messages" :key="m._id" class="bubble-wrap" :class="[
+                m.sender._id === user.id ? 'mine' : 'theirs'
+              ]">
 
                 <div class="bubble-row">
-
-                  <!-- Linkified message -->
-                  <div class="bubble" :class="{ selected: reportMode && reportSelected.has(m._id) }"
-                    v-html="linkify(m.body) + (reportMode && reportSelected.has(m._id) ? ' ✅' : '')">
-                  </div>
-
-                  <!-- Unsend button -->
-                  <button v-if="!reportMode && m.sender._id === user.id" class="unsend-btn"
+                  <div class="bubble" v-html="linkify(m.body)"></div>
+                  <button v-if="m.sender._id === user.id" class="unsend-btn"
                     @click="openUnsendConfirm(m)" title="Unsend">
                     ✕
                   </button>
-
                 </div>
 
-                <span class="bubble-time">
-                  {{ formatTime(m.createdAt) }}
-                </span>
+                <span class="bubble-time">{{ formatTime(m.createdAt) }}</span>
 
               </div>
 
