@@ -1802,10 +1802,21 @@ const formatTime = (d) => {
     display: block;
   }
 
+  .chat-header__actions {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .report-btn,
+  .recover-btn,
   .clear-btn,
   .block-btn {
     font-size: 0.74rem;
     padding: 4px 9px;
+    flex: 1;
+    min-width: 0;
+    text-align: center;
+    justify-content: center;
   }
 }
 

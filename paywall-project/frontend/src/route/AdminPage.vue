@@ -258,10 +258,12 @@
           </div>
           <div v-if="r.messages?.length" class="comments-preview" style="margin-top:8px;">
             <p class="comments-label">📋 {{ r.messages.length }} selected message{{ r.messages.length !== 1 ? 's' : '' }}</p>
-            <div v-for="(m, i) in r.messages" :key="i" class="comment-row" style="flex-direction:column;align-items:flex-start;gap:2px;">
-              <span class="comment-author">@{{ m.senderUsername }}</span>
-              <span class="comment-body">{{ m.body }}</span>
-              <span class="comment-date" style="font-size:0.7rem;color:#999;">{{ formatDate(m.sentAt) }}</span>
+            <div class="admin-dm-messages">
+              <div v-for="(m, i) in r.messages" :key="i" class="admin-dm-bubble-wrap">
+                <span class="admin-dm-sender">@{{ m.senderUsername }}</span>
+                <div class="admin-dm-bubble">{{ m.body }}</div>
+                <span class="admin-dm-time">{{ formatDate(m.sentAt) }}</span>
+              </div>
             </div>
           </div>
           <div class="mod-card__actions" style="margin-top:10px;">
@@ -275,6 +277,10 @@
 
     <!-- Online Users tab -->
     <template v-if="tab === 'online'">
+      <div class="online-tab-header">
+        <span class="online-live-badge">🔴 LIVE</span>
+        <span class="online-count-text">{{ onlineUserList.length }} user{{ onlineUserList.length !== 1 ? 's' : '' }} online</span>
+      </div>
       <p v-if="!onlineUserList.length" class="feed-status">No users currently online.</p>
       <div v-else class="user-list">
         <div v-for="u in onlineUserList" :key="u._id" class="user-card">
@@ -699,7 +705,7 @@ const load = async () => {
  */
 const switchTab = (name) => {
   tab.value = name;
-  if (name === 'analytics') loadAnalytics();
+  if (name === 'analytics') loadAnalytics(true);
   else if (name === 'comments') loadReportedComments();
   else if (name === 'users') loadUsers();
   else if (name === 'dms') loadDmReports();
@@ -779,10 +785,14 @@ const resolveAppeal = async (appeal, status) => {
 };
 
 // If the nav link is clicked while already on /admin the query param changes
-// but the component isn't remounted — watch handles that specific case only.
+// but the component isn't remounted — watch handles that specific case.
+// Also handles navigating to /admin with no tab param (defaults to users).
 watch(() => route.query.tab, (qTab) => {
-  if (qTab && validTabs.includes(qTab) && qTab !== tab.value) {
+  if (qTab && validTabs.includes(qTab)) {
     switchTab(qTab);
+  } else if (!qTab) {
+    // No tab param means the Mod nav link was clicked — go to users view
+    switchTab('users');
   }
 });
 
@@ -938,13 +948,17 @@ const loadAnalytics = async (force = false) => {
 };
 
 // Silent background refresh — updates numbers in place with no loading spinner.
-// Only runs while the analytics tab is visible.
+// Runs for both the analytics and online tabs.
 const refreshAnalyticsSilent = async () => {
-  if (tab.value !== 'analytics' || !analytics.value) return;
-  try {
-    const res = await axios.get(`${API}/analytics`);
-    analytics.value = res.data;
-  } catch { /* ignore */ }
+  if (tab.value === 'analytics') {
+    if (!analytics.value) return;
+    try {
+      const res = await axios.get(`${API}/analytics`);
+      analytics.value = res.data;
+    } catch { /* ignore */ }
+  } else if (tab.value === 'online') {
+    loadOnlineUsers();
+  }
 };
 
 // ─── USER ACTIONS ─────────────────────────────────────────────────────────────
@@ -1922,6 +1936,77 @@ const formatDate = (d) => new Date(d).toLocaleDateString();
 /* Landscape phone */
 @media (max-height: 500px) and (orientation: landscape) {
   .admin-page { margin: 8px auto; }
+}
+
+/* ── Online tab live indicator ── */
+.online-tab-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.online-live-badge {
+  background: #7f1d1d;
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 800;
+  padding: 3px 10px;
+  border-radius: 20px;
+  border: 2px solid #000;
+  animation: live-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes live-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.6; }
+}
+
+.online-count-text {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #14532d;
+}
+
+/* ── Admin DM report message bubbles ── */
+.admin-dm-messages {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.admin-dm-bubble-wrap {
+  display: flex;
+  flex-direction: column;
+  max-width: 80%;
+  gap: 2px;
+}
+
+.admin-dm-sender {
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: #555;
+  padding-left: 6px;
+}
+
+.admin-dm-bubble {
+  padding: 9px 14px;
+  border-radius: 18px 18px 18px 4px;
+  font-size: 0.88rem;
+  line-height: 1.45;
+  word-break: break-word;
+  white-space: pre-wrap;
+  background: pink;
+  color: #000;
+  border: 2px solid #000;
+  position: relative;
+}
+
+.admin-dm-time {
+  font-size: 0.68rem;
+  color: #999;
+  padding: 0 6px;
 }
 
 /* ── Analytics tab ── */
