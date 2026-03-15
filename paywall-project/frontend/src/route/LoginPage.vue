@@ -47,20 +47,27 @@
                     :disabled="appealSent"
                 />
                 <p class="appeal-box__chars">{{ appealText.length }}/1000</p>
-                <div v-if="!appealSent" class="appeal-box__actions">
-                    <button class="appeal-box__cancel" @click="closeAppealModal">Cancel</button>
-                    <button
-                        class="appeal-box__submit"
-                        :disabled="appealLoading || !appealText.trim()"
-                        @click="submitAppeal"
-                    >
-                        {{ appealLoading ? 'Submitting…' : 'Submit Appeal' }}
-                    </button>
-                </div>
-                <p v-if="appealError" class="appeal-box__error">{{ appealError }}</p>
+                <template v-if="!appealSent && !appealAlreadyExists">
+                  <div class="appeal-box__actions">
+                      <button class="appeal-box__cancel" @click="closeAppealModal">Cancel</button>
+                      <button
+                          class="appeal-box__submit"
+                          :disabled="appealLoading || !appealText.trim()"
+                          @click="submitAppeal"
+                      >
+                          {{ appealLoading ? 'Submitting…' : 'Submit Appeal' }}
+                      </button>
+                  </div>
+                  <p v-if="appealError" class="appeal-box__error">{{ appealError }}</p>
+                </template>
                 <div v-if="appealSent" class="appeal-box__success">
                     <p>✅ Appeal submitted successfully.</p>
                     <p>The mod team will review it and get back to you.</p>
+                    <button class="appeal-box__cancel" @click="closeAppealModal">Close</button>
+                </div>
+                <div v-if="appealAlreadyExists" class="appeal-box__success">
+                    <p>📋 You've already submitted an appeal.</p>
+                    <p>Please wait while the mod team reviews your case. You'll only be able to resubmit if your appeal is dismissed.</p>
                     <button class="appeal-box__cancel" @click="closeAppealModal">Close</button>
                 </div>
             </div>
@@ -85,18 +92,20 @@ const isBanned     = ref(false);
 const isRestricted = ref(false);
 
 // Appeal modal state
-const showAppealModal = ref(false);
-const appealText      = ref("");
-const appealLoading   = ref(false);
-const appealError     = ref("");
-const appealSent      = ref(false);
+const showAppealModal     = ref(false);
+const appealText          = ref("");
+const appealLoading       = ref(false);
+const appealError         = ref("");
+const appealSent          = ref(false);
+const appealAlreadyExists = ref(false);
 
 const showResend = computed(() => error.value?.toLowerCase().includes("verify your email"));
 
 const handleLogin = async () => {
-    resendSent.value     = false;
-    isBanned.value       = false;
-    isRestricted.value   = false;
+    resendSent.value         = false;
+    isBanned.value           = false;
+    isRestricted.value       = false;
+    appealAlreadyExists.value = false;
     try {
         await login(username.value, password.value);
         window.location.href = "/portfolio";
@@ -118,13 +127,11 @@ const handleResend = async () => {
 };
 
 const closeAppealModal = () => {
-    if (appealSent.value) {
-        // Reset for potential future use
-        appealText.value  = "";
-        appealError.value = "";
-        appealSent.value  = false;
-    }
-    showAppealModal.value = false;
+    appealText.value          = "";
+    appealError.value         = "";
+    appealSent.value          = false;
+    appealAlreadyExists.value = false;
+    showAppealModal.value     = false;
 };
 
 const submitAppeal = async () => {
@@ -138,7 +145,13 @@ const submitAppeal = async () => {
         });
         appealSent.value = true;
     } catch (err) {
-        appealError.value = err.response?.data?.message || "Failed to submit. Please try again.";
+        const data = err.response?.data;
+        // Already submitted — treat like a success so they know it's been received
+        if (data?.alreadySubmitted) {
+            appealAlreadyExists.value = true;
+        } else {
+            appealError.value = data?.message || "Failed to submit. Please try again.";
+        }
     } finally {
         appealLoading.value = false;
     }

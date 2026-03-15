@@ -1248,6 +1248,22 @@ export const submitAppeal = async (req, res) => {
       await User.findOne({ email: identifier.trim().toLowerCase() }) ||
       await User.findOne({ username: new RegExp(`^${identifier.trim()}$`, "i") });
 
+    // Block duplicate appeals — one pending/approved appeal per user per type allowed.
+    // If their previous appeal was dismissed they may resubmit.
+    if (user) {
+      const existing = await Appeal.findOne({
+        user: user._id,
+        type,
+        status: { $in: ["pending", "approved"] },
+      });
+      if (existing) {
+        const statusMsg = existing.status === "pending"
+          ? "You already have a pending appeal under review. Please wait for a response."
+          : "Your previous appeal was approved. Please contact support if you need further help.";
+        return res.status(409).json({ message: statusMsg, alreadySubmitted: true });
+      }
+    }
+
     await Appeal.create({
       identifier: identifier.trim(),
       user:       user?._id || null,
