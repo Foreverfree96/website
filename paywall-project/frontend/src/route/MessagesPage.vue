@@ -1683,6 +1683,12 @@ const formatTime = (d) => {
   cursor: pointer;
 }
 
+.bubble-wrap.reportable .bubble:hover {
+  outline: 2px dashed #7c3aed;
+  outline-offset: 1px;
+  background: #f5f3ff !important;
+}
+
 .bubble.selected {
   outline: 2.5px solid #7c3aed;
   outline-offset: 1px;
