@@ -39,17 +39,10 @@
          Note: Spotify's embed widget shows up to 100 tracks — this is a
          hard limit on Spotify's side, not something we can change.
     ──────────────────────────────────────────────────────────────────────── -->
-    <template v-else-if="embedType === 'spotify'">
-      <iframe :src="spotifyEmbedUrl" frameborder="0"
-        allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
-        loading="lazy"
-        :class="['embed-iframe', isPlaylist ? 'embed-iframe--playlist' : 'embed-iframe--audio']" />
-      <div v-if="isPlaylist" class="embed-controls">
-        <a :href="mediaUrl" target="_blank" rel="noopener noreferrer" class="shuffle-btn shuffle-btn--link">
-          🔀 Open & Shuffle in Spotify
-        </a>
-      </div>
-    </template>
+    <iframe v-else-if="embedType === 'spotify'" :src="spotifyEmbedUrl" frameborder="0"
+      allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
+      loading="lazy"
+      :class="['embed-iframe', isPlaylist ? 'embed-iframe--playlist' : 'embed-iframe--audio']" />
 
     <!-- ── Apple Music ────────────────────────────────────────────────────── -->
     <iframe v-else-if="embedType === 'applemusic'" :src="appleMusicEmbedUrl"
@@ -276,18 +269,6 @@ const toggleYouTubeShuffle = () => {
   background: #374151;
 }
 
-/* Link variant (Spotify open-in-app button) */
-.shuffle-btn--link {
-  background: #1db954;
-  border-color: #1db954;
-  color: #fff;
-}
-
-.shuffle-btn--link:hover {
-  background: #17a349;
-  border-color: #17a349;
-  color: #fff;
-}
 
 /* Link card for platforms that don't support embedding */
 .link-card {
