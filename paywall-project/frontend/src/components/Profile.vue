@@ -508,14 +508,14 @@ const spotifyStatus  = ref({ connected: false, displayName: null, isPremium: fal
 
 // URL that initiates the OAuth flow — passes JWT so backend can identify the user
 const spotifyConnectUrl = computed(() => {
-    const token = localStorage.getItem('token');
+    const token = localStorage.getItem('jwtToken');
     return `${API_SPOTIFY}/login?token=${token}`;
 });
 
 const fetchSpotifyStatus = async () => {
     spotifyLoading.value = true;
     try {
-        const token = localStorage.getItem('token');
+        const token = localStorage.getItem('jwtToken');
         const res = await axios.get(`${API_SPOTIFY}/status`, {
             headers: { Authorization: `Bearer ${token}` },
         });
@@ -529,7 +529,7 @@ const fetchSpotifyStatus = async () => {
 
 const handleSpotifyDisconnect = async () => {
     try {
-        const token = localStorage.getItem('token');
+        const token = localStorage.getItem('jwtToken');
         await axios.delete(`${API_SPOTIFY}/disconnect`, {
             headers: { Authorization: `Bearer ${token}` },
         });
