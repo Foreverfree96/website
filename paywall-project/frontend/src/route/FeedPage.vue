@@ -619,11 +619,11 @@ onMounted(() => {
 .like-count {
   font-weight: 700;
   font-size: 0.95rem;
-  padding: 6px 10px 6px 2px;
+  padding: 6px 16px 6px 4px;
   line-height: 1;
 }
 .like-count--clickable { cursor: pointer; }
-.like-count--clickable:hover { color: #e11d48; }
+.like-count--clickable:hover { color: #000; }
 
 .comment-count {
   font-weight: 700;
@@ -631,11 +631,24 @@ onMounted(() => {
   background: #f3f4f6;
   border: 2px solid #e5e7eb;
   border-radius: 999px;
-  padding: 6px 12px;
+  padding: 6px 18px;
   line-height: 1;
 }
 .comment-count--clickable { cursor: pointer; }
-.comment-count--clickable:hover { background: #ede9fe; border-color: #7c3aed; color: #7c3aed; }
+.comment-count--clickable:hover { background: #e5e7eb; border-color: #000; color: #000; }
+
+@media (hover: none) {
+  /* Touch devices — remove hover styles that can get stuck */
+  .like-count--clickable:hover { color: inherit; }
+  .comment-count--clickable:hover { background: #f3f4f6; border-color: #e5e7eb; color: inherit; }
+}
+
+@media (max-width: 640px) {
+  /* Bigger tap targets on mobile */
+  .like-btn { padding: 8px 12px; font-size: 1.1rem; }
+  .like-count { padding: 8px 18px 8px 4px; font-size: 1rem; }
+  .comment-count { padding: 8px 20px; font-size: 1rem; }
+}
 
 .comments-modal-box { max-width: 460px; }
 
