@@ -28,6 +28,9 @@
       <button :class="['tab-btn', { active: tab === 'appeals' }]" @click="switchTab('appeals')">
         📋 Appeals ({{ appeals.filter(a => a.status === 'pending').length }})
       </button>
+      <button :class="['tab-btn', { active: tab === 'logs' }]" @click="switchTab('logs')">
+        📝 Logs
+      </button>
     </div>
 
     <!-- Users tab -->
@@ -402,6 +405,20 @@
       </div>
     </template>
 
+    <!-- Logs tab -->
+    <template v-if="tab === 'logs'">
+      <p v-if="logsLoading" class="feed-status">Loading logs...</p>
+      <p v-else-if="!adminLogs.length" class="feed-status">No admin actions logged yet.</p>
+      <div v-else class="logs-list">
+        <div v-for="entry in adminLogs" :key="entry._id" class="log-row">
+          <span class="log-action">{{ entry.action }}</span>
+          <span v-if="entry.targetUsername" class="log-target">→ @{{ entry.targetUsername }}</span>
+          <span v-if="entry.detail" class="log-detail">{{ entry.detail }}</span>
+          <span class="log-meta">by @{{ entry.adminUsername }} · {{ formatDate(entry.createdAt) }}</span>
+        </div>
+      </div>
+    </template>
+
     <!-- Toast notification -->
     <transition name="toast-fade">
       <div v-if="toast.show" :class="['admin-toast', `admin-toast--${toast.type}`]">{{ toast.msg }}</div>
@@ -664,10 +681,11 @@ const switchTab = (name) => {
   else if (name === 'dms') loadDmReports();
   else if (name === 'online') loadOnlineUsers();
   else if (name === 'appeals') loadAppeals();
+  else if (name === 'logs') loadAdminLogs();
   else load(); // reported + flagged
 };
 
-const validTabs = ['reported', 'flagged', 'comments', 'users', 'dms', 'online', 'analytics', 'appeals'];
+const validTabs = ['reported', 'flagged', 'comments', 'users', 'dms', 'online', 'analytics', 'appeals', 'logs'];
 
 // ─── APPEALS ─────────────────────────────────────────────────────────────────
 
@@ -681,6 +699,21 @@ const loadAppeals = async () => {
     appeals.value = res.data;
   } catch { /* silent */ } finally {
     appealsLoading.value = false;
+  }
+};
+
+// ─── ADMIN LOGS ──────────────────────────────────────────────────────────────
+
+const adminLogs   = ref([]);
+const logsLoading = ref(false);
+
+const loadAdminLogs = async () => {
+  logsLoading.value = true;
+  try {
+    const res = await axios.get(`${API}/logs`);
+    adminLogs.value = res.data;
+  } catch { /* silent */ } finally {
+    logsLoading.value = false;
   }
 };
 
@@ -1684,6 +1717,42 @@ const formatDate = (d) => new Date(d).toLocaleDateString();
 }
 .btn-dismiss:hover { background: #4b5563; }
 .appeal-resolved { font-size: 0.82rem; font-weight: 700; color: #555; margin: 0; text-transform: capitalize; }
+
+/* ── Admin Logs ─────────────────────────────────────────────────────────────── */
+.logs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.log-row {
+  background: pink;
+  border: 2px solid #000;
+  border-radius: 8px;
+  padding: 10px 14px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.88rem;
+}
+.log-action {
+  font-weight: 800;
+  color: #000;
+}
+.log-target {
+  font-weight: 700;
+  color: #14532d;
+}
+.log-detail {
+  color: #555;
+  font-style: italic;
+}
+.log-meta {
+  margin-left: auto;
+  font-size: 0.78rem;
+  color: #888;
+  white-space: nowrap;
+}
 
 /* Report reasons */
 .report-reasons-list {

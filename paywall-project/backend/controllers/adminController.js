@@ -25,6 +25,19 @@ import User from "../models/userModel.js";
 import bcrypt from "bcryptjs";
 import axios from "axios";
 import Appeal from "../models/appealModel.js";
+import AdminLog from "../models/adminLogModel.js";
+
+/** Helper — fire-and-forget log entry */
+const log = (req, action, target, detail = "") => {
+  AdminLog.create({
+    admin:         req.user._id,
+    adminUsername: req.user.username,
+    action,
+    targetId:      target?._id || null,
+    targetUsername:target?.username || "",
+    detail,
+  }).catch(() => {});
+};
 import Notification from "../models/notificationModel.js";
 import DmReport from "../models/dmReportModel.js";
 import BannedEmail from "../models/bannedEmailModel.js";
@@ -419,6 +432,7 @@ export const adminDeleteUser = async (req, res) => {
     // 4. Finally delete the user document
     await user.deleteOne();
 
+    log(req, "Deleted user", user);
     res.json({ message: "User and all their content removed." });
   } catch (err) {
     console.error("❌ Admin deleteUser Error:", err);
@@ -452,6 +466,7 @@ export const forceVerifyUser = async (req, res) => {
     user.emailVerifyToken = undefined;
     user.emailVerifyTokenExpiry = undefined;
     await user.save();
+    log(req, "Force verified", user);
     res.json({ message: `@${user.username} has been verified.` });
   } catch (err) {
     console.error("❌ Admin forceVerify Error:", err);
@@ -491,6 +506,8 @@ export const restrictUser = async (req, res) => {
     const msg = duration === "none"
       ? "Restriction lifted."
       : `@${user.username} restricted for ${duration}.`;
+
+    log(req, duration === "none" ? "Lifted restriction" : `Restricted (${duration})`, user);
 
     // Notify the user by email when a restriction is applied (not on lift)
     if (duration !== "none") {
@@ -540,6 +557,7 @@ export const banUser = async (req, res) => {
       user.isBanned = false;
       await user.save();
       await BannedEmail.deleteOne({ email: user.email });
+      log(req, "Unbanned", user);
       return res.json({ message: `@${user.username} has been unbanned.` });
     }
 
@@ -549,6 +567,8 @@ export const banUser = async (req, res) => {
 
     // Block the email so they can't re-register with the same address
     await BannedEmail.updateOne({ email: user.email }, { email: user.email }, { upsert: true });
+
+    log(req, "Banned", user);
 
     // Notify the user by email
     axios.post("https://api.sendgrid.com/v3/mail/send", {
@@ -812,9 +832,26 @@ export const updateAppealStatus = async (req, res) => {
       { new: true }
     );
     if (!appeal) return res.status(404).json({ message: "Appeal not found." });
+    log(req, `Appeal ${status}`, { _id: appeal.user, username: appeal.username }, `type: ${appeal.type}`);
     res.json(appeal);
   } catch (err) {
     console.error("❌ updateAppealStatus Error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+// ─── GET ADMIN LOGS ───────────────────────────────────────────────────────────
+
+export const getAdminLogs = async (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit) || 100, 200);
+    const logs = await AdminLog.find({})
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .lean();
+    res.json(logs);
+  } catch (err) {
+    console.error("❌ getAdminLogs Error:", err);
     res.status(500).json({ message: "Server error" });
   }
 };
