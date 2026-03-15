@@ -53,6 +53,8 @@ import {
   getAnalytics,          // GET    /analytics                    — platform-wide metrics
   getOnlineUsers,        // GET    /online-users                 — currently connected users
   createTestUser,        // POST   /create-test-user             — create pre-verified test account
+  getAppeals,            // GET    /appeals                      — list all ban/restriction appeals
+  updateAppealStatus,    // PUT    /appeals/:appealId            — approve or dismiss an appeal
 } from "../controllers/adminController.js";
 
 const router = express.Router();
@@ -177,5 +179,7 @@ router.put("/dm-reports/:reportId", updateDmReportStatus);
 router.get("/analytics", getAnalytics);
 router.get("/online-users", getOnlineUsers);
 router.post("/create-test-user", createTestUser);
+router.get("/appeals", getAppeals);
+router.put("/appeals/:appealId", updateAppealStatus);
 
 export default router;

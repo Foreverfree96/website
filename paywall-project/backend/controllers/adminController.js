@@ -24,6 +24,7 @@ import Post from "../models/postModel.js";
 import User from "../models/userModel.js";
 import bcrypt from "bcryptjs";
 import axios from "axios";
+import Appeal from "../models/appealModel.js";
 import Notification from "../models/notificationModel.js";
 import DmReport from "../models/dmReportModel.js";
 import BannedEmail from "../models/bannedEmailModel.js";
@@ -782,6 +783,38 @@ export const createTestUser = async (req, res) => {
     res.status(201).json({ message: `Test account @${user.username} created (${uniqueEmail}). Signup email sent.`, username: user.username });
   } catch (err) {
     console.error("❌ createTestUser Error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+// ─── GET APPEALS ──────────────────────────────────────────────────────────────
+
+export const getAppeals = async (req, res) => {
+  try {
+    const appeals = await Appeal.find({}).sort({ createdAt: -1 });
+    res.json(appeals);
+  } catch (err) {
+    console.error("❌ getAppeals Error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+// ─── UPDATE APPEAL STATUS ─────────────────────────────────────────────────────
+
+export const updateAppealStatus = async (req, res) => {
+  try {
+    const { status } = req.body;
+    if (!["pending", "approved", "dismissed"].includes(status))
+      return res.status(400).json({ message: "Invalid status." });
+    const appeal = await Appeal.findByIdAndUpdate(
+      req.params.appealId,
+      { status },
+      { new: true }
+    );
+    if (!appeal) return res.status(404).json({ message: "Appeal not found." });
+    res.json(appeal);
+  } catch (err) {
+    console.error("❌ updateAppealStatus Error:", err);
     res.status(500).json({ message: "Server error" });
   }
 };

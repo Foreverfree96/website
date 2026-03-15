@@ -42,6 +42,7 @@ import {
   blockUser,           // POST /block/:userId   — add a user to the block list
   unblockUser,         // DELETE /block/:userId — remove a user from the block list
   getAllCreators,       // GET  /creators        — list all public creator accounts
+  submitAppeal,        // POST /appeal          — submit a ban/restriction appeal (unauthed)
 } from "../controllers/userController.js";
 import { protect, paywall } from "../middleware/auth.js";
 
@@ -155,5 +156,8 @@ router.delete("/block/:userId", protect, unblockUser);
 router.get("/donations-content", protect, paywall, (req, res) => {
   res.json({ message: "Welcome! This content is for subscribers or donors." });
 });
+
+/** Submit a ban or restriction appeal — no auth required */
+router.post("/appeal", submitAppeal);
 
 export default router;

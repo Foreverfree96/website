@@ -20,6 +20,7 @@
 
 import User from "../models/userModel.js";
 import BannedEmail from "../models/bannedEmailModel.js";
+import Appeal from "../models/appealModel.js";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
@@ -313,7 +314,21 @@ export const loginUser = async (req, res) => {
 
     // Block banned accounts with a clear message
     if (user.isBanned)
-      return res.status(403).json({ message: "This account has been permanently banned. If you believe this is a mistake, please contact support." });
+      return res.status(403).json({ type: "banned", message: "This account has been permanently banned. If you believe this is a mistake, you can submit an appeal below." });
+
+    // Block restricted accounts and tell them exactly how long is left
+    if (user.restrictedUntil && new Date(user.restrictedUntil) > new Date()) {
+      const until = new Date(user.restrictedUntil);
+      const diffMs = until - Date.now();
+      const diffHrs = Math.ceil(diffMs / (1000 * 60 * 60));
+      const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+      const timeLeft = diffDays > 1 ? `${diffDays} days` : `${diffHrs} hour${diffHrs === 1 ? "" : "s"}`;
+      return res.status(403).json({
+        type: "restricted",
+        message: `Your account is temporarily restricted. You can log in again in ${timeLeft} (${until.toDateString()}).`,
+        restrictedUntil: until,
+      });
+    }
 
     // Auto-grant admin privileges to the designated admin email if not already set
     if (process.env.ADMIN_EMAIL && user.email === process.env.ADMIN_EMAIL && !user.isAdmin) {
@@ -1205,6 +1220,46 @@ export const checkEmail = async (req, res) => {
     const exists = await User.findOne({ email: email.trim().toLowerCase() });
     res.json({ available: !exists, message: exists ? "Email already registered" : "Email available" });
   } catch (err) {
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+// ─── SUBMIT APPEAL ────────────────────────────────────────────────────────────
+
+/**
+ * POST /api/users/appeal
+ *
+ * Unauthenticated — called by banned or restricted users from the login page.
+ * Looks up the user by username or email, then creates an Appeal document.
+ * Rate-limited at the route level.
+ */
+export const submitAppeal = async (req, res) => {
+  try {
+    const { identifier, appealText, type } = req.body;
+    if (!identifier || !appealText || !type)
+      return res.status(400).json({ message: "All fields are required." });
+    if (!["ban", "restriction"].includes(type))
+      return res.status(400).json({ message: "Invalid appeal type." });
+    if (appealText.length > 1000)
+      return res.status(400).json({ message: "Appeal must be 1000 characters or fewer." });
+
+    // Try to find the user so we can attach them to the appeal
+    const user =
+      await User.findOne({ email: identifier.trim().toLowerCase() }) ||
+      await User.findOne({ username: new RegExp(`^${identifier.trim()}$`, "i") });
+
+    await Appeal.create({
+      identifier: identifier.trim(),
+      user:       user?._id || null,
+      username:   user?.username || identifier.trim(),
+      email:      user?.email || "",
+      type,
+      appealText: appealText.trim(),
+    });
+
+    res.json({ message: "Your appeal has been submitted. We will review it shortly." });
+  } catch (err) {
+    console.error("❌ submitAppeal Error:", err);
     res.status(500).json({ message: "Server error" });
   }
 };

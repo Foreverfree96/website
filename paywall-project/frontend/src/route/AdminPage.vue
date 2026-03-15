@@ -25,6 +25,9 @@
       <button :class="['tab-btn', { active: tab === 'analytics' }]" @click="switchTab('analytics')">
         📊 Analytics
       </button>
+      <button :class="['tab-btn', { active: tab === 'appeals' }]" @click="switchTab('appeals')">
+        📋 Appeals ({{ appeals.filter(a => a.status === 'pending').length }})
+      </button>
     </div>
 
     <!-- Users tab -->
@@ -372,6 +375,38 @@
       </div>
     </template>
 
+    <!-- Appeals tab -->
+    <template v-if="tab === 'appeals'">
+      <p v-if="appealsLoading" class="feed-status">Loading appeals...</p>
+      <p v-else-if="!appeals.length" class="feed-status">No appeals yet.</p>
+      <div v-else class="appeals-list">
+        <div v-for="a in appeals" :key="a._id" :class="['appeal-card', `appeal-card--${a.status}`]">
+          <div class="appeal-card__header">
+            <span class="appeal-type-badge" :class="a.type === 'ban' ? 'badge-ban' : 'badge-restrict'">
+              {{ a.type === 'ban' ? '🚫 Ban Appeal' : '⏳ Restriction Appeal' }}
+            </span>
+            <span class="appeal-status-badge" :class="`status-${a.status}`">{{ a.status }}</span>
+            <span class="appeal-date">{{ formatDate(a.createdAt) }}</span>
+          </div>
+          <div class="appeal-card__user">
+            <strong>@{{ a.username }}</strong>
+            <span v-if="a.email" class="appeal-email">{{ a.email }}</span>
+          </div>
+          <p class="appeal-text">{{ a.appealText }}</p>
+          <div v-if="a.status === 'pending'" class="appeal-actions">
+            <button class="btn-approve" @click="resolveAppeal(a, 'approved')">✅ Approve</button>
+            <button class="btn-dismiss" @click="resolveAppeal(a, 'dismissed')">❌ Dismiss</button>
+          </div>
+          <p v-else class="appeal-resolved">Resolved: {{ a.status }}</p>
+        </div>
+      </div>
+    </template>
+
+    <!-- Toast notification -->
+    <transition name="toast-fade">
+      <div v-if="toast.show" :class="['admin-toast', `admin-toast--${toast.type}`]">{{ toast.msg }}</div>
+    </transition>
+
     <!-- Confirm Modal -->
     <div v-if="modal.show" class="confirm-overlay" @click.self="modal.show = false">
       <div class="confirm-box">
@@ -450,6 +485,16 @@ const loadingDms      = ref(false);
 // Using a Set so toggling is O(1) and Vue's reactivity is triggered by
 // replacing the entire Set reference rather than mutating in place.
 const expanded = ref(new Set());
+
+// ─── TOAST NOTIFICATION ───────────────────────────────────────────────────────
+
+const toast = ref({ show: false, msg: '', type: 'success' });
+let toastTimer = null;
+const showToast = (msg, type = 'success') => {
+  clearTimeout(toastTimer);
+  toast.value = { show: true, msg, type };
+  toastTimer = setTimeout(() => { toast.value.show = false; }, 3500);
+};
 
 // ─── CONFIRM MODAL STATE ──────────────────────────────────────────────────────
 
@@ -618,10 +663,37 @@ const switchTab = (name) => {
   else if (name === 'users') loadUsers();
   else if (name === 'dms') loadDmReports();
   else if (name === 'online') loadOnlineUsers();
+  else if (name === 'appeals') loadAppeals();
   else load(); // reported + flagged
 };
 
-const validTabs = ['reported', 'flagged', 'comments', 'users', 'dms', 'online', 'analytics'];
+const validTabs = ['reported', 'flagged', 'comments', 'users', 'dms', 'online', 'analytics', 'appeals'];
+
+// ─── APPEALS ─────────────────────────────────────────────────────────────────
+
+const appeals        = ref([]);
+const appealsLoading = ref(false);
+
+const loadAppeals = async () => {
+  appealsLoading.value = true;
+  try {
+    const res = await axios.get(`${API}/appeals`);
+    appeals.value = res.data;
+  } catch { /* silent */ } finally {
+    appealsLoading.value = false;
+  }
+};
+
+const resolveAppeal = async (appeal, status) => {
+  try {
+    const res = await axios.put(`${API}/appeals/${appeal._id}`, { status });
+    const idx = appeals.value.findIndex(a => a._id === appeal._id);
+    if (idx !== -1) appeals.value[idx] = { ...appeals.value[idx], status: res.data.status };
+    showToast(`Appeal ${status}.`);
+  } catch (err) {
+    showToast(err.response?.data?.message || 'Failed to update appeal.', 'error');
+  }
+};
 
 // If the nav link is clicked while already on /admin the query param changes
 // but the component isn't remounted — watch handles that specific case only.
@@ -824,9 +896,9 @@ const forceVerify = async (u) => {
   try {
     await axios.put(`${API}/users/${u._id}/verify`);
     patchUser(u._id, { isVerified: true });
-    alert(`@${u.username} is now verified.`);
+    showToast(`@${u.username} is now verified.`);
   } catch (err) {
-    alert(err.response?.data?.message || 'Failed to verify.');
+    showToast(err.response?.data?.message || 'Failed to verify.', 'error');
   }
 };
 
@@ -835,9 +907,9 @@ const applyRestrict = async (u) => {
   try {
     const res = await axios.put(`${API}/users/${u._id}/restrict`, { duration: u._restrictDuration });
     patchUser(u._id, { restrictedUntil: res.data.restrictedUntil, _restrictDuration: '' });
-    alert(res.data.message);
+    showToast(res.data.message);
   } catch (err) {
-    alert(err.response?.data?.message || 'Failed to apply restriction.');
+    showToast(err.response?.data?.message || 'Failed to apply restriction.', 'error');
   }
 };
 
@@ -867,8 +939,9 @@ const applyUnban = async (u) => {
   try {
     await axios.put(`${API}/users/${u._id}/ban`, { unban: true });
     patchUser(u._id, { isBanned: false });
+    showToast(`@${u.username} has been unbanned.`);
   } catch (err) {
-    alert(err.response?.data?.message || 'Failed to unban.');
+    showToast(err.response?.data?.message || 'Failed to unban.', 'error');
   }
 };
 
@@ -1524,6 +1597,93 @@ const formatDate = (d) => new Date(d).toLocaleDateString();
   margin-left: auto;
 }
 .test-link-clear:hover { background: #fee2e2; border-color: #ef4444; color: #b91c1c; }
+
+/* ── Toast ── */
+.admin-toast {
+  position: fixed;
+  bottom: 28px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 12px 24px;
+  border-radius: 10px;
+  border: 2px solid #000;
+  font-weight: 700;
+  font-size: 0.92rem;
+  z-index: 9999;
+  white-space: nowrap;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+}
+.admin-toast--success { background: #dcfce7; color: #14532d; border-color: #16a34a; }
+.admin-toast--error   { background: #fee2e2; color: #b91c1c; border-color: #dc2626; }
+.toast-fade-enter-active, .toast-fade-leave-active { transition: opacity 0.3s, transform 0.3s; }
+.toast-fade-enter-from, .toast-fade-leave-to { opacity: 0; transform: translateX(-50%) translateY(10px); }
+
+/* ── Appeals tab ── */
+.appeals-list { display: flex; flex-direction: column; gap: 14px; }
+.appeal-card {
+  border: 2px solid #000;
+  border-radius: 12px;
+  padding: 16px 18px;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.appeal-card--approved  { border-color: #16a34a; background: #f0fdf4; }
+.appeal-card--dismissed { border-color: #9ca3af; background: #f9fafb; opacity: 0.7; }
+.appeal-card__header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.appeal-type-badge {
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 20px;
+  border: 2px solid #000;
+}
+.badge-ban      { background: #fee2e2; color: #b91c1c; }
+.badge-restrict { background: #fffbeb; color: #92400e; }
+.appeal-status-badge {
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 20px;
+  text-transform: capitalize;
+}
+.status-pending   { background: #fef9c3; color: #854d0e; border: 2px solid #ca8a04; }
+.status-approved  { background: #dcfce7; color: #14532d; border: 2px solid #16a34a; }
+.status-dismissed { background: #f3f4f6; color: #6b7280; border: 2px solid #9ca3af; }
+.appeal-date { font-size: 0.78rem; color: #888; margin-left: auto; }
+.appeal-card__user { display: flex; align-items: center; gap: 10px; }
+.appeal-email { font-size: 0.8rem; color: #555; }
+.appeal-text {
+  font-size: 0.88rem;
+  color: #222;
+  background: #f8f8f8;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin: 0;
+  white-space: pre-wrap;
+  line-height: 1.5;
+}
+.appeal-actions { display: flex; gap: 8px; }
+.btn-approve {
+  background: #14532d; color: #fff; border: 2px solid #000;
+  border-radius: 8px; padding: 6px 16px; font-size: 0.85rem;
+  font-weight: 700; cursor: pointer;
+}
+.btn-approve:hover { background: #166534; }
+.btn-dismiss {
+  background: #6b7280; color: #fff; border: 2px solid #000;
+  border-radius: 8px; padding: 6px 16px; font-size: 0.85rem;
+  font-weight: 700; cursor: pointer;
+}
+.btn-dismiss:hover { background: #4b5563; }
+.appeal-resolved { font-size: 0.82rem; font-weight: 700; color: #555; margin: 0; text-transform: capitalize; }
 
 /* Report reasons */
 .report-reasons-list {
