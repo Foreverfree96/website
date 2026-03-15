@@ -44,6 +44,23 @@
           </button>
           <span v-if="testMsg" class="test-msg">{{ testMsg }}</span>
         </div>
+
+        <!-- Last created test account — credentials + quick-launch tabs -->
+        <div v-if="lastTestAccount" class="test-account-result">
+          <div class="test-account-creds">
+            <span class="test-cred-label">Last test account:</span>
+            <code class="test-cred">@{{ lastTestAccount.username }}</code>
+            <code class="test-cred">{{ lastTestAccount.email }}</code>
+            <code class="test-cred">{{ lastTestAccount.password }}</code>
+          </div>
+          <div class="test-account-links">
+            <button class="test-link-btn" @click="openTestTab('/signup')">↗ Signup</button>
+            <button class="test-link-btn" @click="openTestTab('/login')">↗ Login</button>
+            <button class="test-link-btn" @click="openTestTab('/forgot-password')">↗ Forgot Password</button>
+            <button class="test-link-btn" @click="openTestTab('/forgot-username')">↗ Forgot Username</button>
+            <button class="test-link-clear" @click="lastTestAccount = null">✕ Clear</button>
+          </div>
+        </div>
       </div>
 
       <input
@@ -467,10 +484,11 @@ const usersLoading = ref(false);
 const userSearch = ref('');
 
 // ── Test account creation ──────────────────────────────────────────────────────
-const showTestForm = ref(false);
-const testLoading  = ref(false);
-const testMsg      = ref('');
-const testForm     = ref({ username: '', email: '', password: '' });
+const showTestForm   = ref(false);
+const testLoading    = ref(false);
+const testMsg        = ref('');
+const testForm       = ref({ username: '', email: '', password: '' });
+const lastTestAccount = ref(null); // { username, email, password } of most recently created account
 
 const submitTestUser = async () => {
   testMsg.value = '';
@@ -478,9 +496,15 @@ const submitTestUser = async () => {
     testMsg.value = 'All fields required.'; return;
   }
   testLoading.value = true;
+  const savedPassword = testForm.value.password;
   try {
     const res = await axios.post(`${API}/create-test-user`, testForm.value);
     testMsg.value = res.data.message;
+    lastTestAccount.value = {
+      username: testForm.value.username,
+      email: testForm.value.email,
+      password: savedPassword,
+    };
     testForm.value = { username: '', email: '', password: '' };
     await loadUsers();
   } catch (err) {
@@ -489,6 +513,8 @@ const submitTestUser = async () => {
     testLoading.value = false;
   }
 };
+
+const openTestTab = (path) => window.open(path, '_blank');
 
 /**
  * filteredUsers
@@ -1438,6 +1464,66 @@ const formatDate = (d) => new Date(d).toLocaleDateString();
   font-weight: 700;
   color: #14532d;
 }
+
+.test-account-result {
+  margin-top: 12px;
+  border: 2px solid #000;
+  border-radius: 10px;
+  padding: 12px 14px;
+  background: #f0fdf4;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.test-account-creds {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.test-cred-label {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #555;
+}
+.test-cred {
+  background: #000;
+  color: #86efac;
+  font-size: 0.82rem;
+  font-family: monospace;
+  padding: 3px 8px;
+  border-radius: 6px;
+  user-select: all;
+}
+.test-account-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.test-link-btn {
+  background: #1e3a5f;
+  color: #fff;
+  border: 2px solid #000;
+  border-radius: 8px;
+  padding: 5px 12px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.test-link-btn:hover { background: #1e40af; }
+.test-link-clear {
+  background: none;
+  border: 2px solid #999;
+  border-radius: 8px;
+  padding: 5px 10px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  color: #666;
+  margin-left: auto;
+}
+.test-link-clear:hover { background: #fee2e2; border-color: #ef4444; color: #b91c1c; }
 
 /* Report reasons */
 .report-reasons-list {
