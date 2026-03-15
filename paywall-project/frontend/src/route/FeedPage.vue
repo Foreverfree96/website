@@ -98,7 +98,11 @@
               @click.stop="p.likes.length && showLikers(p._id)"
             >{{ p.likes.length }}</span>
           </span>
-          <span>💬 {{ p.comments.length }}</span>
+          <span
+            class="comment-count"
+            :class="{ 'comment-count--clickable': p.comments.length > 0 }"
+            @click.stop="p.comments.length && showComments(p)"
+          >💬 {{ p.comments.length }}</span>
           <!-- Date is pushed to the far right via margin-left: auto on .post-card__date -->
           <span class="post-card__date">{{ formatDate(p.createdAt) }}</span>
         </div>
@@ -118,6 +122,28 @@
       <button class="auth-button pag-btn" :disabled="page === totalPages" @click="changePage(page + 1)">Next →</button>
     </div>
 
+  </div>
+
+  <!-- Comments preview modal -->
+  <div v-if="commentsModal.open" class="modal-overlay" @click.self="commentsModal.open = false">
+    <div class="modal-box comments-modal-box">
+      <div class="modal-header">
+        <h2 class="modal-title">💬 Comments</h2>
+        <button class="modal-close" @click="commentsModal.open = false">✕</button>
+      </div>
+      <p v-if="commentsModal.loading" class="modal-empty">Loading...</p>
+      <div v-else-if="!commentsModal.list.length" class="modal-empty">No comments yet.</div>
+      <div v-else class="comments-preview-list">
+        <div v-for="c in commentsModal.list" :key="c._id" class="comment-preview">
+          <span class="comment-preview__author">@{{ c.author?.username || 'user' }}</span>
+          <p class="comment-preview__body">{{ c.body }}</p>
+          <span class="comment-preview__time">{{ formatDate(c.createdAt) }}</span>
+        </div>
+      </div>
+      <button v-if="!commentsModal.loading" class="view-all-btn" @click="router.push(`/post/${commentsModal.postId}`)">
+        View all {{ commentsModal.total }} comment{{ commentsModal.total !== 1 ? 's' : '' }} →
+      </button>
+    </div>
   </div>
 
   <!-- Liked-by modal -->
@@ -317,6 +343,18 @@ const handleLike = async (e, p) => {
       ? [...p.likes, user.value.id]
       : p.likes.filter(id => id !== user.value.id);
   } catch {}
+};
+
+const commentsModal = ref({ open: false, loading: false, list: [], postId: null, total: 0 });
+const showComments = async (p) => {
+  commentsModal.value = { open: true, loading: true, list: [], postId: p._id, total: p.comments.length };
+  try {
+    const res = await axios.get(`${import.meta.env.VITE_API_URL}/api/posts/${p._id}`);
+    const all = res.data.comments || [];
+    commentsModal.value.list = all.slice(-3).reverse(); // last 3, newest first
+    commentsModal.value.total = all.length;
+  } catch {}
+  commentsModal.value.loading = false;
 };
 
 const likersModal = ref({ open: false, loading: false, list: [] });
@@ -582,6 +620,62 @@ onMounted(() => {
   text-decoration: underline dotted;
 }
 .like-count--clickable:hover { color: #e11d48; }
+
+.comment-count { font-weight: 600; }
+.comment-count--clickable { cursor: pointer; text-decoration: underline dotted; }
+.comment-count--clickable:hover { color: #7c3aed; }
+
+.comments-modal-box { max-width: 460px; }
+
+.comments-preview-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  max-height: 40vh;
+}
+
+.comment-preview {
+  border: 2px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.comment-preview__author {
+  font-weight: 700;
+  font-size: 0.85rem;
+  color: #7c3aed;
+}
+
+.comment-preview__body {
+  font-size: 0.92rem;
+  margin: 0;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.comment-preview__time {
+  font-size: 0.78rem;
+  color: #888;
+}
+
+.view-all-btn {
+  margin-top: 4px;
+  padding: 8px 16px;
+  background: #000;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-weight: 700;
+  font-size: 0.9rem;
+  cursor: pointer;
+  align-self: flex-start;
+  transition: background 0.15s;
+}
+.view-all-btn:hover { background: #374151; }
 
 .modal-overlay {
   position: fixed; inset: 0;
