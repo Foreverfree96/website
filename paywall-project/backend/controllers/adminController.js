@@ -23,6 +23,7 @@
 import Post from "../models/postModel.js";
 import User from "../models/userModel.js";
 import bcrypt from "bcryptjs";
+import axios from "axios";
 import Notification from "../models/notificationModel.js";
 import DmReport from "../models/dmReportModel.js";
 import BannedEmail from "../models/bannedEmailModel.js";
@@ -724,7 +725,23 @@ export const createTestUser = async (req, res) => {
       isVerified: true,
     });
 
-    res.status(201).json({ message: `Test account @${user.username} created (${uniqueEmail}).`, username: user.username });
+    // Send the same signup confirmation email regular users receive so the
+    // admin can test the email flow end-to-end (account is already active).
+    axios.post("https://api.sendgrid.com/v3/mail/send", {
+      personalizations: [{ to: [{ email: uniqueEmail }] }],
+      from: { email: process.env.GMAIL_USER, name: "Austin's Site" },
+      subject: "Confirm your email",
+      content: [{
+        type: "text/html",
+        value: `<p>Hi ${user.username},</p>
+                <p>This is a test account — it's already active, no action needed.</p>
+                <p>You can log in immediately with the credentials you set.</p>`,
+      }],
+    }, {
+      headers: { Authorization: `Bearer ${process.env.SENDGRID_API_KEY}`, "Content-Type": "application/json" },
+    }).catch(err => console.error("❌ Test user email failed:", err.response?.data || err.message));
+
+    res.status(201).json({ message: `Test account @${user.username} created (${uniqueEmail}). Signup email sent.`, username: user.username });
   } catch (err) {
     console.error("❌ createTestUser Error:", err);
     res.status(500).json({ message: "Server error" });
