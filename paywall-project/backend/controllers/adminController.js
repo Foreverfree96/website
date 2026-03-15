@@ -705,22 +705,26 @@ export const createTestUser = async (req, res) => {
     if (!username || !email || !password)
       return res.status(400).json({ message: "username, email, and password are required" });
 
-    const emailTaken = await User.findOne({ email: email.trim().toLowerCase() });
-    if (emailTaken) return res.status(400).json({ message: "Email already in use" });
-
     const usernameTaken = await User.findOne({ username: new RegExp(`^${username.trim()}$`, "i") });
     if (usernameTaken) return res.status(400).json({ message: "Username already taken" });
+
+    // Make the email unique in the DB by appending a +tag before the @.
+    // Gmail (and most providers) deliver +tag addresses to the same inbox,
+    // so the admin can reuse the same base email for every test account.
+    const [local, domain] = email.trim().toLowerCase().split("@");
+    const tag = Math.random().toString(36).slice(2, 8); // e.g. "k4x9mz"
+    const uniqueEmail = `${local}+${tag}@${domain}`;
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
     const user = await User.create({
       username: username.trim(),
-      email: email.trim().toLowerCase(),
+      email: uniqueEmail,
       password: hashedPassword,
       isVerified: true,
     });
 
-    res.status(201).json({ message: `Test account @${user.username} created.`, username: user.username });
+    res.status(201).json({ message: `Test account @${user.username} created (${uniqueEmail}).`, username: user.username });
   } catch (err) {
     console.error("❌ createTestUser Error:", err);
     res.status(500).json({ message: "Server error" });
