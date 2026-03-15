@@ -44,6 +44,7 @@ import {
   getAllCreators,       // GET  /creators        — list all public creator accounts
   submitAppeal,        // POST   /appeal        — submit a ban/restriction appeal (unauthed)
   withdrawAppeal,      // DELETE /appeal        — withdraw a pending appeal (unauthed)
+  logoutUser,          // POST   /logout        — log the logout event (JWT still stateless)
 } from "../controllers/userController.js";
 import { protect, paywall } from "../middleware/auth.js";
 
@@ -163,5 +164,8 @@ router.post("/appeal", submitAppeal);
 
 /** Withdraw a pending appeal — no auth required */
 router.delete("/appeal", withdrawAppeal);
+
+/** Log the logout event — auth required so we know who is logging out */
+router.post("/logout", protect, logoutUser);
 
 export default router;

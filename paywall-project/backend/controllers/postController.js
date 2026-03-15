@@ -395,8 +395,10 @@ export const deletePost = async (req, res) => {
     if (post.author.toString() !== req.user.id)
       return res.status(403).json({ message: "Not authorized" });
 
+    const logDetail = post.title || (post.body || '').slice(0, 80);
     await post.deleteOne();
     res.json({ message: "Post deleted" });
+    siteLog({ userId: req.user._id, username: req.user.username, action: "Post Deleted (owner)", detail: logDetail, sourceType: "post" });
   } catch (err) {
     console.error("❌ Delete Post Error:", err);
     res.status(500).json({ message: "Server error" });
@@ -456,6 +458,10 @@ export const updatePost = async (req, res) => {
         return res.status(400).json({ message: result.reason || "Image failed content moderation." });
     }
 
+    // Snapshot old content before mutating — stored in the log so admins can see what changed
+    const oldTitle = post.title;
+    const oldBody  = post.body;
+
     // Apply partial updates
     if (title !== undefined) post.title = title.trim();
     if (body !== undefined) post.body = body.trim();
@@ -467,9 +473,11 @@ export const updatePost = async (req, res) => {
     if (category !== undefined) post.category = category;
     if (isPrivate !== undefined) post.isPrivate = isPrivate;
 
+    const prevSnapshot = `was: "${oldTitle || '(no title)'}" — ${(oldBody || '').slice(0, 80)}${oldBody?.length > 80 ? '…' : ''}`;
     await post.save();
     await post.populate("author", "username categories");
     res.json(post);
+    siteLog({ userId: req.user._id, username: req.user.username, action: "Post Edited", detail: prevSnapshot, sourceType: "post", sourceId: post._id, sourceUrl: `/post/${post._id}` });
   } catch (err) {
     console.error("❌ Update Post Error:", err);
     res.status(500).json({ message: "Server error" });
@@ -557,6 +565,8 @@ export const addComment = async (req, res) => {
     // Grab the comment we just added (always the last element)
     const newComment = post.comments[post.comments.length - 1];
     res.status(201).json(newComment);
+
+    siteLog({ userId: req.user._id, username: req.user.username, action: "Comment Added", detail: body.trim().slice(0, 80), sourceType: "post", sourceId: post._id, sourceUrl: `/post/${post._id}` });
 
     // ── Fire-and-forget comment + mention notifications ──────────────────────
     (async () => {
@@ -646,9 +656,11 @@ export const deleteComment = async (req, res) => {
     if (comment.author.toString() !== req.user.id)
       return res.status(403).json({ message: "Not authorized" });
 
+    const deletedBody = comment.body;
     comment.deleteOne();
     await post.save();
     res.json({ message: "Comment deleted" });
+    siteLog({ userId: req.user._id, username: req.user.username, action: "Comment Deleted", detail: deletedBody.slice(0, 80), sourceType: "post", sourceId: post._id, sourceUrl: `/post/${post._id}` });
   } catch (err) {
     console.error("❌ Delete Comment Error:", err);
     res.status(500).json({ message: "Server error" });

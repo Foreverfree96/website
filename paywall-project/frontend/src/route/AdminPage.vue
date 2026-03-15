@@ -396,7 +396,7 @@
     <template v-if="tab === 'appeals'">
       <p v-if="appealsLoading" class="feed-status">Loading appeals...</p>
       <p v-else-if="!appeals.length" class="feed-status">No appeals yet.</p>
-      <div v-else class="appeals-list">
+      <TransitionGroup name="appeal-fade" tag="div" class="appeals-list">
         <div v-for="a in appeals" :key="a._id" :id="`appeal-${a._id}`" :class="['appeal-card', `appeal-card--${a.status}`, { 'appeal-card--highlighted': highlightedAppealId === a._id }]">
           <div class="appeal-card__header">
             <span class="appeal-type-badge" :class="a.type === 'ban' ? 'badge-ban' : 'badge-restrict'">
@@ -416,7 +416,7 @@
           </div>
           <p v-else class="appeal-resolved">Resolved: {{ a.status }}</p>
         </div>
-      </div>
+      </TransitionGroup>
     </template>
 
     <!-- Logs tab -->
@@ -822,6 +822,11 @@ const resolveAppeal = async (appeal, status) => {
     }
 
     if (highlightedAppealId.value === appeal._id) highlightedAppealId.value = null;
+
+    // Remove auto-trimmed resolved appeals from the local list (triggers fade-out)
+    if (res.data.trimmedIds?.length) {
+      appeals.value = appeals.value.filter(a => !res.data.trimmedIds.includes(a._id));
+    }
 
     const action = status === 'approved'
       ? appeal.type === 'ban' ? 'Appeal approved — user unbanned.' : 'Appeal approved — restriction lifted.'
@@ -1772,7 +1777,13 @@ const formatDate = (d) => new Date(d).toLocaleDateString();
 .toast-fade-enter-from, .toast-fade-leave-to { opacity: 0; transform: translateX(-50%) translateY(10px); }
 
 /* ── Appeals tab ── */
-.appeals-list { display: flex; flex-direction: column; gap: 14px; }
+.appeal-fade-enter-active { transition: opacity 0.35s ease, transform 0.35s ease; }
+.appeal-fade-leave-active { transition: opacity 0.5s ease, transform 0.5s ease; }
+.appeal-fade-enter-from   { opacity: 0; transform: translateY(-8px); }
+.appeal-fade-leave-to     { opacity: 0; transform: translateY(8px); }
+.appeal-fade-leave-active { position: absolute; width: 100%; }
+
+.appeals-list { display: flex; flex-direction: column; gap: 14px; position: relative; }
 .appeal-card {
   border: 2px solid #000;
   border-radius: 12px;

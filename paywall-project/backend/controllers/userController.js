@@ -347,10 +347,18 @@ export const loginUser = async (req, res) => {
       isAdmin: user.isAdmin || false,
       token: generateToken(user._id),
     });
+    siteLog({ userId: user._id, username: user.username, action: "User Logged In" });
   } catch (err) {
     console.error("❌ Login Error:", err);
     res.status(500).json({ message: "Server error", debug: err.message });
   }
+};
+
+// ─── LOGOUT (logging only — JWT is stateless) ─────────────────────────────────
+
+export const logoutUser = async (req, res) => {
+  siteLog({ userId: req.user._id, username: req.user.username, action: "User Logged Out" });
+  res.json({ message: "Logged out" });
 };
 
 // ─── GET PROFILE ──────────────────────────────────────────────────────────────

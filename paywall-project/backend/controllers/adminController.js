@@ -26,6 +26,7 @@ import bcrypt from "bcryptjs";
 import axios from "axios";
 import Appeal from "../models/appealModel.js";
 import AdminLog from "../models/adminLogModel.js";
+import { siteLog } from "../utils/siteLog.js";
 
 /** Helper — fire-and-forget admin log entry with optional source link */
 const log = (req, action, target, detail = "", extras = {}) => {
@@ -757,6 +758,7 @@ export const adminFlagPost = async (req, res) => {
     await post.save();
 
     res.json({ message: "Post flagged" });
+    log(req, "Post Flagged", post.author, post.title || "", { sourceType: "post", sourceId: post._id, sourceUrl: `/post/${post._id}` });
   } catch (err) {
     console.error("❌ Admin flagPost Error:", err);
     res.status(500).json({ message: "Server error" });
@@ -815,6 +817,7 @@ export const createTestUser = async (req, res) => {
     }).catch(err => console.error("❌ Test user email failed:", err.response?.data || err.message));
 
     res.status(201).json({ message: `Test account @${user.username} created (${uniqueEmail}). Signup email sent.`, username: user.username });
+    siteLog({ userId: req.user._id, username: req.user.username, action: "Test Account Created", targetUsername: user.username, detail: uniqueEmail });
   } catch (err) {
     console.error("❌ createTestUser Error:", err);
     res.status(500).json({ message: "Server error" });
@@ -866,8 +869,22 @@ export const updateAppealStatus = async (req, res) => {
       }
     }
 
+    // Auto-trim: keep only the 10 most recent resolved appeals
+    let trimmedIds = [];
+    if (status !== "pending") {
+      const oldest = await Appeal.find({ status: { $in: ["approved", "dismissed"] } })
+        .sort({ updatedAt: -1 })
+        .skip(10)
+        .select("_id")
+        .lean();
+      if (oldest.length > 0) {
+        trimmedIds = oldest.map((o) => o._id.toString());
+        Appeal.deleteMany({ _id: { $in: oldest.map((o) => o._id) } }).catch(() => {});
+      }
+    }
+
     log(req, `Appeal ${status}`, { _id: appeal.user, username: appeal.username }, `type: ${appeal.type}`);
-    res.json({ ...appeal.toObject(), userChanges });
+    res.json({ ...appeal.toObject(), userChanges, trimmedIds });
   } catch (err) {
     console.error("❌ updateAppealStatus Error:", err);
     res.status(500).json({ message: "Server error" });

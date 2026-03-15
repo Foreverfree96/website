@@ -26,6 +26,7 @@ import Conversation from "../models/conversationModel.js";
 import Message from "../models/messageModel.js";
 import User from "../models/userModel.js";
 import DmReport from "../models/dmReportModel.js";
+import { siteLog } from "../utils/siteLog.js";
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
@@ -518,7 +519,11 @@ export const reportDm = async (req, res) => {
       messages: msgSnapshots.slice(0, 25), // enforce the 25-message cap at DB level too
     });
 
+    // Find the reported user's username for the log
+    const reportedUser = await User.findById(reportedUserId).select("username").lean();
     res.json({ message: "Report submitted. Thank you." });
+
+    siteLog({ userId: req.user._id, username: req.user.username, action: "DM Report Filed", targetUsername: reportedUser?.username || "", detail: reason.trim().slice(0, 80), sourceType: "dm" });
 
     // Notify admins in real-time
     const { getIo } = await import("../utils/socketEmitter.js");

@@ -1682,6 +1682,11 @@ const formatTime = (d) => {
   background: #ede9fe !important;
   color: #3b0764 !important;
 }
+.bubble::selection,
+.bubble *::selection {
+  background: #7c3aed;
+  color: #fff;
+}
 
 .report-check {
   font-size: 0.9em;
