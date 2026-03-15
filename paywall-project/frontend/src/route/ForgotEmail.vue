@@ -7,7 +7,7 @@
 
         <form @submit.prevent="handleSubmit" class="auth-form">
             <input v-model="username" type="text" placeholder="Username" class="auth-input" required @keydown.enter.prevent="handleSubmit" />
-            <button type="submit" class="auth-button button-size" style="white-space:nowrap;width:80%;" :disabled="loading">
+            <button type="submit" class="auth-button button-size" style="width:80%;white-space:normal;word-break:break-word;" :disabled="loading">
                 {{ loading ? 'Sending...' : 'Send Email Address' }}
             </button>
         </form>

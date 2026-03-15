@@ -22,7 +22,7 @@ import User from "../models/userModel.js";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
-import axios from "axios";
+import nodemailer from "nodemailer";
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
@@ -61,15 +61,21 @@ const isValidUsername = (u) => u.length >= 2 && u.length <= 30 && /^[a-zA-Z0-9_]
  * @param {string} options.subject - Email subject line
  * @param {string} options.html    - HTML body content
  */
+const transporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    user: process.env.GMAIL_USER,
+    pass: process.env.GMAIL_PASS,
+  },
+});
+
 const sendEmail = ({ to, subject, html }) => {
-  axios.post("https://api.brevo.com/v3/smtp/email", {
-    sender: { name: "Austin's Site", email: process.env.GMAIL_USER },
-    to: [{ email: to }],
+  transporter.sendMail({
+    from: `"Austin's Site" <${process.env.GMAIL_USER}>`,
+    to,
     subject,
-    htmlContent: html,
-  }, {
-    headers: { "api-key": process.env.BREVO_API_KEY, "Content-Type": "application/json" },
-  }).catch(err => console.error("❌ Email send failed:", err.response?.data || err.message));
+    html,
+  }).catch(err => console.error("❌ Email send failed:", err.message));
 };
 
 // ─── REGISTER ────────────────────────────────────────────────────────────────
@@ -122,7 +128,7 @@ export const registerUser = async (req, res) => {
     const emailTaken = await User.findOne({ email: email.trim().toLowerCase() });
     if (emailTaken) return res.status(400).json({ message: "Email already in use" });
 
-    const usernameTaken = await User.findOne({ username: username.trim() });
+    const usernameTaken = await User.findOne({ username: new RegExp(`^${username.trim()}$`, 'i') });
     if (usernameTaken) return res.status(400).json({ message: "Username already taken" });
 
     // Hash the password with bcrypt (cost factor 10)
@@ -293,7 +299,7 @@ export const loginUser = async (req, res) => {
     // Try email lookup first, then fall back to username lookup
     const user =
       await User.findOne({ email: identifier.toLowerCase() }) ||
-      await User.findOne({ username: identifier });
+      await User.findOne({ username: new RegExp(`^${identifier}$`, 'i') });
     if (!user) return res.status(401).json({ message: "Invalid credentials" });
 
     const isPasswordMatch = await bcrypt.compare(password, user.password);
@@ -449,7 +455,7 @@ export const updateUsername = async (req, res) => {
       return res.status(400).json({ message: "Username must be 2–30 characters (letters, numbers, underscores)" });
 
     // Check uniqueness but exclude the current user's own document
-    const taken = await User.findOne({ username: username.trim(), _id: { $ne: req.user.id } });
+    const taken = await User.findOne({ username: new RegExp(`^${username.trim()}$`, 'i'), _id: { $ne: req.user.id } });
     if (taken) return res.status(400).json({ message: "Username already taken" });
 
     const user = await User.findById(req.user.id);
@@ -785,26 +791,24 @@ export const forgotEmail = async (req, res) => {
     const { username } = req.body;
     if (!username) return res.status(400).json({ message: "Username is required" });
 
-    const user = await User.findOne({ username: username.trim().toLowerCase() });
+    const user = await User.findOne({ username: new RegExp(`^${username.trim()}$`, 'i') });
 
-    // Respond immediately regardless of whether the account exists
-    res.json({ message: "If that username is registered, your email address has been sent to it." });
+    if (!user) return res.status(404).json({ message: "Username not found." });
 
-    if (user) {
-      const masked = user.email.replace(/(.{2}).+(@.+)/, "$1****$2");
-      sendEmail({
-        to: user.email,
-        subject: "Your Registered Email Address",
-        html: `
-          <h2>Email Reminder</h2>
-          <p>Hi <strong>${user.username}</strong>,</p>
-          <p>You requested a reminder of the email address linked to your account.</p>
-          <p>Your registered email is: <strong>${user.email}</strong></p>
-          <p>Your username is: <strong>${user.username}</strong></p>
-          <p>If you didn't request this, you can safely ignore this email.</p>
-        `,
-      });
-    }
+    sendEmail({
+      to: user.email,
+      subject: "Your Registered Email Address",
+      html: `
+        <h2>Email Reminder</h2>
+        <p>Hi <strong>${user.username}</strong>,</p>
+        <p>You requested a reminder of the email address linked to your account.</p>
+        <p>Your registered email is: <strong>${user.email}</strong></p>
+        <p>Your username is: <strong>${user.username}</strong></p>
+        <p>If you didn't request this, you can safely ignore this email.</p>
+      `,
+    });
+
+    res.json({ message: "Your email address has been sent to your registered inbox." });
   } catch (err) {
     console.error("❌ Forgot Email Error:", err);
     res.status(500).json({ message: "Server error" });
@@ -832,7 +836,7 @@ export const forgotEmail = async (req, res) => {
  */
 export const getCreatorProfile = async (req, res) => {
   try {
-    const user = await User.findOne({ username: req.params.username })
+    const user = await User.findOne({ username: new RegExp(`^${req.params.username}$`, 'i') })
       .select("username bio categories socialLinks followers following createdAt isPrivateAccount")
       .lean();
     if (!user) return res.status(404).json({ message: "User not found" });
@@ -1044,7 +1048,7 @@ export const unblockUser = async (req, res) => {
  */
 export const toggleFollow = async (req, res) => {
   try {
-    const target = await User.findOne({ username: req.params.username });
+    const target = await User.findOne({ username: new RegExp(`^${req.params.username}$`, 'i') });
     if (!target) return res.status(404).json({ message: "User not found" });
     if (target._id.toString() === req.user.id)
       return res.status(400).json({ message: "You cannot follow yourself" });
@@ -1163,7 +1167,7 @@ export const checkUsername = async (req, res) => {
     // Short-circuit invalid formats without a DB round trip
     if (!username || !isValidUsername(username.trim()))
       return res.json({ available: false, message: "Invalid username format" });
-    const exists = await User.findOne({ username: username.trim() });
+    const exists = await User.findOne({ username: new RegExp(`^${username.trim()}$`, 'i') });
     res.json({ available: !exists, message: exists ? "Username already taken" : "Username available" });
   } catch (err) {
     res.status(500).json({ message: "Server error" });
