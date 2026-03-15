@@ -57,7 +57,10 @@ export const protect = async (req, res, next) => {
       // Fetch the user identified by the token payload's `id` claim.
       // Select only the fields needed by downstream middleware/controllers;
       // never return the hashed password or any token fields.
-      req.user = await User.findById(decoded.id).select("username email isSubscriber isAdmin isVerified blockedUsers");
+      req.user = await User.findById(decoded.id).select("username email isSubscriber isAdmin isVerified blockedUsers restrictedUntil isBanned");
+
+      if (req.user?.isBanned)
+        return res.status(403).json({ message: "Your account has been permanently banned." });
 
       next();
     } catch (err) {
@@ -138,4 +141,28 @@ export const paywall = (req, res, next) => {
   } else {
     res.status(403).json({ message: "Access denied: Subscription required" });
   }
+};
+
+// =============================================================================
+// notRestricted — blocks temporarily restricted users from acting
+// =============================================================================
+
+/**
+ * notRestricted — blocks users whose `restrictedUntil` date is in the future.
+ *
+ * Use this AFTER protect on routes where restricted users should not be able
+ * to take action (posting, commenting, sending messages).
+ *
+ * Returns 403 with the expiry date so the frontend can display a message.
+ * Calls next() if the user has no active restriction.
+ */
+export const notRestricted = (req, res, next) => {
+  const until = req.user?.restrictedUntil;
+  if (until && new Date(until) > new Date()) {
+    return res.status(403).json({
+      message: `Your account is restricted until ${new Date(until).toUTCString()}.`,
+      restrictedUntil: until,
+    });
+  }
+  next();
 };

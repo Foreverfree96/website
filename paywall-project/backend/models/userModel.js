@@ -157,6 +157,23 @@ const userSchema = new mongoose.Schema(
      * Blocked users cannot send DMs or interact with this account's content.
      */
     blockedUsers: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+
+    // ------------------------------------------------------------------
+    // Moderation restrictions
+    // ------------------------------------------------------------------
+
+    /**
+     * When set to a future date the account is temporarily restricted —
+     * the user cannot post, comment, or send DMs until this date passes.
+     * Null / past date means no active restriction.
+     */
+    restrictedUntil: { type: Date, default: null },
+
+    /**
+     * When true the account is permanently banned.
+     * Banned users cannot log in or interact with the platform.
+     */
+    isBanned: { type: Boolean, default: false },
   },
   // Automatically manage createdAt and updatedAt timestamps on every document.
   { timestamps: true }

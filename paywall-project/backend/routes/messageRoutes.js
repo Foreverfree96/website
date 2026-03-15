@@ -23,7 +23,7 @@
 // =============================================================================
 
 import express from "express";
-import { protect } from "../middleware/auth.js";
+import { protect, notRestricted } from "../middleware/auth.js";
 import {
   getConversations,        // GET  /                         — inbox list
   getOrCreateConversation, // POST /                         — open/start a DM thread
@@ -94,7 +94,7 @@ router.get("/:conversationId", getMessages);
  * Updates the conversation's lastMessage preview and unread counters,
  * and emits a real-time Socket.io event to the recipient.
  */
-router.post("/:conversationId", sendMessage);
+router.post("/:conversationId", notRestricted, sendMessage);
 
 /**
  * PUT /:conversationId/read

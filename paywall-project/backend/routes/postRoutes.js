@@ -32,7 +32,7 @@ import {
   reportPost,      // POST   /:id/report                — report a post
   reportComment,   // POST   /:id/comments/:commentId/report — report a comment
 } from "../controllers/postController.js";
-import { protect, optionalAuth } from "../middleware/auth.js";
+import { protect, optionalAuth, notRestricted } from "../middleware/auth.js";
 
 const router = express.Router();
 
@@ -62,7 +62,7 @@ router.get("/mine", protect, getMyPosts);
  * POST /
  * Create and publish a new post.
  */
-router.post("/", protect, createPost);
+router.post("/", protect, notRestricted, createPost);
 
 // =============================================================================
 // Dynamic /:id routes
@@ -108,7 +108,7 @@ router.get("/:id/likes", getLikes);
  * POST /:id/comments
  * Add a comment to a post. Fires comment/mention notifications via Socket.io.
  */
-router.post("/:id/comments", protect, addComment);
+router.post("/:id/comments", protect, notRestricted, addComment);
 
 /**
  * DELETE /:id/comments/:commentId

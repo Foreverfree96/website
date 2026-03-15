@@ -24,6 +24,7 @@ import Post from "../models/postModel.js";
 import User from "../models/userModel.js";
 import Notification from "../models/notificationModel.js";
 import DmReport from "../models/dmReportModel.js";
+import BannedEmail from "../models/bannedEmailModel.js";
 import { PageView, LocationStat, SiteStat } from "../models/analyticsModel.js";
 import { onlineUsers } from "../utils/onlineUsers.js";
 
@@ -347,6 +348,8 @@ export const getUsers = async (req, res) => {
       followerCount: u.followers?.length || 0,
       followingCount: u.following?.length || 0,
       isOnline: onlineUsers.has(u._id.toString()),
+      restrictedUntil: u.restrictedUntil || null,
+      isBanned: u.isBanned || false,
     }));
 
     res.json(result);
@@ -415,6 +418,82 @@ export const adminDeleteUser = async (req, res) => {
     res.json({ message: "User and all their content removed." });
   } catch (err) {
     console.error("❌ Admin deleteUser Error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+// ─── RESTRICT USER ────────────────────────────────────────────────────────────
+
+/**
+ * PUT /api/admin/users/:userId/restrict  (admin)
+ *
+ * Temporarily restricts a user from posting, commenting, and messaging.
+ * Body: { duration } — one of "24h" | "7d" | "1mo" | "3mo" | "none"
+ * "none" lifts an existing restriction immediately.
+ */
+export const restrictUser = async (req, res) => {
+  try {
+    const { duration } = req.body;
+    const user = await User.findById(req.params.userId);
+    if (!user) return res.status(404).json({ message: "User not found" });
+    if (user.isAdmin) return res.status(403).json({ message: "Cannot restrict a moderator." });
+
+    const now = new Date();
+    const durations = {
+      "24h":  () => new Date(now.getTime() + 24 * 60 * 60 * 1000),
+      "7d":   () => new Date(now.getTime() + 7  * 24 * 60 * 60 * 1000),
+      "1mo":  () => new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000),
+      "3mo":  () => new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000),
+      "none": () => null,
+    };
+    if (!durations[duration]) return res.status(400).json({ message: "Invalid duration." });
+
+    user.restrictedUntil = durations[duration]();
+    await user.save();
+
+    const msg = duration === "none"
+      ? "Restriction lifted."
+      : `@${user.username} restricted for ${duration}.`;
+    res.json({ message: msg, restrictedUntil: user.restrictedUntil });
+  } catch (err) {
+    console.error("❌ Admin restrictUser Error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+// ─── BAN USER ─────────────────────────────────────────────────────────────────
+
+/**
+ * PUT /api/admin/users/:userId/ban  (admin)
+ *
+ * Permanently bans a user and blocks their email from re-registering.
+ * Body: { unban: true } to reverse a ban.
+ */
+export const banUser = async (req, res) => {
+  try {
+    const user = await User.findById(req.params.userId);
+    if (!user) return res.status(404).json({ message: "User not found" });
+    if (user.isAdmin) return res.status(403).json({ message: "Cannot ban a moderator." });
+
+    const unban = req.body?.unban === true;
+
+    if (unban) {
+      user.isBanned = false;
+      await user.save();
+      await BannedEmail.deleteOne({ email: user.email });
+      return res.json({ message: `@${user.username} has been unbanned.` });
+    }
+
+    user.isBanned = true;
+    user.restrictedUntil = null; // clear any time-limited restriction too
+    await user.save();
+
+    // Block the email so they can't re-register with the same address
+    await BannedEmail.updateOne({ email: user.email }, { email: user.email }, { upsert: true });
+
+    res.json({ message: `@${user.username} has been permanently banned.` });
+  } catch (err) {
+    console.error("❌ Admin banUser Error:", err);
     res.status(500).json({ message: "Server error" });
   }
 };

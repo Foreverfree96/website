@@ -19,6 +19,7 @@
  */
 
 import User from "../models/userModel.js";
+import BannedEmail from "../models/bannedEmailModel.js";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
@@ -124,6 +125,10 @@ export const registerUser = async (req, res) => {
     // Uniqueness checks — done after format validation to avoid unnecessary DB calls
     const emailTaken = await User.findOne({ email: email.trim().toLowerCase() });
     if (emailTaken) return res.status(400).json({ message: "Email already in use" });
+
+    // Check if this email has been banned by a moderator
+    const emailBanned = await BannedEmail.findOne({ email: email.trim().toLowerCase() });
+    if (emailBanned) return res.status(403).json({ message: "This email address is not allowed." });
 
     const usernameTaken = await User.findOne({ username: new RegExp(`^${username.trim()}$`, 'i') });
     if (usernameTaken) return res.status(400).json({ message: "Username already taken" });

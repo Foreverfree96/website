@@ -47,7 +47,24 @@
             <span class="user-card__email">{{ u.email }}</span>
             <span class="user-card__stats">{{ u.followerCount }} followers · {{ u.followingCount }} following</span>
             <span class="user-card__date">Joined {{ formatDate(u.createdAt) }}</span>
-            <button v-if="!u.isAdmin" class="btn-delete-user" @click="promptDeleteUser(u)">🗑 Delete Account</button>
+            <span v-if="u.isBanned" class="user-badge ban-badge">🚫 Banned</span>
+            <span v-else-if="u.restrictedUntil && new Date(u.restrictedUntil) > new Date()" class="user-badge restrict-badge">
+              ⏳ Restricted until {{ formatDate(u.restrictedUntil) }}
+            </span>
+            <div v-if="!u.isAdmin" class="user-card__actions">
+              <select v-model="u._restrictDuration" class="restrict-select">
+                <option value="">Restrict…</option>
+                <option value="24h">24 hours</option>
+                <option value="7d">7 days</option>
+                <option value="1mo">1 month</option>
+                <option value="3mo">3 months</option>
+                <option value="none">Lift restriction</option>
+              </select>
+              <button class="btn-restrict" :disabled="!u._restrictDuration" @click="applyRestrict(u)">Apply</button>
+              <button v-if="!u.isBanned" class="btn-ban" @click="applyBan(u)">🚫 Ban</button>
+              <button v-else class="btn-unban" @click="applyUnban(u)">✅ Unban</button>
+              <button class="btn-delete-user" @click="promptDeleteUser(u)">🗑 Delete</button>
+            </div>
           </div>
         </div>
       </div>
@@ -679,6 +696,40 @@ const promptDeleteUser = (u) => {
   );
 };
 
+// ─── RESTRICT / BAN USER ─────────────────────────────────────────────────────
+
+const applyRestrict = async (u) => {
+  if (!u._restrictDuration) return;
+  try {
+    const res = await axios.put(`${API}/users/${u._id}/restrict`, { duration: u._restrictDuration });
+    u.restrictedUntil = res.data.restrictedUntil;
+    u._restrictDuration = '';
+    alert(res.data.message);
+  } catch (err) {
+    alert(err.response?.data?.message || 'Failed to apply restriction.');
+  }
+};
+
+const applyBan = (u) => {
+  openModal(
+    `Ban @${u.username}?`,
+    `This will permanently ban their account and block their email (${u.email}) from re-registering.`,
+    async () => {
+      await axios.put(`${API}/users/${u._id}/ban`);
+      u.isBanned = true;
+    }
+  );
+};
+
+const applyUnban = async (u) => {
+  try {
+    await axios.put(`${API}/users/${u._id}/ban`, { unban: true });
+    u.isBanned = false;
+  } catch (err) {
+    alert(err.response?.data?.message || 'Failed to unban.');
+  }
+};
+
 // ─── REAL-TIME ANALYTICS ──────────────────────────────────────────────────────
 
 let analyticsInterval = null;
@@ -1099,10 +1150,12 @@ const formatDate = (d) => new Date(d).toLocaleDateString();
   padding: 2px 8px;
   border-radius: 20px;
 }
-.admin-badge   { background: #92400e; color: #fff; }
-.sub-badge     { background: #14532d; color: #fff; }
-.online-badge  { background: #14532d; color: #fff; }
-.offline-badge { background: #374151; color: #d1d5db; }
+.admin-badge    { background: #92400e; color: #fff; }
+.sub-badge      { background: #14532d; color: #fff; }
+.online-badge   { background: #14532d; color: #fff; }
+.offline-badge  { background: #374151; color: #d1d5db; }
+.ban-badge      { background: #7f1d1d; color: #fff; }
+.restrict-badge { background: #78350f; color: #fff; }
 
 .user-card__meta {
   display: flex;
@@ -1142,6 +1195,55 @@ const formatDate = (d) => new Date(d).toLocaleDateString();
   transition: background 0.15s, transform 0.15s;
 }
 .btn-delete-user:hover { background: #991b1b; transform: translateY(-1px); }
+
+.user-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+.restrict-select {
+  font-size: 0.78rem;
+  border: 2px solid #000;
+  border-radius: 8px;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+.btn-restrict {
+  background: #78350f;
+  color: #fff;
+  border: 2px solid #000;
+  border-radius: 8px;
+  padding: 4px 10px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.btn-restrict:disabled { opacity: 0.4; cursor: default; }
+.btn-restrict:not(:disabled):hover { background: #92400e; }
+.btn-ban {
+  background: #7f1d1d;
+  color: #fff;
+  border: 2px solid #000;
+  border-radius: 8px;
+  padding: 4px 10px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.btn-ban:hover { background: #991b1b; }
+.btn-unban {
+  background: #14532d;
+  color: #fff;
+  border: 2px solid #000;
+  border-radius: 8px;
+  padding: 4px 10px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.btn-unban:hover { background: #166534; }
 
 /* Report reasons */
 .report-reasons-list {
