@@ -482,6 +482,96 @@ export const updateDmReportStatus = async (req, res) => {
   }
 };
 
+// ─── ANALYTICS ────────────────────────────────────────────────────────────────
+
+/**
+ * GET /api/admin/analytics  (admin)
+ *
+ * Returns a comprehensive snapshot of platform metrics across users, posts,
+ * comments, DM reports, and social connections.
+ *
+ * @param {import("express").Request}  req
+ * @param {import("express").Response} res
+ */
+export const getAnalytics = async (req, res) => {
+  try {
+    const now = new Date();
+    const dayAgo   = new Date(now - 24 * 60 * 60 * 1000);
+    const weekAgo  = new Date(now - 7  * 24 * 60 * 60 * 1000);
+    const monthAgo = new Date(now - 30 * 24 * 60 * 60 * 1000);
+
+    const [
+      totalUsers,
+      totalSubscribers,
+      totalAdmins,
+      newUsersToday,
+      newUsersWeek,
+      newUsersMonth,
+      totalPosts,
+      reportedPosts,
+      flaggedPosts,
+      approvedPosts,
+      postsWithReportedComments,
+      dmPending,
+      dmReviewed,
+      dmDismissed,
+    ] = await Promise.all([
+      User.countDocuments(),
+      User.countDocuments({ isSubscriber: true }),
+      User.countDocuments({ isAdmin: true }),
+      User.countDocuments({ createdAt: { $gte: dayAgo } }),
+      User.countDocuments({ createdAt: { $gte: weekAgo } }),
+      User.countDocuments({ createdAt: { $gte: monthAgo } }),
+      Post.countDocuments(),
+      Post.countDocuments({ "reportedBy.0": { $exists: true } }),
+      Post.countDocuments({ moderationStatus: "flagged" }),
+      Post.countDocuments({ moderationStatus: "approved" }),
+      Post.countDocuments({ "comments.reportedBy.0": { $exists: true } }),
+      DmReport.countDocuments({ status: "pending" }),
+      DmReport.countDocuments({ status: "reviewed" }),
+      DmReport.countDocuments({ status: "dismissed" }),
+    ]);
+
+    // Sum of all followers arrays = total follower relationships on the platform
+    const followerAgg = await User.aggregate([
+      { $project: { count: { $size: { $ifNull: ["$followers", []] } } } },
+      { $group: { _id: null, total: { $sum: "$count" } } },
+    ]);
+    const totalFollowerRelationships = followerAgg[0]?.total || 0;
+
+    res.json({
+      users: {
+        total:        totalUsers,
+        subscribers:  totalSubscribers,
+        admins:       totalAdmins,
+        newToday:     newUsersToday,
+        newThisWeek:  newUsersWeek,
+        newThisMonth: newUsersMonth,
+      },
+      posts: {
+        total:    totalPosts,
+        reported: reportedPosts,
+        flagged:  flaggedPosts,
+        approved: approvedPosts,
+      },
+      comments: {
+        postsWithReportedComments,
+      },
+      dmReports: {
+        pending:   dmPending,
+        reviewed:  dmReviewed,
+        dismissed: dmDismissed,
+      },
+      social: {
+        totalFollowerRelationships,
+      },
+    });
+  } catch (err) {
+    console.error("❌ getAnalytics Error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
 // ─── ADMIN FLAG POST ──────────────────────────────────────────────────────────
 
 /**

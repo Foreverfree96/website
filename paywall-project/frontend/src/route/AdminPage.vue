@@ -19,6 +19,9 @@
       <button :class="['tab-btn', { active: tab === 'dms' }]" @click="tab = 'dms'; loadDmReports()">
         📨 DMs ({{ dmReports.length }})
       </button>
+      <button :class="['tab-btn', { active: tab === 'analytics' }]" @click="tab = 'analytics'; loadAnalytics()">
+        📊 Analytics
+      </button>
     </div>
 
     <!-- Users tab -->
@@ -191,6 +194,103 @@
             <button class="btn-flag" @click="handleDmReport(r._id, 'dismissed')">✕ Dismiss</button>
           </div>
         </div>
+      </div>
+    </template>
+
+    <!-- Analytics tab -->
+    <template v-if="tab === 'analytics'">
+      <p v-if="analyticsLoading" class="feed-status">Loading analytics...</p>
+      <div v-else-if="analytics" class="analytics-grid">
+
+        <!-- Users -->
+        <div class="analytics-section">
+          <h2 class="analytics-section-title">👥 Users</h2>
+          <div class="analytics-cards">
+            <div class="stat-card">
+              <span class="stat-value">{{ analytics.users.total }}</span>
+              <span class="stat-label">Total Users</span>
+            </div>
+            <div class="stat-card stat-card--green">
+              <span class="stat-value">{{ analytics.users.subscribers }}</span>
+              <span class="stat-label">Subscribers</span>
+            </div>
+            <div class="stat-card stat-card--amber">
+              <span class="stat-value">{{ analytics.users.admins }}</span>
+              <span class="stat-label">Moderators</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-value">{{ analytics.users.newToday }}</span>
+              <span class="stat-label">New Today</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-value">{{ analytics.users.newThisWeek }}</span>
+              <span class="stat-label">New This Week</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-value">{{ analytics.users.newThisMonth }}</span>
+              <span class="stat-label">New This Month</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Posts -->
+        <div class="analytics-section">
+          <h2 class="analytics-section-title">📝 Posts</h2>
+          <div class="analytics-cards">
+            <div class="stat-card">
+              <span class="stat-value">{{ analytics.posts.total }}</span>
+              <span class="stat-label">Total Posts</span>
+            </div>
+            <div class="stat-card stat-card--green">
+              <span class="stat-value">{{ analytics.posts.approved }}</span>
+              <span class="stat-label">Approved</span>
+            </div>
+            <div class="stat-card stat-card--red">
+              <span class="stat-value">{{ analytics.posts.reported }}</span>
+              <span class="stat-label">Reported</span>
+            </div>
+            <div class="stat-card stat-card--amber">
+              <span class="stat-value">{{ analytics.posts.flagged }}</span>
+              <span class="stat-label">Flagged</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Comments & DMs -->
+        <div class="analytics-section">
+          <h2 class="analytics-section-title">💬 Comments &amp; DMs</h2>
+          <div class="analytics-cards">
+            <div class="stat-card stat-card--red">
+              <span class="stat-value">{{ analytics.comments.postsWithReportedComments }}</span>
+              <span class="stat-label">Posts w/ Reported Comments</span>
+            </div>
+            <div class="stat-card stat-card--red">
+              <span class="stat-value">{{ analytics.dmReports.pending }}</span>
+              <span class="stat-label">DM Reports Pending</span>
+            </div>
+            <div class="stat-card stat-card--green">
+              <span class="stat-value">{{ analytics.dmReports.reviewed }}</span>
+              <span class="stat-label">DM Reports Reviewed</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-value">{{ analytics.dmReports.dismissed }}</span>
+              <span class="stat-label">DM Reports Dismissed</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Social -->
+        <div class="analytics-section">
+          <h2 class="analytics-section-title">🔗 Social Graph</h2>
+          <div class="analytics-cards">
+            <div class="stat-card">
+              <span class="stat-value">{{ analytics.social.totalFollowerRelationships }}</span>
+              <span class="stat-label">Total Follow Relationships</span>
+            </div>
+          </div>
+        </div>
+
+        <button class="btn-refresh-analytics" @click="loadAnalytics(true)">↻ Refresh</button>
       </div>
     </template>
 
@@ -493,6 +593,36 @@ const handleDmReport = async (reportId, status) => {
     await axios.put(`${API}/dm-reports/${reportId}`, { status });
     dmReports.value = dmReports.value.filter(r => r._id !== reportId);
   } catch { /* ignore */ }
+};
+
+// ─── ANALYTICS ────────────────────────────────────────────────────────────────
+
+// Aggregated platform metrics returned by GET /api/admin/analytics.
+const analytics = ref(null);
+
+// Separate loading flag so it doesn't share state with the posts loading flag.
+const analyticsLoading = ref(false);
+
+// Guards against re-fetching on every tab visit.
+const analyticsLoaded = ref(false);
+
+/**
+ * loadAnalytics
+ * Fetches platform-wide metrics from the admin API.
+ * Pass force=true to bypass the cache and reload fresh data.
+ */
+const loadAnalytics = async (force = false) => {
+  if (analyticsLoaded.value && !force) return;
+  analyticsLoading.value = true;
+  try {
+    const res = await axios.get(`${API}/analytics`);
+    analytics.value = res.data;
+    analyticsLoaded.value = true;
+  } catch {
+    // ignore — analytics section just won't render
+  } finally {
+    analyticsLoading.value = false;
+  }
 };
 
 // ─── USER ACTIONS ─────────────────────────────────────────────────────────────
@@ -1013,5 +1143,83 @@ const formatDate = (d) => new Date(d).toLocaleDateString();
 /* Landscape phone */
 @media (max-height: 500px) and (orientation: landscape) {
   .admin-page { margin: 8px auto; }
+}
+
+/* ── Analytics tab ── */
+.analytics-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.analytics-section {
+  background: pink;
+  border: 3px solid #000;
+  border-radius: 14px;
+  padding: 18px 20px 20px;
+}
+
+.analytics-section-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #000;
+  margin: 0 0 14px;
+}
+
+.analytics-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.stat-card {
+  background: #000;
+  color: pink;
+  border: 3px solid #14532d;
+  border-radius: 12px;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 110px;
+  flex: 1;
+  gap: 6px;
+}
+.stat-card--green { border-color: #14532d; background: #14532d; color: #fff; }
+.stat-card--red   { border-color: #7f1d1d; background: #7f1d1d; color: #fff; }
+.stat-card--amber { border-color: #92400e; background: #92400e; color: #fff; }
+
+.stat-value {
+  font-size: 2rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.stat-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-align: center;
+  opacity: 0.9;
+  line-height: 1.3;
+}
+
+.btn-refresh-analytics {
+  align-self: flex-start;
+  background: #000;
+  color: pink;
+  border: 3px solid #14532d;
+  border-radius: 8px;
+  padding: 8px 20px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.15s, color 0.15s;
+}
+.btn-refresh-analytics:hover { transform: translateY(-2px); color: rgb(125, 190, 157); }
+
+@media (max-width: 480px) {
+  .stat-card { min-width: 90px; padding: 12px 14px; }
+  .stat-value { font-size: 1.6rem; }
+  .analytics-section { padding: 14px; }
 }
 </style>

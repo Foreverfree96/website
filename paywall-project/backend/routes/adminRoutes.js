@@ -47,6 +47,7 @@ import {
   adminDeleteUser,       // DELETE /users/:userId                — remove a user account
   getDmReports,          // GET    /dm-reports                   — all DM abuse reports
   updateDmReportStatus,  // PUT    /dm-reports/:reportId         — set report status
+  getAnalytics,          // GET    /analytics                    — platform-wide metrics
 } from "../controllers/adminController.js";
 
 const router = express.Router();
@@ -155,5 +156,16 @@ router.get("/dm-reports", getDmReports);
  * Called when an admin has finished reviewing the report.
  */
 router.put("/dm-reports/:reportId", updateDmReportStatus);
+
+// =============================================================================
+// Analytics
+// =============================================================================
+
+/**
+ * GET /analytics
+ * Returns aggregated platform metrics: user counts, post counts, moderation
+ * queue sizes, DM report totals, and social graph stats.
+ */
+router.get("/analytics", getAnalytics);
 
 export default router;
