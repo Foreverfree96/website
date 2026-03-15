@@ -94,6 +94,14 @@
             <span v-else-if="u.restrictedUntil && new Date(u.restrictedUntil) > new Date()" class="user-badge restrict-badge">
               ⏳ Restricted until {{ formatDate(u.restrictedUntil) }}
             </span>
+            <button
+              v-if="u._pendingAppealId && (u.isBanned || (u.restrictedUntil && new Date(u.restrictedUntil) > new Date()))"
+              class="appeal-indicator-btn"
+              @click="jumpToAppeal(u._pendingAppealId)"
+              title="This user has a pending appeal — click to review"
+            >
+              📋 Pending Appeal
+            </button>
             <div v-if="!u.isAdmin" class="user-card__actions">
               <select v-model="u._restrictDuration" class="restrict-select">
                 <option value="">Restrict…</option>
@@ -383,7 +391,7 @@
       <p v-if="appealsLoading" class="feed-status">Loading appeals...</p>
       <p v-else-if="!appeals.length" class="feed-status">No appeals yet.</p>
       <div v-else class="appeals-list">
-        <div v-for="a in appeals" :key="a._id" :class="['appeal-card', `appeal-card--${a.status}`]">
+        <div v-for="a in appeals" :key="a._id" :id="`appeal-${a._id}`" :class="['appeal-card', `appeal-card--${a.status}`, { 'appeal-card--highlighted': highlightedAppealId === a._id }]">
           <div class="appeal-card__header">
             <span class="appeal-type-badge" :class="a.type === 'ban' ? 'badge-ban' : 'badge-restrict'">
               {{ a.type === 'ban' ? '🚫 Ban Appeal' : '⏳ Restriction Appeal' }}
@@ -599,19 +607,35 @@ const filteredUsers = computed(() => {
 const loadUsers = async () => {
   usersLoading.value = true;
   try {
-    const res = await axios.get(`${API}/users`);
+    const [res, appealsRes] = await Promise.allSettled([
+      axios.get(`${API}/users`),
+      axios.get(`${API}/appeals`),
+    ]);
+
+    // Build a map of username → appeal status for pending appeals
+    const pendingAppealMap = {};
+    if (appealsRes.status === 'fulfilled') {
+      appeals.value = appealsRes.value.data;
+      appealsRes.value.data
+        .filter(a => a.status === 'pending')
+        .forEach(a => { pendingAppealMap[a.username] = a._id; });
+    }
+
     // Fetch online IDs separately so isOnline is always fresh
     let onlineIds = new Set();
     try {
       const ol = await axios.get(`${API}/online-users`);
       onlineIds = new Set(ol.data.map(u => u._id));
     } catch {}
-    // Initialise _restrictDuration so v-model has a tracked property from the start
-    users.value = res.data.map(u => ({
-      ...u,
-      _restrictDuration: '',
-      isOnline: onlineIds.has(u._id),
-    }));
+
+    if (res.status === 'fulfilled') {
+      users.value = res.value.data.map(u => ({
+        ...u,
+        _restrictDuration: '',
+        isOnline: onlineIds.has(u._id),
+        _pendingAppealId: pendingAppealMap[u.username] || null,
+      }));
+    }
   } catch {
     // ignore — user sees an empty list
   } finally {
@@ -717,11 +741,27 @@ const loadAdminLogs = async () => {
   }
 };
 
+// Jump to the Appeals tab and highlight a specific appeal
+const highlightedAppealId = ref(null);
+const jumpToAppeal = (appealId) => {
+  highlightedAppealId.value = appealId;
+  switchTab('appeals');
+  // Scroll to the card after the tab renders
+  setTimeout(() => {
+    const el = document.getElementById(`appeal-${appealId}`);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, 150);
+};
+
 const resolveAppeal = async (appeal, status) => {
   try {
     const res = await axios.put(`${API}/appeals/${appeal._id}`, { status });
     const idx = appeals.value.findIndex(a => a._id === appeal._id);
     if (idx !== -1) appeals.value[idx] = { ...appeals.value[idx], status: res.data.status };
+    // Remove the pending appeal badge from the matching user card
+    const uIdx = users.value.findIndex(u => u.username === appeal.username);
+    if (uIdx !== -1) users.value[uIdx] = { ...users.value[uIdx], _pendingAppealId: null };
+    if (highlightedAppealId.value === appeal._id) highlightedAppealId.value = null;
     showToast(`Appeal ${status}.`);
   } catch (err) {
     showToast(err.response?.data?.message || 'Failed to update appeal.', 'error');
@@ -1664,6 +1704,25 @@ const formatDate = (d) => new Date(d).toLocaleDateString();
 }
 .appeal-card--approved  { border-color: #16a34a; background: #f0fdf4; }
 .appeal-card--dismissed { border-color: #9ca3af; background: #f9fafb; opacity: 0.7; }
+.appeal-card--highlighted { border-color: #d97706 !important; box-shadow: 0 0 0 3px #fde68a; }
+
+/* Pending appeal badge on user cards */
+.appeal-indicator-btn {
+  background: #d97706;
+  color: #fff;
+  border: 2px solid #000;
+  border-radius: 6px;
+  padding: 3px 10px;
+  font-size: 0.78rem;
+  font-weight: 800;
+  cursor: pointer;
+  animation: pulse-appeal 1.8s ease-in-out infinite;
+}
+.appeal-indicator-btn:hover { background: #b45309; }
+@keyframes pulse-appeal {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.65; }
+}
 .appeal-card__header {
   display: flex;
   align-items: center;
