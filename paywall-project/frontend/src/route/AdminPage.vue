@@ -328,7 +328,7 @@
  *     the lifetime of this page visit (guarded by *Loaded flags).
  */
 import { ref, computed, watch, onMounted } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRouter, useRoute } from 'vue-router';
 import axios from 'axios';
 import { useAuth } from '../composables/useAuth';
 
@@ -338,6 +338,7 @@ import { useAuth } from '../composables/useAuth';
 const API = import.meta.env.VITE_API_URL + '/api/admin';
 
 const router = useRouter();
+const route  = useRoute();
 const { user } = useAuth();
 
 // ─── ADMIN GUARD ──────────────────────────────────────────────────────────────
@@ -492,9 +493,23 @@ const load = async () => {
 
 // ─── LIFECYCLE ────────────────────────────────────────────────────────────────
 
-// Load reported and flagged posts immediately so they are ready when the
-// default "Reported" tab is displayed.
-onMounted(load);
+// Load data for whichever tab is active on mount.
+// If a ?tab= query param is present (e.g. from the Analytics nav link),
+// jump straight to that tab and trigger its data load.
+onMounted(() => {
+  const qTab = route.query.tab;
+  const valid = ['reported', 'flagged', 'comments', 'users', 'dms', 'analytics'];
+  if (qTab && valid.includes(qTab)) {
+    tab.value = qTab;
+    if (qTab === 'analytics') loadAnalytics();
+    else if (qTab === 'comments') loadReportedComments();
+    else if (qTab === 'users') loadUsers();
+    else if (qTab === 'dms') loadDmReports();
+    else load();
+  } else {
+    load();
+  }
+});
 
 // ─── CONFIRM MODAL HELPERS ────────────────────────────────────────────────────
 
@@ -691,7 +706,12 @@ const formatDate = (d) => new Date(d).toLocaleDateString();
   display: flex;
   gap: 10px;
   margin-bottom: 24px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none; /* Firefox */
+  padding-bottom: 4px;
 }
+.admin-tabs::-webkit-scrollbar { display: none; } /* Chrome/Safari */
 
 .tab-btn {
   background: #000;
@@ -703,6 +723,8 @@ const formatDate = (d) => new Date(d).toLocaleDateString();
   font-weight: 700;
   cursor: pointer;
   transition: transform 0.2s;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 .tab-btn:hover { transform: translateY(-2px); color: rgb(125, 190, 157); }
 .tab-btn.active { border-color: #7f1d1d; color: #ff9999; }
@@ -1108,8 +1130,7 @@ const formatDate = (d) => new Date(d).toLocaleDateString();
   .user-card__meta { align-items: flex-start; text-align: left; }
   .admin-page { padding: 0 10px 44px; margin: 14px auto; }
   .admin-title { font-size: 1.3rem; margin-bottom: 14px; }
-  .admin-tabs { flex-wrap: wrap; }
-  .tab-btn { flex: 1; text-align: center; padding: 8px 12px; font-size: 0.88rem; }
+  .tab-btn { padding: 8px 12px; font-size: 0.88rem; }
   .mod-card { padding: 12px; border-radius: 10px; }
   .mod-card__header { gap: 6px; }
   .mod-card__email { font-size: 0.75rem; word-break: break-all; }
