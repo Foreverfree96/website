@@ -174,6 +174,29 @@ const userSchema = new mongoose.Schema(
      * Banned users cannot log in or interact with the platform.
      */
     isBanned: { type: Boolean, default: false },
+
+    // ------------------------------------------------------------------
+    // Spotify OAuth fields
+    // Populated when the user links their Spotify account.
+    // ------------------------------------------------------------------
+
+    /** Spotify user ID from the profile API (e.g. "abc123xyz"). */
+    spotifyId: { type: String },
+
+    /** Display name from the Spotify profile (may differ from platform username). */
+    spotifyDisplayName: { type: String },
+
+    /** Whether the linked Spotify account is a Premium subscription. */
+    spotifyIsPremium: { type: Boolean, default: false },
+
+    /** Short-lived Spotify access token for API calls. */
+    spotifyAccessToken: { type: String, select: false },
+
+    /** Long-lived refresh token used to obtain new access tokens. */
+    spotifyRefreshToken: { type: String, select: false },
+
+    /** Timestamp when spotifyAccessToken expires. */
+    spotifyTokenExpiry: { type: Date },
   },
   // Automatically manage createdAt and updatedAt timestamps on every document.
   { timestamps: true }
