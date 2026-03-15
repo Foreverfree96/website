@@ -27,6 +27,8 @@ import postRoutes from "./routes/postRoutes.js";
 import notificationRoutes from "./routes/notificationRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
 import messageRoutes from "./routes/messageRoutes.js";
+import trackRoutes from "./routes/trackRoutes.js";
+import { onlineUsers } from "./utils/onlineUsers.js";
 import cors from "cors";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
@@ -112,7 +114,10 @@ io.use((socket, next) => {
 io.on("connection", (socket) => {
   // Join the user's private room so targeted emits reach only them
   socket.join(socket.userId);
-  socket.on("disconnect", () => {});
+  onlineUsers.add(socket.userId);
+  socket.on("disconnect", () => {
+    onlineUsers.delete(socket.userId);
+  });
 });
 
 // ─── SECURITY HEADERS ────────────────────────────────────────────────────────
@@ -175,6 +180,7 @@ app.use("/api/posts", authLimiter, postRoutes);
 app.use("/api/notifications", authLimiter, notificationRoutes);
 app.use("/api/admin", authLimiter, adminRoutes);
 app.use("/api/messages", authLimiter, messageRoutes);
+app.use("/api/track",   authLimiter, trackRoutes);
 
 // Simple health-check endpoint to confirm the server is alive
 app.get("/", (req, res) => res.send("Backend is running!"));

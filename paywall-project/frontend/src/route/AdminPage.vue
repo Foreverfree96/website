@@ -207,16 +207,20 @@
           <h2 class="analytics-section-title">👥 Users</h2>
           <div class="analytics-cards">
             <div class="stat-card">
-              <span class="stat-value">{{ analytics.users.total }}</span>
-              <span class="stat-label">Total Users</span>
+              <span class="stat-value">{{ analytics.users.totalCreated }}</span>
+              <span class="stat-label">Total Created</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-value">{{ analytics.users.totalCurrent }}</span>
+              <span class="stat-label">Total Current</span>
             </div>
             <div class="stat-card stat-card--green">
-              <span class="stat-value">{{ analytics.users.subscribers }}</span>
-              <span class="stat-label">Subscribers</span>
+              <span class="stat-value">{{ analytics.users.online }}</span>
+              <span class="stat-label">🟢 Online</span>
             </div>
-            <div class="stat-card stat-card--amber">
-              <span class="stat-value">{{ analytics.users.admins }}</span>
-              <span class="stat-label">Moderators</span>
+            <div class="stat-card stat-card--dim">
+              <span class="stat-value">{{ analytics.users.offline }}</span>
+              <span class="stat-label">⚫ Offline</span>
             </div>
             <div class="stat-card">
               <span class="stat-value">{{ analytics.users.newToday }}</span>
@@ -233,59 +237,53 @@
           </div>
         </div>
 
-        <!-- Posts -->
+        <!-- Downloads -->
         <div class="analytics-section">
-          <h2 class="analytics-section-title">📝 Posts</h2>
+          <h2 class="analytics-section-title">📥 Project Downloads</h2>
           <div class="analytics-cards">
-            <div class="stat-card">
-              <span class="stat-value">{{ analytics.posts.total }}</span>
-              <span class="stat-label">Total Posts</span>
-            </div>
             <div class="stat-card stat-card--green">
-              <span class="stat-value">{{ analytics.posts.approved }}</span>
-              <span class="stat-label">Approved</span>
-            </div>
-            <div class="stat-card stat-card--red">
-              <span class="stat-value">{{ analytics.posts.reported }}</span>
-              <span class="stat-label">Reported</span>
-            </div>
-            <div class="stat-card stat-card--amber">
-              <span class="stat-value">{{ analytics.posts.flagged }}</span>
-              <span class="stat-label">Flagged</span>
+              <span class="stat-value">{{ analytics.downloads }}</span>
+              <span class="stat-label">Total Downloads</span>
             </div>
           </div>
         </div>
 
-        <!-- Comments & DMs -->
+        <!-- Page Views -->
         <div class="analytics-section">
-          <h2 class="analytics-section-title">💬 Comments &amp; DMs</h2>
-          <div class="analytics-cards">
-            <div class="stat-card stat-card--red">
-              <span class="stat-value">{{ analytics.comments.postsWithReportedComments }}</span>
-              <span class="stat-label">Posts w/ Reported Comments</span>
+          <h2 class="analytics-section-title">📄 Page Travel</h2>
+          <p v-if="!analytics.pageViews.length" class="analytics-empty">No page visits recorded yet.</p>
+          <div v-else class="page-view-table">
+            <div class="pv-row pv-header">
+              <span>Page</span>
+              <span>Visits</span>
             </div>
-            <div class="stat-card stat-card--red">
-              <span class="stat-value">{{ analytics.dmReports.pending }}</span>
-              <span class="stat-label">DM Reports Pending</span>
-            </div>
-            <div class="stat-card stat-card--green">
-              <span class="stat-value">{{ analytics.dmReports.reviewed }}</span>
-              <span class="stat-label">DM Reports Reviewed</span>
-            </div>
-            <div class="stat-card">
-              <span class="stat-value">{{ analytics.dmReports.dismissed }}</span>
-              <span class="stat-label">DM Reports Dismissed</span>
+            <div v-for="pv in analytics.pageViews" :key="pv.path" class="pv-row">
+              <span class="pv-path">{{ pv.path }}</span>
+              <span class="pv-count">{{ pv.count.toLocaleString() }}</span>
+              <div
+                class="pv-bar"
+                :style="{ width: barWidth(pv.count, analytics.pageViews[0].count) + '%' }"
+              ></div>
             </div>
           </div>
         </div>
 
-        <!-- Social -->
+        <!-- Visitor Locations -->
         <div class="analytics-section">
-          <h2 class="analytics-section-title">🔗 Social Graph</h2>
-          <div class="analytics-cards">
-            <div class="stat-card">
-              <span class="stat-value">{{ analytics.social.totalFollowerRelationships }}</span>
-              <span class="stat-label">Total Follow Relationships</span>
+          <h2 class="analytics-section-title">🌍 Visitor Locations</h2>
+          <p v-if="!analytics.locations.length" class="analytics-empty">No location data yet — accumulates from live traffic.</p>
+          <div v-else class="page-view-table">
+            <div class="pv-row pv-header">
+              <span>Country</span>
+              <span>Visitors</span>
+            </div>
+            <div v-for="loc in analytics.locations" :key="loc.country" class="pv-row">
+              <span class="pv-path">{{ loc.country }}</span>
+              <span class="pv-count">{{ loc.count.toLocaleString() }}</span>
+              <div
+                class="pv-bar pv-bar--loc"
+                :style="{ width: barWidth(loc.count, analytics.locations[0].count) + '%' }"
+              ></div>
             </div>
           </div>
         </div>
@@ -671,6 +669,15 @@ const promptDeleteUser = (u) => {
     }
   );
 };
+
+// ─── ANALYTICS HELPERS ────────────────────────────────────────────────────────
+
+/**
+ * barWidth
+ * Returns a percentage (0–100) for the progress bar in the page-view and
+ * location tables. The top entry always fills 100%; others scale relative to it.
+ */
+const barWidth = (count, max) => max > 0 ? Math.round((count / max) * 100) : 0;
 
 // ─── DISPLAY HELPERS ──────────────────────────────────────────────────────────
 
@@ -1181,7 +1188,7 @@ const formatDate = (d) => new Date(d).toLocaleDateString();
 .analytics-grid {
   display: flex;
   flex-direction: column;
-  gap: 28px;
+  gap: 24px;
 }
 
 .analytics-section {
@@ -1198,6 +1205,14 @@ const formatDate = (d) => new Date(d).toLocaleDateString();
   margin: 0 0 14px;
 }
 
+.analytics-empty {
+  font-size: 0.88rem;
+  color: #555;
+  margin: 0;
+  font-style: italic;
+}
+
+/* Stat cards */
 .analytics-cards {
   display: flex;
   flex-wrap: wrap;
@@ -1218,8 +1233,7 @@ const formatDate = (d) => new Date(d).toLocaleDateString();
   gap: 6px;
 }
 .stat-card--green { border-color: #14532d; background: #14532d; color: #fff; }
-.stat-card--red   { border-color: #7f1d1d; background: #7f1d1d; color: #fff; }
-.stat-card--amber { border-color: #92400e; background: #92400e; color: #fff; }
+.stat-card--dim   { border-color: #374151; background: #374151; color: #d1d5db; }
 
 .stat-value {
   font-size: 2rem;
@@ -1234,6 +1248,64 @@ const formatDate = (d) => new Date(d).toLocaleDateString();
   opacity: 0.9;
   line-height: 1.3;
 }
+
+/* Page view / location bar table */
+.page-view-table {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pv-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 10px;
+  position: relative;
+  background: #fff0f6;
+  border-radius: 8px;
+  padding: 8px 12px;
+  overflow: hidden;
+  min-height: 36px;
+}
+
+.pv-header {
+  background: #000;
+  color: pink;
+  font-size: 0.78rem;
+  font-weight: 700;
+  border-radius: 8px;
+  padding: 6px 12px;
+}
+
+.pv-path {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #000;
+  z-index: 1;
+  word-break: break-all;
+}
+
+.pv-count {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #7f1d1d;
+  z-index: 1;
+  white-space: nowrap;
+}
+
+/* Progress bar absolutely fills the row behind the text */
+.pv-bar {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  background: rgba(127, 29, 29, 0.12);
+  border-radius: 8px;
+  transition: width 0.4s ease;
+  z-index: 0;
+}
+.pv-bar--loc { background: rgba(20, 83, 45, 0.12); }
 
 .btn-refresh-analytics {
   align-self: flex-start;
@@ -1253,5 +1325,6 @@ const formatDate = (d) => new Date(d).toLocaleDateString();
   .stat-card { min-width: 90px; padding: 12px 14px; }
   .stat-value { font-size: 1.6rem; }
   .analytics-section { padding: 14px; }
+  .pv-path { font-size: 0.78rem; }
 }
 </style>

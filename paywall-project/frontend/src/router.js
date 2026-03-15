@@ -118,4 +118,13 @@ router.beforeEach((to) => {
   }
 });
 
+// Track every page navigation — fire-and-forget, never blocks the user.
+router.afterEach((to) => {
+  fetch(import.meta.env.VITE_API_URL + "/api/track/pageview", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path: to.path }),
+  }).catch(() => {});
+});
+
 export default router;

@@ -24,6 +24,8 @@ import Post from "../models/postModel.js";
 import User from "../models/userModel.js";
 import Notification from "../models/notificationModel.js";
 import DmReport from "../models/dmReportModel.js";
+import { PageView, LocationStat, SiteStat } from "../models/analyticsModel.js";
+import { onlineUsers } from "../utils/onlineUsers.js";
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
@@ -495,76 +497,45 @@ export const updateDmReportStatus = async (req, res) => {
  */
 export const getAnalytics = async (req, res) => {
   try {
-    const now = new Date();
+    const now      = new Date();
     const dayAgo   = new Date(now - 24 * 60 * 60 * 1000);
     const weekAgo  = new Date(now - 7  * 24 * 60 * 60 * 1000);
     const monthAgo = new Date(now - 30 * 24 * 60 * 60 * 1000);
 
     const [
       totalUsers,
-      totalSubscribers,
-      totalAdmins,
       newUsersToday,
       newUsersWeek,
       newUsersMonth,
-      totalPosts,
-      reportedPosts,
-      flaggedPosts,
-      approvedPosts,
-      postsWithReportedComments,
-      dmPending,
-      dmReviewed,
-      dmDismissed,
+      pageViews,
+      locations,
+      downloadStat,
     ] = await Promise.all([
       User.countDocuments(),
-      User.countDocuments({ isSubscriber: true }),
-      User.countDocuments({ isAdmin: true }),
       User.countDocuments({ createdAt: { $gte: dayAgo } }),
       User.countDocuments({ createdAt: { $gte: weekAgo } }),
       User.countDocuments({ createdAt: { $gte: monthAgo } }),
-      Post.countDocuments(),
-      Post.countDocuments({ "reportedBy.0": { $exists: true } }),
-      Post.countDocuments({ moderationStatus: "flagged" }),
-      Post.countDocuments({ moderationStatus: "approved" }),
-      Post.countDocuments({ "comments.reportedBy.0": { $exists: true } }),
-      DmReport.countDocuments({ status: "pending" }),
-      DmReport.countDocuments({ status: "reviewed" }),
-      DmReport.countDocuments({ status: "dismissed" }),
+      PageView.find().sort({ count: -1 }).lean(),
+      LocationStat.find().sort({ count: -1 }).lean(),
+      SiteStat.findOne({ key: "downloads" }).lean(),
     ]);
 
-    // Sum of all followers arrays = total follower relationships on the platform
-    const followerAgg = await User.aggregate([
-      { $project: { count: { $size: { $ifNull: ["$followers", []] } } } },
-      { $group: { _id: null, total: { $sum: "$count" } } },
-    ]);
-    const totalFollowerRelationships = followerAgg[0]?.total || 0;
+    const onlineCount  = onlineUsers.size;
+    const offlineCount = Math.max(0, totalUsers - onlineCount);
 
     res.json({
       users: {
-        total:        totalUsers,
-        subscribers:  totalSubscribers,
-        admins:       totalAdmins,
+        totalCreated: totalUsers,
+        totalCurrent: totalUsers,
+        online:       onlineCount,
+        offline:      offlineCount,
         newToday:     newUsersToday,
         newThisWeek:  newUsersWeek,
         newThisMonth: newUsersMonth,
       },
-      posts: {
-        total:    totalPosts,
-        reported: reportedPosts,
-        flagged:  flaggedPosts,
-        approved: approvedPosts,
-      },
-      comments: {
-        postsWithReportedComments,
-      },
-      dmReports: {
-        pending:   dmPending,
-        reviewed:  dmReviewed,
-        dismissed: dmDismissed,
-      },
-      social: {
-        totalFollowerRelationships,
-      },
+      pageViews,
+      locations,
+      downloads: downloadStat?.count || 0,
     });
   } catch (err) {
     console.error("❌ getAnalytics Error:", err);
