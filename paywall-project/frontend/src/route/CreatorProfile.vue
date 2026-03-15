@@ -53,7 +53,14 @@
         <!-- .stop prevents the card's click from also firing when interacting with the embed -->
         <MediaEmbed v-if="p.mediaUrl" :mediaUrl="p.mediaUrl" :embedType="p.embedType" @click.stop />
         <div class="post-card__footer">
-          <span>❤️ {{ p.likes.length }}</span>
+          <button
+            class="like-btn"
+            :class="{ 'like-btn--liked': p.likes.includes(user?.id) }"
+            @click.stop="handleLike($event, p)"
+            :title="user?.id ? (p.likes.includes(user?.id) ? 'Unlike' : 'Like') : 'Log in to like'"
+          >
+            {{ p.likes.includes(user?.id) ? '❤️' : '🤍' }} {{ p.likes.length }}
+          </button>
           <span>💬 {{ p.comments.length }}</span>
           <span class="post-card__date">{{ formatDate(p.createdAt) }}</span>
         </div>
@@ -118,7 +125,7 @@ const router = useRouter();
 // `posts`      — reactive array; populated with the creator's posts after fetch.
 // `loading`    — true while posts are being fetched.
 // `fetchPosts` — loads all posts then we filter to just this creator's.
-const { posts, loading, fetchPosts } = usePosts();
+const { posts, loading, fetchPosts, toggleLike } = usePosts();
 
 // `user` — the currently logged-in visitor (may be empty for guests).
 const { user } = useAuth();
@@ -261,6 +268,17 @@ const truncate = (text) => text.length > 150 ? text.slice(0, 150) + '...' : text
 
 // Format an ISO date string as a locale short date (e.g. "3/13/2026").
 const formatDate = (d) => new Date(d).toLocaleDateString();
+
+const handleLike = async (e, p) => {
+  e.stopPropagation();
+  if (!user.value?.id) return;
+  try {
+    const res = await toggleLike(p._id);
+    p.likes = res.liked
+      ? [...p.likes, user.value.id]
+      : p.likes.filter(id => id !== user.value.id);
+  } catch {}
+};
 </script>
 
 <style scoped>
@@ -591,6 +609,22 @@ const formatDate = (d) => new Date(d).toLocaleDateString();
   color: #000;
   margin-top: 10px;
 }
+
+.like-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: inherit;
+  font-weight: 600;
+  color: #000;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: transform 0.15s;
+}
+.like-btn:hover { transform: scale(1.15); }
+.like-btn--liked { color: #e11d48; }
 
 .post-card__date {
   margin-left: auto;

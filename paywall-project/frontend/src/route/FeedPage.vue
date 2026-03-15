@@ -85,7 +85,14 @@
 
         <!-- Footer: like count, comment count, and formatted creation date -->
         <div class="post-card__footer">
-          <span>❤️ {{ p.likes.length }}</span>
+          <button
+            class="like-btn"
+            :class="{ 'like-btn--liked': p.likes.includes(user?.id) }"
+            @click.stop="handleLike($event, p)"
+            :title="user?.id ? (p.likes.includes(user?.id) ? 'Unlike' : 'Like') : 'Log in to like'"
+          >
+            {{ p.likes.includes(user?.id) ? '❤️' : '🤍' }} {{ p.likes.length }}
+          </button>
           <span>💬 {{ p.comments.length }}</span>
           <!-- Date is pushed to the far right via margin-left: auto on .post-card__date -->
           <span class="post-card__date">{{ formatDate(p.createdAt) }}</span>
@@ -147,7 +154,7 @@ const debounce = (fn, ms) => {
  *                filtered by the given category (empty = all) at the given page,
  *                populates `posts`, and returns pagination metadata.
  */
-const { posts, loading, fetchPosts } = usePosts();
+const { posts, loading, fetchPosts, toggleLike } = usePosts();
 
 /**
  * useAuth composable:
@@ -277,6 +284,17 @@ const setSort = (s) => {
  * Bound to the card's root @click handler.
  */
 const goToPost = (id) => router.push(`/post/${id}`);
+
+const handleLike = async (e, p) => {
+  e.stopPropagation();
+  if (!user.value?.id) return;
+  try {
+    const res = await toggleLike(p._id);
+    p.likes = res.liked
+      ? [...p.likes, user.value.id]
+      : p.likes.filter(id => id !== user.value.id);
+  } catch {}
+};
 
 /**
  * goToCreator
@@ -503,6 +521,22 @@ onMounted(() => {
   font-weight: 600;
   color: #000;
 }
+.like-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: inherit;
+  font-weight: 600;
+  color: #000;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: transform 0.15s;
+}
+.like-btn:hover { transform: scale(1.15); }
+.like-btn--liked { color: #e11d48; }
+
 /* Date is pushed to the right end of the footer row */
 .post-card__date {
   margin-left: auto;
