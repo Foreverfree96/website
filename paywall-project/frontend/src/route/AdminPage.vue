@@ -4,22 +4,22 @@
 
     <!-- Tabs -->
     <div class="admin-tabs">
-      <button :class="['tab-btn', { active: tab === 'reported' }]" @click="tab = 'reported'; load()">
+      <button :class="['tab-btn', { active: tab === 'reported' }]" @click="router.push({ query: { tab: 'reported' } })">
         🚩 Reported ({{ reported.length }})
       </button>
-      <button :class="['tab-btn', { active: tab === 'flagged' }]" @click="tab = 'flagged'; load()">
+      <button :class="['tab-btn', { active: tab === 'flagged' }]" @click="router.push({ query: { tab: 'flagged' } })">
         ⛔ Flagged ({{ flagged.length }})
       </button>
-      <button :class="['tab-btn', { active: tab === 'comments' }]" @click="tab = 'comments'; loadReportedComments()">
+      <button :class="['tab-btn', { active: tab === 'comments' }]" @click="router.push({ query: { tab: 'comments' } })">
         💬 Comments ({{ reportedComments.length }})
       </button>
-      <button :class="['tab-btn', { active: tab === 'users' }]" @click="tab = 'users'; loadUsers()">
+      <button :class="['tab-btn', { active: tab === 'users' }]" @click="router.push({ query: { tab: 'users' } })">
         👥 Users ({{ users.length || '…' }})
       </button>
-      <button :class="['tab-btn', { active: tab === 'dms' }]" @click="tab = 'dms'; loadDmReports()">
+      <button :class="['tab-btn', { active: tab === 'dms' }]" @click="router.push({ query: { tab: 'dms' } })">
         📨 DMs ({{ dmReports.length }})
       </button>
-      <button :class="['tab-btn', { active: tab === 'analytics' }]" @click="tab = 'analytics'; loadAnalytics()">
+      <button :class="['tab-btn', { active: tab === 'analytics' }]" @click="router.push({ query: { tab: 'analytics' } })">
         📊 Analytics
       </button>
     </div>
@@ -325,7 +325,7 @@
  *   - "comments", "users", and "dms" are each loaded once and then cached for
  *     the lifetime of this page visit (guarded by *Loaded flags).
  */
-import { ref, computed, watch, onMounted } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import axios from 'axios';
 import { useAuth } from '../composables/useAuth';
@@ -491,23 +491,26 @@ const load = async () => {
 
 // ─── LIFECYCLE ────────────────────────────────────────────────────────────────
 
-// Load data for whichever tab is active on mount.
-// If a ?tab= query param is present (e.g. from the Analytics nav link),
-// jump straight to that tab and trigger its data load.
-onMounted(() => {
-  const qTab = route.query.tab;
-  const valid = ['reported', 'flagged', 'comments', 'users', 'dms', 'analytics'];
-  if (qTab && valid.includes(qTab)) {
-    tab.value = qTab;
-    if (qTab === 'analytics') loadAnalytics();
-    else if (qTab === 'comments') loadReportedComments();
-    else if (qTab === 'users') loadUsers();
-    else if (qTab === 'dms') loadDmReports();
-    else load();
-  } else {
-    load();
-  }
-});
+// Watch the ?tab= query param so navigating via the nav link works without
+// a page refresh — fires immediately on mount AND on every subsequent change.
+const valid = ['reported', 'flagged', 'comments', 'users', 'dms', 'analytics'];
+watch(
+  () => route.query.tab,
+  (qTab) => {
+    if (qTab && valid.includes(qTab)) {
+      tab.value = qTab;
+      if (qTab === 'analytics') loadAnalytics();
+      else if (qTab === 'comments') loadReportedComments();
+      else if (qTab === 'users') loadUsers();
+      else if (qTab === 'dms') loadDmReports();
+      else load();
+    } else {
+      tab.value = 'reported';
+      load();
+    }
+  },
+  { immediate: true }
+);
 
 // ─── CONFIRM MODAL HELPERS ────────────────────────────────────────────────────
 
