@@ -768,6 +768,49 @@ export const forgotUsername = async (req, res) => {
   }
 };
 
+// ─── FORGOT EMAIL ─────────────────────────────────────────────────────────────
+
+/**
+ * POST /api/users/forgot-email
+ *
+ * User enters their username; we look up the account and email them their
+ * registered email address along with their username as a reminder.
+ * Responds immediately with a generic message to prevent user enumeration.
+ *
+ * Body params:
+ *  @param {string} username - The user's account username
+ */
+export const forgotEmail = async (req, res) => {
+  try {
+    const { username } = req.body;
+    if (!username) return res.status(400).json({ message: "Username is required" });
+
+    const user = await User.findOne({ username: username.trim().toLowerCase() });
+
+    // Respond immediately regardless of whether the account exists
+    res.json({ message: "If that username is registered, your email address has been sent to it." });
+
+    if (user) {
+      const masked = user.email.replace(/(.{2}).+(@.+)/, "$1****$2");
+      sendEmail({
+        to: user.email,
+        subject: "Your Registered Email Address",
+        html: `
+          <h2>Email Reminder</h2>
+          <p>Hi <strong>${user.username}</strong>,</p>
+          <p>You requested a reminder of the email address linked to your account.</p>
+          <p>Your registered email is: <strong>${user.email}</strong></p>
+          <p>Your username is: <strong>${user.username}</strong></p>
+          <p>If you didn't request this, you can safely ignore this email.</p>
+        `,
+      });
+    }
+  } catch (err) {
+    console.error("❌ Forgot Email Error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
 // ─── GET PUBLIC CREATOR PROFILE ───────────────────────────────────────────────
 
 /**

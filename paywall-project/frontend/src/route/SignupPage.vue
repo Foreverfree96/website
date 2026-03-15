@@ -41,6 +41,7 @@
         <!-- Recovery / navigation links outside the form -->
         <a href="/forgot-password" class="txt-tag" style="font-size:16px;font-weight:700;cursor:pointer;text-decoration:underline;">Forgot password?</a>
         <a href="/forgot-username" class="txt-tag" style="font-size:16px;font-weight:700;cursor:pointer;text-decoration:underline;">Forgot username?</a>
+        <a href="/forgot-email" class="txt-tag" style="font-size:16px;font-weight:700;cursor:pointer;text-decoration:underline;">Forgot email?</a>
         <p class="txt-tag">Already have an account?</p>
         <a href="/login" class="auth-button button-size1">Login</a>
 

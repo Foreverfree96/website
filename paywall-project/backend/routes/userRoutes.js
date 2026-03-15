@@ -29,6 +29,7 @@ import {
   forgotPassword,      // POST /forgot-password — send a password reset email
   resetPassword,       // POST /reset-password/:token — apply the new password
   forgotUsername,      // POST /forgot-username — email the user their username
+  forgotEmail,         // POST /forgot-email   — email the user their registered email
   changeEmail,         // PUT  /change-email    — start an email-change flow
   confirmEmailChange,  // GET  /confirm-email-change/:token — complete the change
   getCreatorProfile,   // GET  /creator/:username — public creator profile page data
@@ -70,6 +71,9 @@ router.post("/reset-password/:token", resetPassword);
 
 /** Send a reminder email containing the user's username. */
 router.post("/forgot-username", forgotUsername);
+
+/** Initiate the "forgot email" flow — emails the user their registered email address. */
+router.post("/forgot-email", forgotEmail);
 
 /**
  * Confirm a pending email address change.

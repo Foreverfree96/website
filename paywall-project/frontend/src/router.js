@@ -29,6 +29,7 @@ import PortfolioPage from "./components/AboutPortfolio.vue";
 import ForgotPassword from "./route/ForgotPassword.vue";
 import ResetPassword from "./route/ResetPassword.vue";
 import ForgotUsername from "./route/ForgotUsername.vue";
+import ForgotEmail from "./route/ForgotEmail.vue";
 import ConfirmEmailChange from "./route/ConfirmEmailChange.vue";
 import VerifyEmail from "./route/VerifyEmail.vue";
 import FeedPage from "./route/FeedPage.vue";
@@ -57,6 +58,7 @@ const routes = [
 
   // Username recovery — sends the user's username to their email address
   { path: "/forgot-username", component: ForgotUsername },
+  { path: "/forgot-email",    component: ForgotEmail },
 
   // Email verification — token arrives via the signup confirmation email
   { path: "/verify-email/:token", component: VerifyEmail },
