@@ -4,22 +4,22 @@
 
     <!-- Tabs -->
     <div class="admin-tabs">
-      <button :class="['tab-btn', { active: tab === 'reported' }]" @click="router.push({ query: { tab: 'reported' } })">
+      <button :class="['tab-btn', { active: tab === 'reported' }]" @click="switchTab('reported')">
         🚩 Reported ({{ reported.length }})
       </button>
-      <button :class="['tab-btn', { active: tab === 'flagged' }]" @click="router.push({ query: { tab: 'flagged' } })">
+      <button :class="['tab-btn', { active: tab === 'flagged' }]" @click="switchTab('flagged')">
         ⛔ Flagged ({{ flagged.length }})
       </button>
-      <button :class="['tab-btn', { active: tab === 'comments' }]" @click="router.push({ query: { tab: 'comments' } })">
+      <button :class="['tab-btn', { active: tab === 'comments' }]" @click="switchTab('comments')">
         💬 Comments ({{ reportedComments.length }})
       </button>
-      <button :class="['tab-btn', { active: tab === 'users' }]" @click="router.push({ query: { tab: 'users' } })">
+      <button :class="['tab-btn', { active: tab === 'users' }]" @click="switchTab('users')">
         👥 Users ({{ users.length || '…' }})
       </button>
-      <button :class="['tab-btn', { active: tab === 'dms' }]" @click="router.push({ query: { tab: 'dms' } })">
+      <button :class="['tab-btn', { active: tab === 'dms' }]" @click="switchTab('dms')">
         📨 DMs ({{ dmReports.length }})
       </button>
-      <button :class="['tab-btn', { active: tab === 'analytics' }]" @click="router.push({ query: { tab: 'analytics' } })">
+      <button :class="['tab-btn', { active: tab === 'analytics' }]" @click="switchTab('analytics')">
         📊 Analytics
       </button>
     </div>
@@ -39,6 +39,9 @@
             <span class="user-card__username" @click="router.push(`/creator/${u.username}`)">@{{ u.username }}</span>
             <span v-if="u.isAdmin" class="user-badge admin-badge">🛡️ Mod</span>
             <span v-if="u.isSubscriber" class="user-badge sub-badge">⭐ Sub</span>
+            <span :class="['user-badge', u.isOnline ? 'online-badge' : 'offline-badge']">
+              {{ u.isOnline ? '🟢 Online' : '⚫ Offline' }}
+            </span>
           </div>
           <div class="user-card__meta">
             <span class="user-card__email">{{ u.email }}</span>
@@ -52,7 +55,7 @@
 
     <!-- Reported Comments tab -->
     <template v-if="tab === 'comments'">
-      <p v-if="loading" class="feed-status">Loading...</p>
+      <p v-if="loadingComments" class="feed-status">Loading...</p>
       <p v-else-if="!reportedComments.length" class="feed-status">No reported comments — all clear! ✅</p>
       <div v-else class="post-list">
         <div v-for="p in reportedComments" :key="p._id" class="mod-card">
@@ -95,7 +98,7 @@
 
     <!-- Posts tabs (Reported / Flagged) -->
     <template v-else-if="tab === 'reported' || tab === 'flagged'">
-      <p v-if="loading" class="feed-status">Loading...</p>
+      <p v-if="loadingPosts" class="feed-status">Loading...</p>
       <p v-else-if="!currentList.length" class="feed-status">Nothing here — all clear! ✅</p>
 
       <div v-if="currentList.length" class="post-list">
@@ -164,7 +167,7 @@
 
     <!-- DM Reports tab -->
     <template v-if="tab === 'dms'">
-      <p v-if="loading" class="feed-status">Loading...</p>
+      <p v-if="loadingDms" class="feed-status">Loading...</p>
       <p v-else-if="!dmReports.length" class="feed-status">No pending DM reports — all clear! ✅</p>
       <div v-else class="post-list">
         <div v-for="r in dmReports" :key="r._id" class="mod-card">
@@ -355,17 +358,14 @@ const tab = ref('reported');
 
 // ─── POST / COMMENT DATA ─────────────────────────────────────────────────────
 
-// Posts that have been reported by users but not yet actioned.
-const reported = ref([]);
-
-// Posts that have been escalated to "flagged" status by a moderator.
-const flagged = ref([]);
-
-// Posts whose comments array contains at least one reported comment.
+const reported        = ref([]);
+const flagged         = ref([]);
 const reportedComments = ref([]);
 
-// Shared loading indicator used by the reported, flagged, and comments tabs.
-const loading = ref(false);
+// Each tab has its own independent loading flag — no shared state.
+const loadingPosts    = ref(false);
+const loadingComments = ref(false);
+const loadingDms      = ref(false);
 
 // Set of post IDs whose body text is currently fully expanded in the UI.
 // Using a Set so toggling is O(1) and Vue's reactivity is triggered by
@@ -401,9 +401,6 @@ const users = ref([]);
 // shared `loading` flag used by the posts/comments tabs.
 const usersLoading = ref(false);
 
-// Guards against re-fetching users on every tab visit within the same session.
-const usersLoaded = ref(false);
-
 // The string the moderator has typed into the user search box.
 const userSearch = ref('');
 
@@ -426,12 +423,10 @@ const filteredUsers = computed(() => {
  * Short-circuits if users have already been loaded this session.
  */
 const loadUsers = async () => {
-  if (usersLoaded.value) return;
   usersLoading.value = true;
   try {
     const res = await axios.get(`${API}/users`);
     users.value = res.data;
-    usersLoaded.value = true;
   } catch {
     // ignore — user sees an empty list
   } finally {
@@ -457,24 +452,19 @@ const currentList = computed(() => tab.value === 'reported' ? reported.value : f
  * to only those that have at least one report.
  */
 const loadReportedComments = async () => {
-  loading.value = true;
+  loadingComments.value = true;
   try {
     const res = await axios.get(`${API}/reported-comments`);
     reportedComments.value = res.data;
   } catch {
     // ignore
   } finally {
-    loading.value = false;
+    loadingComments.value = false;
   }
 };
 
-/**
- * load
- * Fetches both reported and flagged post lists in parallel.
- * Called on mount and whenever the reported or flagged tab is clicked.
- */
 const load = async () => {
-  loading.value = true;
+  loadingPosts.value = true;
   try {
     const [r, f] = await Promise.all([
       axios.get(`${API}/reported`),
@@ -485,32 +475,41 @@ const load = async () => {
   } catch {
     // ignore
   } finally {
-    loading.value = false;
+    loadingPosts.value = false;
   }
 };
 
 // ─── LIFECYCLE ────────────────────────────────────────────────────────────────
 
-// Watch the ?tab= query param so navigating via the nav link works without
-// a page refresh — fires immediately on mount AND on every subsequent change.
-const valid = ['reported', 'flagged', 'comments', 'users', 'dms', 'analytics'];
-watch(
-  () => route.query.tab,
-  (qTab) => {
-    if (qTab && valid.includes(qTab)) {
-      tab.value = qTab;
-      if (qTab === 'analytics') loadAnalytics();
-      else if (qTab === 'comments') loadReportedComments();
-      else if (qTab === 'users') loadUsers();
-      else if (qTab === 'dms') loadDmReports();
-      else load();
-    } else {
-      tab.value = 'reported';
-      load();
-    }
-  },
-  { immediate: true }
-);
+// ─── TAB SWITCHING ────────────────────────────────────────────────────────────
+
+/**
+ * switchTab — the single entry point for changing tabs.
+ * Sets the active tab and triggers that tab's loader.
+ * Called by tab buttons directly; does NOT touch the router (no history noise).
+ */
+const switchTab = (name) => {
+  tab.value = name;
+  if (name === 'analytics') loadAnalytics();
+  else if (name === 'comments') loadReportedComments();
+  else if (name === 'users') loadUsers();
+  else if (name === 'dms') loadDmReports();
+  else load(); // reported + flagged
+};
+
+// On mount, honour a ?tab= query param from the nav link (one-time init only).
+// After that, tab switches are handled entirely by switchTab — no route watching.
+const initTab = route.query.tab;
+const validTabs = ['reported', 'flagged', 'comments', 'users', 'dms', 'analytics'];
+switchTab(validTabs.includes(initTab) ? initTab : 'reported');
+
+// If the nav link is clicked while already on /admin the query param changes
+// but the component isn't remounted — watch handles that specific case only.
+watch(() => route.query.tab, (qTab) => {
+  if (qTab && validTabs.includes(qTab) && qTab !== tab.value) {
+    switchTab(qTab);
+  }
+});
 
 // ─── CONFIRM MODAL HELPERS ────────────────────────────────────────────────────
 
@@ -601,13 +600,13 @@ const dmReportsLoaded = ref(false);
  */
 const loadDmReports = async () => {
   if (dmReportsLoaded.value) return;
-  loading.value = true;
+  loadingDms.value = true;
   try {
     const res = await axios.get(`${API}/dm-reports`);
     dmReports.value = res.data;
     dmReportsLoaded.value = true;
   } catch { /* ignore */ }
-  finally { loading.value = false; }
+  finally { loadingDms.value = false; }
 };
 
 /**
@@ -668,7 +667,6 @@ const promptDeleteUser = (u) => {
     async () => {
       await axios.delete(`${API}/users/${u._id}`);
       users.value = users.value.filter(x => x._id !== u._id);
-      usersLoaded.value = false; // force reload next time
     }
   );
 };
@@ -1047,8 +1045,10 @@ const formatDate = (d) => new Date(d).toLocaleDateString();
   padding: 2px 8px;
   border-radius: 20px;
 }
-.admin-badge { background: #92400e; color: #fff; }
-.sub-badge   { background: #14532d; color: #fff; }
+.admin-badge   { background: #92400e; color: #fff; }
+.sub-badge     { background: #14532d; color: #fff; }
+.online-badge  { background: #14532d; color: #fff; }
+.offline-badge { background: #374151; color: #d1d5db; }
 
 .user-card__meta {
   display: flex;

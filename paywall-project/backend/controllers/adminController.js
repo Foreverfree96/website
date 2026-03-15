@@ -337,7 +337,6 @@ export const getUsers = async (req, res) => {
       .sort({ createdAt: -1 })
       .lean();
 
-    // Compute counts from the stored arrays rather than relying on a counter field
     const result = users.map(u => ({
       _id: u._id,
       username: u.username,
@@ -347,6 +346,7 @@ export const getUsers = async (req, res) => {
       isSubscriber: u.isSubscriber || false,
       followerCount: u.followers?.length || 0,
       followingCount: u.following?.length || 0,
+      isOnline: onlineUsers.has(u._id.toString()),
     }));
 
     res.json(result);
