@@ -2,7 +2,7 @@ import axios from "axios";
 import jwt from "jsonwebtoken";
 import User from "../models/userModel.js";
 
-const SCOPES = "user-read-private user-read-email";
+const SCOPES = "user-read-private user-read-email user-modify-playback-state";
 
 // ─── SPOTIFY LOGIN ────────────────────────────────────────────────────────────
 // GET /api/spotify/login?token=JWT
@@ -114,6 +114,67 @@ export const spotifyStatus = async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ message: "Server error" });
+  }
+};
+
+// ─── SPOTIFY SHUFFLE OFF ──────────────────────────────────────────────────────
+// POST /api/spotify/shuffle-off  (protected)
+// Turns shuffle off on the user's active Spotify device.
+// Refreshes the access token first if it has expired.
+// Always returns 204 — errors (e.g. no active device) are silently ignored.
+
+export const spotifyShuffleOff = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id).select(
+      "+spotifyAccessToken +spotifyRefreshToken spotifyTokenExpiry spotifyIsPremium"
+    );
+
+    // No linked Spotify account — nothing to do
+    if (!user?.spotifyAccessToken) return res.status(204).end();
+
+    // Only Premium accounts can control playback
+    if (!user.spotifyIsPremium) return res.status(204).end();
+
+    let accessToken = user.spotifyAccessToken;
+
+    // Refresh the access token if it has expired
+    if (!user.spotifyTokenExpiry || user.spotifyTokenExpiry < new Date()) {
+      const credentials = Buffer.from(
+        `${process.env.SPOTIFY_CLIENT_ID}:${process.env.SPOTIFY_CLIENT_SECRET}`
+      ).toString("base64");
+
+      const refreshRes = await axios.post(
+        "https://accounts.spotify.com/api/token",
+        new URLSearchParams({
+          grant_type:    "refresh_token",
+          refresh_token: user.spotifyRefreshToken,
+        }),
+        {
+          headers: {
+            Authorization:  `Basic ${credentials}`,
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
+        }
+      );
+
+      accessToken = refreshRes.data.access_token;
+      await User.findByIdAndUpdate(req.user.id, {
+        spotifyAccessToken: accessToken,
+        spotifyTokenExpiry: new Date(Date.now() + refreshRes.data.expires_in * 1000),
+      });
+    }
+
+    // Tell Spotify to turn shuffle off on the active device
+    await axios.put(
+      "https://api.spotify.com/v1/me/player/shuffle?state=false",
+      {},
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
+
+    res.status(204).end();
+  } catch {
+    // 404 = no active device, other errors are also non-fatal
+    res.status(204).end();
   }
 };
 

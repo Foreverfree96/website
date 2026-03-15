@@ -98,6 +98,17 @@ const activateEmbed = () => {
   // This embed is now active — hide the guard so clicks reach the iframe
   guardActive.value = false;
   registry().set(embedId, stopThisEmbed);
+
+  // For Spotify embeds, silently turn shuffle off on the user's account
+  if (props.embedType === 'spotify') {
+    const token = localStorage.getItem('jwtToken');
+    if (token) {
+      fetch(import.meta.env.VITE_API_URL + '/api/spotify/shuffle-off', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      }).catch(() => {});
+    }
+  }
 };
 
 // ── YouTube shuffle ────────────────────────────────────────────────────────────
