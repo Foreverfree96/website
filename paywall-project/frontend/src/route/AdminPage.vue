@@ -653,6 +653,16 @@ const loadAnalytics = async (force = false) => {
   }
 };
 
+// Silent background refresh — updates numbers in place with no loading spinner.
+// Only runs while the analytics tab is visible.
+const refreshAnalyticsSilent = async () => {
+  if (tab.value !== 'analytics' || !analytics.value) return;
+  try {
+    const res = await axios.get(`${API}/analytics`);
+    analytics.value = res.data;
+  } catch { /* ignore */ }
+};
+
 // ─── USER ACTIONS ─────────────────────────────────────────────────────────────
 
 /**
@@ -675,36 +685,43 @@ const promptDeleteUser = (u) => {
 
 // ─── REAL-TIME ANALYTICS ──────────────────────────────────────────────────────
 
+let analyticsInterval = null;
+
 onMounted(() => {
   const sock = getSocket();
-  if (!sock) return;
+  if (sock) {
+    // Live online count — fires whenever any user connects or disconnects
+    sock.on("analytics:online", ({ count }) => {
+      if (!analytics.value) return;
+      analytics.value.users.online  = count;
+      analytics.value.users.offline = Math.max(0, analytics.value.users.totalCurrent - count);
+    });
 
-  // Live online count — fires whenever any user connects or disconnects
-  sock.on("analytics:online", ({ count }) => {
-    if (!analytics.value) return;
-    analytics.value.users.online  = count;
-    analytics.value.users.offline = Math.max(0, analytics.value.users.totalCurrent - count);
-  });
+    // Live page view — fires whenever any page is visited
+    sock.on("analytics:pageview", ({ path, count }) => {
+      if (!analytics.value) return;
+      const idx = analytics.value.pageViews.findIndex(p => p.path === path);
+      if (idx >= 0) {
+        analytics.value.pageViews[idx] = { path, count };
+      } else {
+        analytics.value.pageViews.push({ path, count });
+      }
+      analytics.value.pageViews.sort((a, b) => b.count - a.count);
+    });
+  }
 
-  // Live page view — fires whenever any page is visited
-  sock.on("analytics:pageview", ({ path, count }) => {
-    if (!analytics.value) return;
-    const idx = analytics.value.pageViews.findIndex(p => p.path === path);
-    if (idx >= 0) {
-      analytics.value.pageViews[idx] = { path, count };
-    } else {
-      analytics.value.pageViews.push({ path, count });
-    }
-    // Keep sorted by count descending
-    analytics.value.pageViews.sort((a, b) => b.count - a.count);
-  });
+  // Background poll every 30 s — silently refreshes user counts and downloads
+  // without showing a loading spinner. Only fetches when the analytics tab is active.
+  analyticsInterval = setInterval(refreshAnalyticsSilent, 30_000);
 });
 
 onUnmounted(() => {
   const sock = getSocket();
-  if (!sock) return;
-  sock.off("analytics:online");
-  sock.off("analytics:pageview");
+  if (sock) {
+    sock.off("analytics:online");
+    sock.off("analytics:pageview");
+  }
+  clearInterval(analyticsInterval);
 });
 
 // ─── ANALYTICS HELPERS ────────────────────────────────────────────────────────
