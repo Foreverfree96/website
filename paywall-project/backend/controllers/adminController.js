@@ -490,6 +490,28 @@ export const restrictUser = async (req, res) => {
     const msg = duration === "none"
       ? "Restriction lifted."
       : `@${user.username} restricted for ${duration}.`;
+
+    // Notify the user by email when a restriction is applied (not on lift)
+    if (duration !== "none") {
+      const untilDate = user.restrictedUntil.toDateString();
+      const labelMap = { "24h": "24 hours", "7d": "7 days", "1mo": "1 month", "3mo": "3 months" };
+      axios.post("https://api.sendgrid.com/v3/mail/send", {
+        personalizations: [{ to: [{ email: user.email }] }],
+        from: { email: process.env.GMAIL_USER, name: "Austin's Site" },
+        subject: "Your account has been restricted",
+        content: [{
+          type: "text/html",
+          value: `<p>Hi ${user.username},</p>
+                  <p>Your account has been <strong>temporarily restricted</strong> for <strong>${labelMap[duration]}</strong> due to a violation of our community guidelines.</p>
+                  <p>During this time you will not be able to post, comment, or send messages.</p>
+                  <p>Your restriction lifts on: <strong>${untilDate}</strong>.</p>
+                  <p>If you believe this was a mistake, please contact support.</p>`,
+        }],
+      }, {
+        headers: { Authorization: `Bearer ${process.env.SENDGRID_API_KEY}`, "Content-Type": "application/json" },
+      }).catch(err => console.error("❌ Restrict email failed:", err.response?.data || err.message));
+    }
+
     res.json({ message: msg, restrictedUntil: user.restrictedUntil });
   } catch (err) {
     console.error("❌ Admin restrictUser Error:", err);
@@ -526,6 +548,22 @@ export const banUser = async (req, res) => {
 
     // Block the email so they can't re-register with the same address
     await BannedEmail.updateOne({ email: user.email }, { email: user.email }, { upsert: true });
+
+    // Notify the user by email
+    axios.post("https://api.sendgrid.com/v3/mail/send", {
+      personalizations: [{ to: [{ email: user.email }] }],
+      from: { email: process.env.GMAIL_USER, name: "Austin's Site" },
+      subject: "Your account has been permanently banned",
+      content: [{
+        type: "text/html",
+        value: `<p>Hi ${user.username},</p>
+                <p>Your account has been <strong>permanently banned</strong> due to a serious violation of our community guidelines.</p>
+                <p>You will no longer be able to log in or register a new account with this email address.</p>
+                <p>If you believe this was a mistake, please contact support.</p>`,
+      }],
+    }, {
+      headers: { Authorization: `Bearer ${process.env.SENDGRID_API_KEY}`, "Content-Type": "application/json" },
+    }).catch(err => console.error("❌ Ban email failed:", err.response?.data || err.message));
 
     res.json({ message: `@${user.username} has been permanently banned.` });
   } catch (err) {
