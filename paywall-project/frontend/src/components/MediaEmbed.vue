@@ -2,16 +2,14 @@
   <div class="media-embed" v-if="mediaUrl">
 
     <!-- ── YouTube ───────────────────────────────────────────────────────────
-         Playlists use the IFrame Player API (shuffle + position memory).
-         Single videos use a plain iframe with a click-guard overlay.
+         Playlists:     IFrame API — shuffle + playlist-index memory
+         Single videos: IFrame API — timestamp memory via playerVars.start
     ──────────────────────────────────────────────────────────────────────── -->
     <template v-if="embedType === 'youtube'">
       <div v-if="isPlaylist" :id="playerId" class="embed-iframe"></div>
       <div v-else class="embed-wrap">
-        <iframe :key="`yt-${resetKey}`" :src="youtubeEmbedUrl" frameborder="0"
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-          allowfullscreen class="embed-iframe" />
-        <div v-if="guardActive" class="embed-guard" @click="activateEmbed" title="Click to play" />
+        <div :id="singleId" class="embed-iframe"></div>
+        <div v-if="guardActive" class="embed-guard" @click="onSingleYtClick" title="Click to play" />
       </div>
       <div v-if="isPlaylist" class="embed-controls">
         <button class="shuffle-btn" :class="{ 'shuffle-btn--on': ytShuffle }" @click="toggleYouTubeShuffle">
@@ -29,7 +27,7 @@
 
     <!-- ── SoundCloud ─────────────────────────────────────────────────────── -->
     <div v-else-if="embedType === 'soundcloud'" class="embed-wrap">
-      <iframe :key="`sc-${resetKey}`"
+      <iframe ref="scIframe" :key="`sc-${resetKey}`"
         :src="`https://w.soundcloud.com/player/?url=${encodeURIComponent(mediaUrl)}&color=%2314532d&auto_play=false&show_artwork=true&visual=true`"
         frameborder="0" :class="['embed-iframe', isPlaylist ? 'embed-iframe--playlist' : 'embed-iframe--audio']" />
       <div v-if="guardActive" class="embed-guard" @click="activateEmbed" title="Click to play" />
@@ -71,14 +69,19 @@ const props = defineProps({
 });
 
 // ── Instance identity ──────────────────────────────────────────────────────────
-const embedId  = 'embed-' + Math.random().toString(36).slice(2, 9);
-const playerId = 'ytplayer-' + embedId; // unique div id for YT.Player
+const embedId  = 'embed-'    + Math.random().toString(36).slice(2, 9);
+const playerId = 'ytpl-'     + embedId;   // YouTube playlist div id
+const singleId = 'ytsingle-' + embedId;   // YouTube single-video div id
 
 // ── Exclusive-play state ───────────────────────────────────────────────────────
-// guardActive: true = transparent overlay is covering the iframe (not yet active)
-// resetKey:    incrementing this forces Vue to remount the iframe, stopping audio
 const guardActive = ref(true);
-const resetKey    = ref(0);
+const resetKey    = ref(0);    // incrementing force-remounts iframes without a JS API
+
+// ── Player references ──────────────────────────────────────────────────────────
+let ytPlayer       = null;   // YouTube IFrame API — playlist
+let ytSinglePlayer = null;   // YouTube IFrame API — single video
+const scIframe     = ref(null);
+let scWidget       = null;   // SoundCloud Widget API instance
 
 // ── Global registry — maps embedId → stopFn ───────────────────────────────────
 const registry = () => {
@@ -86,20 +89,42 @@ const registry = () => {
   return window._embedRegistry;
 };
 
+// ── Stop this embed (called by other embeds via registry) ─────────────────────
 const stopThisEmbed = () => {
   guardActive.value = true;
-  resetKey.value++;           // remounts iframe → audio stops immediately
+
+  // YouTube playlist
   if (ytPlayer) ytPlayer.stopVideo?.();
+
+  // YouTube single — save position then pause (don't reset key; player stays alive)
+  if (ytSinglePlayer) {
+    const t = Math.floor(ytSinglePlayer.getCurrentTime?.() || 0);
+    if (t > 0 && youtubeVideoId.value) {
+      localStorage.setItem(`yt_time_${youtubeVideoId.value}`, t);
+    }
+    ytSinglePlayer.pauseVideo?.();
+  }
+
+  // SoundCloud — save position then pause (don't reset key; widget stays alive)
+  if (scWidget) {
+    scWidget.getPosition?.((ms) => {
+      if (ms > 0) localStorage.setItem(`sc_pos_${props.mediaUrl}`, ms);
+    });
+    scWidget.pause?.();
+    return; // don't remount the SC iframe
+  }
+
+  // All other embeds (Spotify, Apple Music, Twitch) — remount iframe to cut audio
+  if (props.embedType !== 'youtube') resetKey.value++;
 };
 
+// ── Activate this embed (stop all others, remove guard) ───────────────────────
 const activateEmbed = () => {
-  // Stop every other embed
   registry().forEach((stop, id) => { if (id !== embedId) stop(); });
-  // This embed is now active — hide the guard so clicks reach the iframe
   guardActive.value = false;
   registry().set(embedId, stopThisEmbed);
 
-  // For Spotify embeds, silently turn shuffle off on the user's account
+  // Turn Spotify shuffle off when a Spotify embed is activated
   if (props.embedType === 'spotify') {
     const token = localStorage.getItem('jwtToken');
     if (token) {
@@ -111,9 +136,19 @@ const activateEmbed = () => {
   }
 };
 
+// Called when the guard over a single YouTube video is clicked
+const onSingleYtClick = () => {
+  activateEmbed();
+  ytSinglePlayer?.playVideo?.();
+};
+
 // ── YouTube shuffle ────────────────────────────────────────────────────────────
 const ytShuffle = ref(false);
-let ytPlayer = null;
+
+const toggleYouTubeShuffle = () => {
+  ytShuffle.value = !ytShuffle.value;
+  ytPlayer?.setShuffle?.(ytShuffle.value);
+};
 
 // ── Playlist / album detection ─────────────────────────────────────────────────
 const isPlaylist = computed(() => {
@@ -125,15 +160,21 @@ const isPlaylist = computed(() => {
   return false;
 });
 
-// ── Computed embed URLs ────────────────────────────────────────────────────────
-
-const youtubeEmbedUrl = computed(() => {
+// ── YouTube video ID (single videos only) ─────────────────────────────────────
+const youtubeVideoId = computed(() => {
   const url = props.mediaUrl;
   const shortMatch  = url.match(/youtu\.be\/([^?&/]+)/);
   const longMatch   = url.match(/[?&]v=([^&]+)/);
   const shortsMatch = url.match(/youtube\.com\/shorts\/([^?&/]+)/);
-  const listMatch   = url.match(/[?&]list=([^&]+)/);
-  const videoId = shortMatch?.[1] || longMatch?.[1] || shortsMatch?.[1];
+  return shortMatch?.[1] || longMatch?.[1] || shortsMatch?.[1] || null;
+});
+
+// ── Computed embed URLs ────────────────────────────────────────────────────────
+
+const youtubeEmbedUrl = computed(() => {
+  const url      = props.mediaUrl;
+  const listMatch = url.match(/[?&]list=([^&]+)/);
+  const videoId  = youtubeVideoId.value;
   if (videoId && !listMatch) return `https://www.youtube.com/embed/${videoId}`;
   if (videoId && listMatch)  return `https://www.youtube.com/embed/${videoId}?list=${listMatch[1]}`;
   if (listMatch)             return `https://www.youtube.com/embed/videoseries?list=${listMatch[1]}`;
@@ -167,8 +208,7 @@ const platformLabel = computed(() => {
   return labels[props.embedType] || 'Open Link';
 });
 
-// ── YouTube IFrame Player API ──────────────────────────────────────────────────
-
+// ── YouTube IFrame Player API loader ──────────────────────────────────────────
 const loadYouTubeAPI = () => {
   if (window.YT?.Player) return Promise.resolve(window.YT);
   return new Promise((resolve) => {
@@ -189,45 +229,112 @@ const loadYouTubeAPI = () => {
   });
 };
 
+// ── SoundCloud Widget API loader ──────────────────────────────────────────────
+const loadSCAPI = () => {
+  if (window.SC?.Widget) return Promise.resolve(window.SC);
+  return new Promise((resolve) => {
+    const tag = document.createElement('script');
+    tag.src = 'https://w.soundcloud.com/player/api.js';
+    tag.onload = () => resolve(window.SC);
+    document.head.appendChild(tag);
+  });
+};
+
+// ── Lifecycle ─────────────────────────────────────────────────────────────────
 onMounted(async () => {
-  // Register stop function for this instance
   registry().set(embedId, stopThisEmbed);
 
-  if (props.embedType !== 'youtube' || !isPlaylist.value) return;
+  // ── YouTube playlist ──────────────────────────────────────────────────────
+  if (props.embedType === 'youtube' && isPlaylist.value) {
+    const listMatch = props.mediaUrl.match(/[?&]list=([^&]+)/);
+    if (!listMatch) return;
 
-  const listMatch = props.mediaUrl.match(/[?&]list=([^&]+)/);
-  if (!listMatch) return;
+    const listId     = listMatch[1];
+    const posKey     = `yt_pos_${listId}`;
+    const savedIndex = parseInt(localStorage.getItem(posKey) || '0', 10);
 
-  const listId     = listMatch[1];
-  const posKey     = `yt_pos_${listId}`;
-  const savedIndex = parseInt(localStorage.getItem(posKey) || '0', 10);
-
-  const YT = await loadYouTubeAPI();
-  ytPlayer = new YT.Player(playerId, {
-    width: '100%',
-    height: '460',
-    playerVars: { listType: 'playlist', list: listId, index: savedIndex, autoplay: 0, shuffle: 0 },
-    events: {
-      onStateChange: (event) => {
-        if (event.data === window.YT.PlayerState.PLAYING) {
-          activateEmbed(); // stops all other embeds
-          const idx = event.target.getPlaylistIndex();
-          if (idx >= 0) localStorage.setItem(posKey, idx);
-        }
+    const YT = await loadYouTubeAPI();
+    ytPlayer = new YT.Player(playerId, {
+      width: '100%',
+      height: '460',
+      playerVars: { listType: 'playlist', list: listId, index: savedIndex, autoplay: 0, shuffle: 0 },
+      events: {
+        onStateChange: (event) => {
+          if (event.data === window.YT.PlayerState.PLAYING) {
+            activateEmbed();
+            const idx = event.target.getPlaylistIndex();
+            if (idx >= 0) localStorage.setItem(posKey, idx);
+          }
+        },
       },
-    },
-  });
+    });
+    return;
+  }
+
+  // ── YouTube single video ──────────────────────────────────────────────────
+  if (props.embedType === 'youtube' && !isPlaylist.value && youtubeVideoId.value) {
+    const posKey    = `yt_time_${youtubeVideoId.value}`;
+    const savedTime = parseInt(localStorage.getItem(posKey) || '0', 10);
+
+    const YT = await loadYouTubeAPI();
+    ytSinglePlayer = new YT.Player(singleId, {
+      width:  '100%',
+      height: '360',
+      videoId: youtubeVideoId.value,
+      playerVars: { autoplay: 0, start: savedTime },
+      events: {
+        onStateChange: (event) => {
+          const state = event.data;
+          if (state === window.YT.PlayerState.PLAYING) {
+            activateEmbed();
+          }
+          if (state === window.YT.PlayerState.PAUSED) {
+            const t = Math.floor(event.target.getCurrentTime());
+            if (t > 0) localStorage.setItem(posKey, t);
+          }
+          if (state === window.YT.PlayerState.ENDED) {
+            localStorage.removeItem(posKey);
+          }
+        },
+      },
+    });
+    return;
+  }
+
+  // ── SoundCloud ────────────────────────────────────────────────────────────
+  if (props.embedType === 'soundcloud' && scIframe.value) {
+    const SC     = await loadSCAPI();
+    const posKey = `sc_pos_${props.mediaUrl}`;
+
+    scWidget = SC.Widget(scIframe.value);
+
+    scWidget.bind(SC.Widget.Events.READY, () => {
+      const savedMs = parseInt(localStorage.getItem(posKey) || '0', 10);
+      if (savedMs > 0) scWidget.seekTo(savedMs);
+    });
+
+    scWidget.bind(SC.Widget.Events.PLAY, () => {
+      activateEmbed();
+    });
+
+    scWidget.bind(SC.Widget.Events.PAUSE, () => {
+      scWidget.getPosition((ms) => {
+        if (ms > 0) localStorage.setItem(posKey, ms);
+      });
+    });
+
+    scWidget.bind(SC.Widget.Events.FINISH, () => {
+      localStorage.removeItem(posKey);
+    });
+  }
 });
 
 onUnmounted(() => {
   registry().delete(embedId);
-  if (ytPlayer) { ytPlayer.destroy(); ytPlayer = null; }
+  if (ytPlayer)       { ytPlayer.destroy();       ytPlayer       = null; }
+  if (ytSinglePlayer) { ytSinglePlayer.destroy();  ytSinglePlayer = null; }
+  scWidget = null;
 });
-
-const toggleYouTubeShuffle = () => {
-  ytShuffle.value = !ytShuffle.value;
-  ytPlayer?.setShuffle?.(ytShuffle.value);
-};
 </script>
 
 <style scoped>
