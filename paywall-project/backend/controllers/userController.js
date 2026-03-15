@@ -22,7 +22,7 @@ import User from "../models/userModel.js";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
-import { Resend } from "resend";
+import axios from "axios";
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
@@ -61,20 +61,22 @@ const isValidUsername = (u) => u.length >= 2 && u.length <= 30 && /^[a-zA-Z0-9_]
  * @param {string} options.subject - Email subject line
  * @param {string} options.html    - HTML body content
  */
-const resend = new Resend(process.env.RESEND_API_KEY);
-
 const sendEmail = async ({ to, subject, html }) => {
-  const { error } = await resend.emails.send({
-    from: "Austin's Site <onboarding@resend.dev>",
-    to,
-    subject,
-    html,
-  });
-  if (error) {
-    console.error("❌ Email send failed:", error);
-    throw new Error(error.message);
+  try {
+    await axios.post("https://api.brevo.com/v3/smtp/email", {
+      sender: { name: "Austin's Site", email: process.env.GMAIL_USER },
+      to: [{ email: to }],
+      subject,
+      htmlContent: html,
+    }, {
+      headers: { "api-key": process.env.BREVO_API_KEY, "Content-Type": "application/json" },
+    });
+    console.log("✅ Email sent to:", to);
+  } catch (err) {
+    // Log but never throw — a failed email must never crash the server
+    console.error("❌ Email send failed:", err.response?.data || err.message);
+    throw err; // re-throw so callers can return a meaningful HTTP error
   }
-  console.log("✅ Email sent to:", to);
 };
 
 // ─── REGISTER ────────────────────────────────────────────────────────────────
