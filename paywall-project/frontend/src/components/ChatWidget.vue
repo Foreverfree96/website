@@ -1598,6 +1598,8 @@ const formatTime = (d) => {
 .cw-bubble.selected {
     outline: 2.5px solid #7c3aed;
     outline-offset: 1px;
+    background: #ede9fe !important;
+    color: #3b0764 !important;
 }
 .cw-report-check {
     font-size: 0.85em;
