@@ -1279,3 +1279,34 @@ export const submitAppeal = async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 };
+
+// ─── WITHDRAW APPEAL ──────────────────────────────────────────────────────────
+
+/**
+ * DELETE /api/users/appeal
+ *
+ * Unauthenticated — lets a banned/restricted user cancel their pending appeal.
+ * Only deletes if the appeal is still "pending" (can't undo an approved one).
+ */
+export const withdrawAppeal = async (req, res) => {
+  try {
+    const { identifier, type } = req.body;
+    if (!identifier || !type)
+      return res.status(400).json({ message: "identifier and type are required." });
+
+    const user =
+      await User.findOne({ email: identifier.trim().toLowerCase() }) ||
+      await User.findOne({ username: new RegExp(`^${identifier.trim()}$`, "i") });
+
+    if (!user) return res.status(404).json({ message: "User not found." });
+
+    const appeal = await Appeal.findOne({ user: user._id, type, status: "pending" });
+    if (!appeal) return res.status(404).json({ message: "No pending appeal found." });
+
+    await appeal.deleteOne();
+    res.json({ message: "Appeal withdrawn." });
+  } catch (err) {
+    console.error("❌ withdrawAppeal Error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};

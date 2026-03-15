@@ -23,6 +23,26 @@ import axios from "axios";
 // Base URL for all user-related API endpoints, sourced from the .env file
 const API_URL = import.meta.env.VITE_API_URL + "/api/users";
 
+// ── Global 403 interceptor — auto-logout on ban or restriction ────────────────
+// Runs once at module load. Catches any 403 response where the backend signals
+// the account is banned or restricted, clears auth state, and sends the user
+// to /login so they see the appropriate message.
+axios.interceptors.response.use(
+  (res) => res,
+  (err) => {
+    const data = err.response?.data;
+    if (err.response?.status === 403 && (data?.type === "banned" || data?.type === "restricted")) {
+      localStorage.removeItem("jwtToken");
+      delete axios.defaults.headers.common["Authorization"];
+      // Only redirect if not already on the login page to avoid a redirect loop
+      if (!window.location.pathname.startsWith("/login")) {
+        window.location.href = "/login";
+      }
+    }
+    return Promise.reject(err);
+  }
+);
+
 // ── Module-level singletons ───────────────────────────────────────────────────
 // Declared outside useAuth() so every call site shares the same reactive state.
 

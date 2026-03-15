@@ -60,7 +60,10 @@ export const protect = async (req, res, next) => {
       req.user = await User.findById(decoded.id).select("username email isSubscriber isAdmin isVerified blockedUsers restrictedUntil isBanned");
 
       if (req.user?.isBanned)
-        return res.status(403).json({ message: "Your account has been permanently banned." });
+        return res.status(403).json({ type: "banned", message: "Your account has been permanently banned." });
+
+      if (req.user?.restrictedUntil && new Date(req.user.restrictedUntil) > new Date())
+        return res.status(403).json({ type: "restricted", message: "Your account is temporarily restricted.", restrictedUntil: req.user.restrictedUntil });
 
       next();
     } catch (err) {

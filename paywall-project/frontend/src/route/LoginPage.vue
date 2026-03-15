@@ -14,17 +14,31 @@
         </form>
 
         <!-- Error / block message -->
-        <div v-if="error" class="login-error-block" :class="{ 'error-banned': isBanned, 'error-restricted': isRestricted }">
+        <div v-if="error && !errorDismissed" class="login-error-block" :class="{ 'error-banned': isBanned, 'error-restricted': isRestricted }">
+            <!-- Dismiss (X) button -->
+            <button class="error-dismiss" @click="dismissError" title="Dismiss">✕</button>
+
             <p class="error-icon">{{ isBanned ? '🚫' : isRestricted ? '⏳' : '⚠️' }}</p>
             <p class="error-msg">{{ error }}</p>
-            <!-- Appeal button shown for ban or restriction -->
-            <button v-if="isBanned || isRestricted" class="appeal-trigger-btn" @click="showAppealModal = true">
-                Submit an Appeal
-            </button>
-            <!-- Resend verification for unverified accounts -->
-            <button v-if="showResend" class="resend-btn" @click="handleResend" :disabled="resendSent">
-                {{ resendSent ? 'Email sent!' : 'Resend verification email' }}
-            </button>
+
+            <!-- Appeal submitted state -->
+            <template v-if="appealSubmittedBanner">
+                <p class="appeal-submitted-notice">📋 Your appeal is under review by the mod team.</p>
+                <button class="withdraw-btn" :disabled="withdrawLoading" @click="withdrawAppeal">
+                    {{ withdrawLoading ? 'Withdrawing…' : 'Withdraw Appeal' }}
+                </button>
+                <p v-if="withdrawMsg" class="withdraw-msg">{{ withdrawMsg }}</p>
+            </template>
+
+            <!-- Appeal / resend buttons (shown before appeal is submitted) -->
+            <template v-else>
+                <button v-if="isBanned || isRestricted" class="appeal-trigger-btn" @click="showAppealModal = true">
+                    Submit an Appeal
+                </button>
+                <button v-if="showResend" class="resend-btn" @click="handleResend" :disabled="resendSent">
+                    {{ resendSent ? 'Email sent!' : 'Resend verification email' }}
+                </button>
+            </template>
         </div>
 
         <!-- Appeal Modal -->
@@ -91,6 +105,12 @@ const resendSent = ref(false);
 const isBanned     = ref(false);
 const isRestricted = ref(false);
 
+// Dismiss state — hides the error banner when user clicks ✕
+const errorDismissed = ref(false);
+
+// Persists across modal close — shows "appeal under review" on the banner
+const appealSubmittedBanner = ref(false);
+
 // Appeal modal state
 const showAppealModal     = ref(false);
 const appealText          = ref("");
@@ -99,13 +119,19 @@ const appealError         = ref("");
 const appealSent          = ref(false);
 const appealAlreadyExists = ref(false);
 
+// Withdraw state
+const withdrawLoading = ref(false);
+const withdrawMsg     = ref("");
+
 const showResend = computed(() => error.value?.toLowerCase().includes("verify your email"));
 
 const handleLogin = async () => {
-    resendSent.value         = false;
-    isBanned.value           = false;
-    isRestricted.value       = false;
-    appealAlreadyExists.value = false;
+    resendSent.value            = false;
+    isBanned.value              = false;
+    isRestricted.value          = false;
+    errorDismissed.value        = false;
+    appealSubmittedBanner.value = false;
+    withdrawMsg.value           = "";
     try {
         await login(username.value, password.value);
         window.location.href = "/portfolio";
@@ -114,6 +140,10 @@ const handleLogin = async () => {
         if (data?.type === "banned")     isBanned.value     = true;
         if (data?.type === "restricted") isRestricted.value = true;
     }
+};
+
+const dismissError = () => {
+    errorDismissed.value = true;
 };
 
 const handleResend = async () => {
@@ -127,6 +157,10 @@ const handleResend = async () => {
 };
 
 const closeAppealModal = () => {
+    // Reset modal-internal state but preserve appealSubmittedBanner
+    // so the banner shows "under review" after the modal is closed
+    if (appealSent.value) appealSubmittedBanner.value = true;
+    if (appealAlreadyExists.value) appealSubmittedBanner.value = true;
     appealText.value          = "";
     appealError.value         = "";
     appealSent.value          = false;
@@ -146,9 +180,9 @@ const submitAppeal = async () => {
         appealSent.value = true;
     } catch (err) {
         const data = err.response?.data;
-        // Already submitted — treat like a success so they know it's been received
         if (data?.alreadySubmitted) {
             appealAlreadyExists.value = true;
+            appealSubmittedBanner.value = true;
         } else {
             appealError.value = data?.message || "Failed to submit. Please try again.";
         }
@@ -156,11 +190,32 @@ const submitAppeal = async () => {
         appealLoading.value = false;
     }
 };
+
+const withdrawAppeal = async () => {
+    withdrawMsg.value     = "";
+    withdrawLoading.value = true;
+    try {
+        await axios.delete(`${API}/appeal`, {
+            data: {
+                identifier: username.value,
+                type: isBanned.value ? "ban" : "restriction",
+            },
+        });
+        appealSubmittedBanner.value = false;
+        withdrawMsg.value = "";
+        // Re-show the Submit an Appeal button
+    } catch (err) {
+        withdrawMsg.value = err.response?.data?.message || "Failed to withdraw. Try again.";
+    } finally {
+        withdrawLoading.value = false;
+    }
+};
 </script>
 
 <style scoped>
 /* Error / block message */
 .login-error-block {
+    position: relative;
     margin-top: 16px;
     border: 3px solid #b91c1c;
     border-radius: 12px;
@@ -178,8 +233,43 @@ const submitAppeal = async () => {
     border-color: #d97706;
     background: #fffbeb;
 }
+.error-dismiss {
+    position: absolute;
+    top: 8px;
+    right: 10px;
+    background: none;
+    border: none;
+    font-size: 1rem;
+    font-weight: 700;
+    color: #7f1d1d;
+    cursor: pointer;
+    line-height: 1;
+    padding: 0;
+}
+.error-dismiss:hover { color: #000; }
 .error-icon { font-size: 1.8rem; margin: 0; }
 .error-msg  { font-size: 0.9rem; font-weight: 600; color: #333; margin: 0; line-height: 1.5; }
+
+/* Appeal submitted notice on the banner */
+.appeal-submitted-notice {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: #14532d;
+    margin: 0;
+}
+.withdraw-btn {
+    background: none;
+    border: 2px solid #7f1d1d;
+    border-radius: 8px;
+    color: #7f1d1d;
+    font-size: 0.82rem;
+    font-weight: 700;
+    padding: 5px 14px;
+    cursor: pointer;
+}
+.withdraw-btn:hover:not(:disabled) { background: #fff1f2; }
+.withdraw-btn:disabled { opacity: 0.5; cursor: default; }
+.withdraw-msg { font-size: 0.8rem; color: #b91c1c; font-weight: 600; margin: 0; }
 
 /* Appeal trigger button */
 .appeal-trigger-btn {
@@ -220,7 +310,7 @@ const submitAppeal = async () => {
     padding: 16px;
 }
 
-/* Appeal modal box — matches confirm-box style */
+/* Appeal modal box */
 .appeal-box {
     background: pink;
     border: 3px solid #000;
