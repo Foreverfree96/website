@@ -1,5 +1,6 @@
 import fetch from "node-fetch";
 import { PageView, LocationStat, SiteStat } from "../models/analyticsModel.js";
+import { getIo } from "../utils/socketEmitter.js";
 
 // Paths that should never be counted (health checks, API calls, etc.)
 const IGNORED_PATHS = ["/", "/favicon.ico"];
@@ -21,12 +22,16 @@ export const trackPageView = async (req, res) => {
     const path = (req.body?.path || "").split("?")[0].trim();
     if (!path || IGNORED_PATHS.includes(path)) return;
 
-    // Upsert page view count
-    await PageView.findOneAndUpdate(
+    // Upsert page view count and get the updated doc
+    const pv = await PageView.findOneAndUpdate(
       { path },
       { $inc: { count: 1 } },
-      { upsert: true }
+      { upsert: true, new: true }
     );
+
+    // Push the updated count to all connected admin panels
+    const io = getIo();
+    if (io) io.to("admins").emit("analytics:pageview", { path, count: pv.count });
 
     // Geo lookup — skip for local IPs
     const ip = (req.headers["x-forwarded-for"] || req.ip || "")

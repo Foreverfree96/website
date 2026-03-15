@@ -328,10 +328,11 @@
  *   - "comments", "users", and "dms" are each loaded once and then cached for
  *     the lifetime of this page visit (guarded by *Loaded flags).
  */
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import axios from 'axios';
 import { useAuth } from '../composables/useAuth';
+import { useNotifications } from '../composables/useNotifications';
 
 // ─── API BASE ─────────────────────────────────────────────────────────────────
 
@@ -341,6 +342,7 @@ const API = import.meta.env.VITE_API_URL + '/api/admin';
 const router = useRouter();
 const route  = useRoute();
 const { user } = useAuth();
+const { getSocket } = useNotifications();
 
 // ─── ADMIN GUARD ──────────────────────────────────────────────────────────────
 
@@ -670,6 +672,40 @@ const promptDeleteUser = (u) => {
     }
   );
 };
+
+// ─── REAL-TIME ANALYTICS ──────────────────────────────────────────────────────
+
+onMounted(() => {
+  const sock = getSocket();
+  if (!sock) return;
+
+  // Live online count — fires whenever any user connects or disconnects
+  sock.on("analytics:online", ({ count }) => {
+    if (!analytics.value) return;
+    analytics.value.users.online  = count;
+    analytics.value.users.offline = Math.max(0, analytics.value.users.totalCurrent - count);
+  });
+
+  // Live page view — fires whenever any page is visited
+  sock.on("analytics:pageview", ({ path, count }) => {
+    if (!analytics.value) return;
+    const idx = analytics.value.pageViews.findIndex(p => p.path === path);
+    if (idx >= 0) {
+      analytics.value.pageViews[idx] = { path, count };
+    } else {
+      analytics.value.pageViews.push({ path, count });
+    }
+    // Keep sorted by count descending
+    analytics.value.pageViews.sort((a, b) => b.count - a.count);
+  });
+});
+
+onUnmounted(() => {
+  const sock = getSocket();
+  if (!sock) return;
+  sock.off("analytics:online");
+  sock.off("analytics:pageview");
+});
 
 // ─── ANALYTICS HELPERS ────────────────────────────────────────────────────────
 

@@ -111,12 +111,22 @@ io.use((socket, next) => {
  * This allows the server to target real-time events (notifications, DMs) at a
  * specific user by calling io.to(userId).emit(...).
  */
-io.on("connection", (socket) => {
-  // Join the user's private room so targeted emits reach only them
+io.on("connection", async (socket) => {
   socket.join(socket.userId);
   onlineUsers.add(socket.userId);
+
+  // If this user is an admin, join the broadcast room for real-time analytics
+  try {
+    const u = await User.findById(socket.userId).select("isAdmin").lean();
+    if (u?.isAdmin) socket.join("admins");
+  } catch {}
+
+  // Push updated online count to all connected admin panels
+  io.to("admins").emit("analytics:online", { count: onlineUsers.size });
+
   socket.on("disconnect", () => {
     onlineUsers.delete(socket.userId);
+    io.to("admins").emit("analytics:online", { count: onlineUsers.size });
   });
 });
 

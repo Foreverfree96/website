@@ -293,5 +293,6 @@ export function useNotifications() {
     addClearHandler,
     setDmCount,
     decrementDmCount,
+    getSocket: () => socket,
   };
 }
