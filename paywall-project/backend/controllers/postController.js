@@ -204,7 +204,7 @@ export const getPosts = async (req, res) => {
 export const getPost = async (req, res) => {
   try {
     const post = await Post.findById(req.params.id)
-      .populate("author", "username categories")
+      .populate("author", "username categories isPrivateAccount isAdmin")
       .populate("comments.author", "username");
     if (!post) return res.status(404).json({ message: "Post not found" });
 
@@ -212,9 +212,16 @@ export const getPost = async (req, res) => {
     if (post.moderationStatus === "flagged")
       return res.status(403).json({ message: "This post has been removed for violating community guidelines." });
 
-    // Private posts are only visible to their author
-    if (post.isPrivate && post.author._id.toString() !== req.user?.id)
+    const isOwner = post.author._id.toString() === req.user?.id;
+    const isAdmin = req.user?.isAdmin;
+
+    // Private posts (paywalled) are only visible to their author
+    if (post.isPrivate && !isOwner)
       return res.status(403).json({ message: "This post is private." });
+
+    // Posts from private accounts are only visible to the account owner or admins
+    if (post.author.isPrivateAccount && !isOwner && !isAdmin)
+      return res.status(403).json({ message: "This account is private." });
 
     res.json(post);
   } catch (err) {

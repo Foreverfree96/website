@@ -22,7 +22,7 @@ import User from "../models/userModel.js";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
-import nodemailer from "nodemailer";
+import { Resend } from "resend";
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
@@ -61,31 +61,20 @@ const isValidUsername = (u) => u.length >= 2 && u.length <= 30 && /^[a-zA-Z0-9_]
  * @param {string} options.subject - Email subject line
  * @param {string} options.html    - HTML body content
  */
-const transporter = nodemailer.createTransport({
-  host: "smtp.gmail.com",
-  port: 587,
-  secure: false,
-  auth: {
-    user: process.env.GMAIL_USER,
-    pass: process.env.GMAIL_PASS,
-  },
-  connectionTimeout: 10000,
-  socketTimeout: 10000,
-});
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 const sendEmail = async ({ to, subject, html }) => {
-  try {
-    await transporter.sendMail({
-      from: `"Austin's Site" <${process.env.GMAIL_USER}>`,
-      to,
-      subject,
-      html,
-    });
-    console.log("✅ Email sent to:", to);
-  } catch (err) {
-    console.error("❌ Email send failed:", err.message);
-    throw err;
+  const { error } = await resend.emails.send({
+    from: "Austin's Site <onboarding@resend.dev>",
+    to,
+    subject,
+    html,
+  });
+  if (error) {
+    console.error("❌ Email send failed:", error);
+    throw new Error(error.message);
   }
+  console.log("✅ Email sent to:", to);
 };
 
 // ─── REGISTER ────────────────────────────────────────────────────────────────
