@@ -758,11 +758,21 @@ const resolveAppeal = async (appeal, status) => {
     const res = await axios.put(`${API}/appeals/${appeal._id}`, { status });
     const idx = appeals.value.findIndex(a => a._id === appeal._id);
     if (idx !== -1) appeals.value[idx] = { ...appeals.value[idx], status: res.data.status };
-    // Remove the pending appeal badge from the matching user card
+
+    // Apply auto-unban / lift restriction to the user card if backend did it
     const uIdx = users.value.findIndex(u => u.username === appeal.username);
-    if (uIdx !== -1) users.value[uIdx] = { ...users.value[uIdx], _pendingAppealId: null };
+    if (uIdx !== -1) {
+      const changes = { _pendingAppealId: null };
+      if (res.data.userChanges) Object.assign(changes, res.data.userChanges);
+      users.value[uIdx] = { ...users.value[uIdx], ...changes };
+    }
+
     if (highlightedAppealId.value === appeal._id) highlightedAppealId.value = null;
-    showToast(`Appeal ${status}.`);
+
+    const action = status === 'approved'
+      ? appeal.type === 'ban' ? 'Appeal approved — user unbanned.' : 'Appeal approved — restriction lifted.'
+      : 'Appeal dismissed.';
+    showToast(action, status === 'approved' ? 'success' : 'error');
   } catch (err) {
     showToast(err.response?.data?.message || 'Failed to update appeal.', 'error');
   }

@@ -826,14 +826,34 @@ export const updateAppealStatus = async (req, res) => {
     const { status } = req.body;
     if (!["pending", "approved", "dismissed"].includes(status))
       return res.status(400).json({ message: "Invalid status." });
+
     const appeal = await Appeal.findByIdAndUpdate(
       req.params.appealId,
       { status },
       { new: true }
     );
     if (!appeal) return res.status(404).json({ message: "Appeal not found." });
+
+    // Auto-unban / lift restriction when an appeal is approved
+    let userChanges = null;
+    if (status === "approved" && appeal.user) {
+      const target = await User.findById(appeal.user);
+      if (target) {
+        if (appeal.type === "ban") {
+          target.isBanned = false;
+          await target.save();
+          await BannedEmail.deleteOne({ email: target.email });
+          userChanges = { isBanned: false };
+        } else if (appeal.type === "restriction") {
+          target.restrictedUntil = null;
+          await target.save();
+          userChanges = { restrictedUntil: null };
+        }
+      }
+    }
+
     log(req, `Appeal ${status}`, { _id: appeal.user, username: appeal.username }, `type: ${appeal.type}`);
-    res.json(appeal);
+    res.json({ ...appeal.toObject(), userChanges });
   } catch (err) {
     console.error("❌ updateAppealStatus Error:", err);
     res.status(500).json({ message: "Server error" });
