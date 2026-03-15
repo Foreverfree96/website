@@ -24,6 +24,7 @@ import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import axios from "axios";
 
+
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
 /**
@@ -62,13 +63,13 @@ const isValidUsername = (u) => u.length >= 2 && u.length <= 30 && /^[a-zA-Z0-9_]
  * @param {string} options.html    - HTML body content
  */
 const sendEmail = ({ to, subject, html }) => {
-  axios.post("https://api.brevo.com/v3/smtp/email", {
-    sender: { name: "Austin's Site", email: process.env.GMAIL_USER },
-    to: [{ email: to }],
+  axios.post("https://api.sendgrid.com/v3/mail/send", {
+    personalizations: [{ to: [{ email: to }] }],
+    from: { email: process.env.GMAIL_USER, name: "Austin's Site" },
     subject,
-    htmlContent: html,
+    content: [{ type: "text/html", value: html }],
   }, {
-    headers: { "api-key": process.env.BREVO_API_KEY, "Content-Type": "application/json" },
+    headers: { Authorization: `Bearer ${process.env.SENDGRID_API_KEY}`, "Content-Type": "application/json" },
   })
     .then(() => console.log("✅ Email sent to:", to))
     .catch(err => console.error("❌ Email send failed:", err.response?.data || err.message));
