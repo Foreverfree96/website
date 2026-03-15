@@ -85,14 +85,19 @@
 
         <!-- Footer: like count, comment count, and formatted creation date -->
         <div class="post-card__footer">
-          <button
-            class="like-btn"
-            :class="{ 'like-btn--liked': p.likes.includes(user?.id) }"
-            @click.stop="handleLike($event, p)"
-            :title="user?.id ? (p.likes.includes(user?.id) ? 'Unlike' : 'Like') : 'Log in to like'"
-          >
-            {{ p.likes.includes(user?.id) ? '❤️' : '🤍' }} {{ p.likes.length }}
-          </button>
+          <span class="like-wrap">
+            <button
+              class="like-btn"
+              :class="{ 'like-btn--liked': p.likes.includes(user?.id) }"
+              @click.stop="handleLike($event, p)"
+              :title="user?.id ? (p.likes.includes(user?.id) ? 'Unlike' : 'Like') : 'Log in to like'"
+            >{{ p.likes.includes(user?.id) ? '❤️' : '🤍' }}</button>
+            <span
+              class="like-count"
+              :class="{ 'like-count--clickable': p.likes.length > 0 }"
+              @click.stop="p.likes.length && showLikers(p._id)"
+            >{{ p.likes.length }}</span>
+          </span>
           <span>💬 {{ p.comments.length }}</span>
           <!-- Date is pushed to the far right via margin-left: auto on .post-card__date -->
           <span class="post-card__date">{{ formatDate(p.createdAt) }}</span>
@@ -113,6 +118,23 @@
       <button class="auth-button pag-btn" :disabled="page === totalPages" @click="changePage(page + 1)">Next →</button>
     </div>
 
+  </div>
+
+  <!-- Liked-by modal -->
+  <div v-if="likersModal.open" class="modal-overlay" @click.self="likersModal.open = false">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h2 class="modal-title">❤️ Liked by</h2>
+        <button class="modal-close" @click="likersModal.open = false">✕</button>
+      </div>
+      <p v-if="likersModal.loading" class="modal-empty">Loading...</p>
+      <div v-else-if="!likersModal.list.length" class="modal-empty">No likes yet.</div>
+      <div v-else class="modal-list">
+        <div v-for="u in likersModal.list" :key="u._id" class="modal-user" @click="router.push(`/creator/${u.username}`)">
+          @{{ u.username }}
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -137,6 +159,7 @@ import { useRouter, useRoute } from 'vue-router';
 import { usePosts } from '../composables/usePosts.js';
 import { useAuth } from '../composables/useAuth.js';
 import MediaEmbed from '../components/MediaEmbed.vue';
+import axios from 'axios';
 
 // Debounce helper — waits `ms` ms after last call before firing `fn`
 const debounce = (fn, ms) => {
@@ -294,6 +317,16 @@ const handleLike = async (e, p) => {
       ? [...p.likes, user.value.id]
       : p.likes.filter(id => id !== user.value.id);
   } catch {}
+};
+
+const likersModal = ref({ open: false, loading: false, list: [] });
+const showLikers = async (postId) => {
+  likersModal.value = { open: true, loading: true, list: [] };
+  try {
+    const res = await axios.get(`${import.meta.env.VITE_API_URL}/api/posts/${postId}/likes`);
+    likersModal.value.list = res.data.likes;
+  } catch {}
+  likersModal.value.loading = false;
 };
 
 /**
@@ -521,6 +554,11 @@ onMounted(() => {
   font-weight: 600;
   color: #000;
 }
+.like-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
 .like-btn {
   background: none;
   border: none;
@@ -531,11 +569,58 @@ onMounted(() => {
   cursor: pointer;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
   transition: transform 0.15s;
 }
 .like-btn:hover { transform: scale(1.15); }
 .like-btn--liked { color: #e11d48; }
+.like-count {
+  font-weight: 600;
+  font-size: inherit;
+}
+.like-count--clickable {
+  cursor: pointer;
+  text-decoration: underline dotted;
+}
+.like-count--clickable:hover { color: #e11d48; }
+
+.modal-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.55);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 100;
+}
+.modal-box {
+  background: #fff;
+  border: 3px solid #000;
+  border-radius: 14px;
+  padding: 24px;
+  width: 100%;
+  max-width: 380px;
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.modal-title { font-size: 1.1rem; font-weight: 700; }
+.modal-close {
+  background: none; border: none; font-size: 1.2rem; cursor: pointer;
+}
+.modal-empty { color: #555; font-size: 0.95rem; }
+.modal-list { overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+.modal-user {
+  padding: 10px 14px;
+  border: 2px solid #000;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.15s, color 0.15s;
+}
+.modal-user:hover { transform: translateY(-2px); color: rgb(125,190,157); }
 
 /* Date is pushed to the right end of the footer row */
 .post-card__date {

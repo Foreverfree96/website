@@ -53,14 +53,19 @@
         <!-- .stop prevents the card's click from also firing when interacting with the embed -->
         <MediaEmbed v-if="p.mediaUrl" :mediaUrl="p.mediaUrl" :embedType="p.embedType" @click.stop />
         <div class="post-card__footer">
-          <button
-            class="like-btn"
-            :class="{ 'like-btn--liked': p.likes.includes(user?.id) }"
-            @click.stop="handleLike($event, p)"
-            :title="user?.id ? (p.likes.includes(user?.id) ? 'Unlike' : 'Like') : 'Log in to like'"
-          >
-            {{ p.likes.includes(user?.id) ? '❤️' : '🤍' }} {{ p.likes.length }}
-          </button>
+          <span class="like-wrap">
+            <button
+              class="like-btn"
+              :class="{ 'like-btn--liked': p.likes.includes(user?.id) }"
+              @click.stop="handleLike($event, p)"
+              :title="user?.id ? (p.likes.includes(user?.id) ? 'Unlike' : 'Like') : 'Log in to like'"
+            >{{ p.likes.includes(user?.id) ? '❤️' : '🤍' }}</button>
+            <span
+              class="like-count"
+              :class="{ 'like-count--clickable': p.likes.length > 0 }"
+              @click.stop="p.likes.length && showLikers(p._id)"
+            >{{ p.likes.length }}</span>
+          </span>
           <span>💬 {{ p.comments.length }}</span>
           <span class="post-card__date">{{ formatDate(p.createdAt) }}</span>
         </div>
@@ -83,6 +88,23 @@
       <div v-else class="modal-list">
         <!-- Each row navigates to that user's creator profile -->
         <div v-for="u in modalList" :key="u._id" class="modal-user" @click="goToUser(u.username)">
+          @{{ u.username }}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Liked-by modal -->
+  <div v-if="likersModal.open" class="modal-overlay" @click.self="likersModal.open = false">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h2 class="modal-title">❤️ Liked by</h2>
+        <button class="modal-close" @click="likersModal.open = false">✕</button>
+      </div>
+      <p v-if="likersModal.loading" class="modal-empty">Loading...</p>
+      <div v-else-if="!likersModal.list.length" class="modal-empty">No likes yet.</div>
+      <div v-else class="modal-list">
+        <div v-for="u in likersModal.list" :key="u._id" class="modal-user" @click="goToUser(u.username)">
           @{{ u.username }}
         </div>
       </div>
@@ -278,6 +300,16 @@ const handleLike = async (e, p) => {
       ? [...p.likes, user.value.id]
       : p.likes.filter(id => id !== user.value.id);
   } catch {}
+};
+
+const likersModal = ref({ open: false, loading: false, list: [] });
+const showLikers = async (postId) => {
+  likersModal.value = { open: true, loading: true, list: [] };
+  try {
+    const res = await axios.get(`${API_USERS.replace('/users', '')}/posts/${postId}/likes`);
+    likersModal.value.list = res.data.likes;
+  } catch {}
+  likersModal.value.loading = false;
 };
 </script>
 
@@ -610,6 +642,11 @@ const handleLike = async (e, p) => {
   margin-top: 10px;
 }
 
+.like-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
 .like-btn {
   background: none;
   border: none;
@@ -620,11 +657,13 @@ const handleLike = async (e, p) => {
   cursor: pointer;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
   transition: transform 0.15s;
 }
 .like-btn:hover { transform: scale(1.15); }
 .like-btn--liked { color: #e11d48; }
+.like-count { font-weight: 600; font-size: inherit; }
+.like-count--clickable { cursor: pointer; text-decoration: underline dotted; }
+.like-count--clickable:hover { color: #e11d48; }
 
 .post-card__date {
   margin-left: auto;
