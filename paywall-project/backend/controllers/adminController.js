@@ -335,7 +335,7 @@ export const clearReports = async (req, res) => {
 export const getUsers = async (req, res) => {
   try {
     const users = await User.find({})
-      .select("username email createdAt isAdmin isSubscriber followers following")
+      .select("username email createdAt isAdmin isSubscriber followers following isVerified restrictedUntil isBanned")
       .sort({ createdAt: -1 })
       .lean();
 
