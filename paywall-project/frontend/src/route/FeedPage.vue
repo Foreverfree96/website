@@ -91,12 +91,12 @@
               :class="{ 'like-btn--liked': p.likes.includes(user?.id) }"
               @click.stop="handleLike($event, p)"
               :title="user?.id ? (p.likes.includes(user?.id) ? 'Unlike' : 'Like') : 'Log in to like'"
-            >{{ p.likes.includes(user?.id) ? '❤️' : '🤍' }}</button>
+            ><span class="like-icon">{{ p.likes.includes(user?.id) ? '❤️' : '🤍' }}</span></button>
             <span
               class="like-count"
               :class="{ 'like-count--clickable': p.likes.length > 0 }"
               @click.stop="p.likes.length && showLikers(p._id)"
-            >{{ p.likes.length }}</span>
+            ><span class="like-num">{{ p.likes.length }}</span></span>
           </span>
           <span
             class="comment-count"
@@ -611,11 +611,11 @@ onMounted(() => {
   cursor: pointer;
   display: inline-flex;
   align-items: center;
-  transition: background 0.15s, transform 0.15s;
   line-height: 1;
 }
-.like-btn:hover { background: #e5e7eb; transform: scale(1.15); }
 .like-btn--liked { color: #e11d48; }
+.like-icon { display: inline-block; transition: transform 0.15s; }
+.like-btn:hover .like-icon { transform: scale(1.25); }
 .like-count {
   font-weight: 700;
   font-size: 0.95rem;
@@ -623,9 +623,13 @@ onMounted(() => {
   line-height: 1;
   background: #000;
   color: #fff;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
 }
-.like-count--clickable { cursor: pointer; transition: transform 0.15s; }
-.like-count--clickable:hover { color: #fff; transform: scale(1.15); }
+.like-count--clickable { cursor: pointer; }
+.like-num { display: inline-block; transition: transform 0.15s; }
+.like-count--clickable:hover .like-num { transform: scale(1.2); }
 
 .comment-count {
   font-weight: 700;
@@ -641,7 +645,7 @@ onMounted(() => {
 
 @media (hover: none) {
   /* Touch devices — remove hover styles that can get stuck */
-  .like-count--clickable:hover { color: inherit; }
+  .like-count--clickable:hover .like-num { transform: none; }
   .comment-count--clickable:hover { background: #f3f4f6; border-color: #e5e7eb; color: inherit; }
 }
 
