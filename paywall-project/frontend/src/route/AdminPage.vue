@@ -712,7 +712,7 @@ onMounted(() => {
 
   // Background poll every 30 s — silently refreshes user counts and downloads
   // without showing a loading spinner. Only fetches when the analytics tab is active.
-  analyticsInterval = setInterval(refreshAnalyticsSilent, 30_000);
+  analyticsInterval = setInterval(refreshAnalyticsSilent, 10_000);
 });
 
 onUnmounted(() => {
