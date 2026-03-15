@@ -75,8 +75,9 @@ export function useAuth() {
       axios
         .get(`${API_URL}/profile`)
         .then((res) => { user.value = { ...res.data }; })
-        // If the token is invalid/expired the server will 401 — log the user out
-        .catch(() => logout());
+        // Only logout on 401 (invalid/expired token) — ignore network errors
+        // and server restarts so a cold-start doesn't silently log the user out
+        .catch((err) => { if (err.response?.status === 401) logout(); });
     }
   }
 

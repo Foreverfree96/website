@@ -129,11 +129,11 @@ io.on("connection", async (socket) => {
       : [];
     io.to("admins").emit("analytics:online", { count: ids.length, users });
   };
-  emitOnline();
+  emitOnline().catch(() => {});
 
   socket.on("disconnect", () => {
     onlineUsers.delete(socket.userId);
-    emitOnline();
+    emitOnline().catch(() => {});
   });
 });
 
