@@ -9,6 +9,7 @@
     <!--
       youtubeEmbedUrl converts the user-facing watch URL (or short URL or
       Shorts URL) into the /embed/ form that iframes require.
+      Pure playlist URLs (list= without v=) use /embed/videoseries?list=ID.
     -->
     <iframe v-if="embedType === 'youtube'" :src="youtubeEmbedUrl" frameborder="0"
       allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
@@ -26,29 +27,32 @@
     <!--
       SoundCloud uses a widget URL that accepts the original track/set URL
       as an encoded `url` query parameter — no separate ID extraction needed.
+      Sets (playlists) get the taller playlist height automatically.
     -->
     <iframe v-else-if="embedType === 'soundcloud'"
       :src="`https://w.soundcloud.com/player/?url=${encodeURIComponent(mediaUrl)}&color=%2314532d&auto_play=false&show_artwork=true&visual=true`"
-      frameborder="0" class="embed-iframe embed-iframe--audio" />
+      frameborder="0" :class="['embed-iframe', isPlaylist ? 'embed-iframe--playlist' : 'embed-iframe--audio']" />
 
     <!-- ── Spotify ────────────────────────────────────────────────────────── -->
     <!--
       spotifyEmbedUrl converts open.spotify.com URLs to open.spotify.com/embed/
       via a simple string replace (see computed below).
+      Playlists/albums get taller height to show the track list.
     -->
     <iframe v-else-if="embedType === 'spotify'" :src="spotifyEmbedUrl"
       frameborder="0" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
-      loading="lazy" class="embed-iframe embed-iframe--audio" />
+      loading="lazy" :class="['embed-iframe', isPlaylist ? 'embed-iframe--playlist' : 'embed-iframe--audio']" />
 
     <!-- ── Apple Music ────────────────────────────────────────────────────── -->
     <!--
       appleMusicEmbedUrl swaps music.apple.com for embed.music.apple.com.
       The sandbox attribute is required by Apple's embed documentation.
+      Albums and playlists get taller height.
     -->
     <iframe v-else-if="embedType === 'applemusic'" :src="appleMusicEmbedUrl"
       frameborder="0" allow="autoplay *; encrypted-media *; fullscreen *"
       sandbox="allow-forms allow-popups allow-same-origin allow-scripts allow-storage-access-by-user-activation allow-top-navigation-by-user-activation"
-      class="embed-iframe embed-iframe--audio" />
+      :class="['embed-iframe', isPlaylist ? 'embed-iframe--playlist' : 'embed-iframe--audio']" />
 
     <!-- ── Link card fallback (Instagram, TikTok, Facebook, Twitter, other) -->
     <!--
@@ -100,21 +104,42 @@ const props = defineProps({
  * Converts any recognised YouTube URL format into the embeddable /embed/ID URL.
  *
  * Patterns handled:
- *   youtu.be/ID           — short share URL
- *   youtube.com/watch?v=ID — standard watch URL (v param anywhere in query string)
- *   youtube.com/shorts/ID  — Shorts URL
+ *   youtu.be/ID                    — short share URL
+ *   youtube.com/watch?v=ID         — standard watch URL
+ *   youtube.com/shorts/ID          — Shorts URL
+ *   youtube.com/playlist?list=ID   — pure playlist (no video ID)
+ *   youtube.com/watch?v=ID&list=ID — video inside a playlist
  *
- * Returns an empty string if no valid video ID is found, which prevents
- * the iframe from loading a broken URL.
+ * Returns an empty string if no valid ID is found.
  */
 const youtubeEmbedUrl = computed(() => {
   const url = props.mediaUrl;
-  const shortMatch  = url.match(/youtu\.be\/([^?&/]+)/);
-  const longMatch   = url.match(/[?&]v=([^&]+)/);
-  const shortsMatch = url.match(/youtube\.com\/shorts\/([^?&/]+)/);
-  // Use the first match found — short link wins over watch link over shorts
-  const id = shortMatch?.[1] || longMatch?.[1] || shortsMatch?.[1];
-  return id ? `https://www.youtube.com/embed/${id}` : '';
+  const shortMatch    = url.match(/youtu\.be\/([^?&/]+)/);
+  const longMatch     = url.match(/[?&]v=([^&]+)/);
+  const shortsMatch   = url.match(/youtube\.com\/shorts\/([^?&/]+)/);
+  const listMatch     = url.match(/[?&]list=([^&]+)/);
+  const videoId = shortMatch?.[1] || longMatch?.[1] || shortsMatch?.[1];
+  if (videoId && listMatch) return `https://www.youtube.com/embed/${videoId}?list=${listMatch[1]}`;
+  if (videoId)              return `https://www.youtube.com/embed/${videoId}`;
+  if (listMatch)            return `https://www.youtube.com/embed/videoseries?list=${listMatch[1]}`;
+  return '';
+});
+
+/**
+ * True when the URL points to a playlist/album/set rather than a single track.
+ * Used to apply a taller iframe height so the track list is visible.
+ */
+const isPlaylist = computed(() => {
+  const url = props.mediaUrl;
+  // YouTube: pure playlist URL (list= param without a video v= param)
+  if (/[?&]list=/.test(url) && !/[?&]v=/.test(url) && !/youtu\.be\//.test(url)) return true;
+  // Spotify: playlist or album path segment
+  if (/open\.spotify\.com\/(playlist|album)\//.test(url)) return true;
+  // Apple Music: album or playlist path segment
+  if (/music\.apple\.com.*\/(album|playlist)\//.test(url)) return true;
+  // SoundCloud: sets URL
+  if (/soundcloud\.com\/.+\/sets\//.test(url)) return true;
+  return false;
 });
 
 /**
@@ -192,9 +217,14 @@ const platformLabel = computed(() => {
   display: block;
 }
 
-/* Audio players (Spotify, SoundCloud, Apple Music) are shorter */
+/* Single track player (Spotify, SoundCloud, Apple Music) */
 .embed-iframe--audio {
   height: 166px;
+}
+
+/* Playlist / album — tall enough to show the track list */
+.embed-iframe--playlist {
+  height: 352px;
 }
 
 /* Link card for platforms that don't support embedding */

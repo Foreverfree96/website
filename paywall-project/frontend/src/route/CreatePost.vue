@@ -510,8 +510,15 @@ const detectEmbed = () => {
   else if (/tiktok\.com/.test(url))              detectedType.value = 'tiktok';
   else                                           detectedType.value = 'other';
 
-  // Update the badge label using the lookup map; fall back to generic link.
-  embedLabel.value = embedLabels[detectedType.value] || '🔗 Link';
+  // Show "Playlist" variant in badge for playlist/album/set URLs
+  const isPlaylistUrl =
+    (/[?&]list=/.test(url) && !/[?&]v=/.test(url) && !/youtu\.be\//.test(url)) ||
+    /open\.spotify\.com\/(playlist|album)\//.test(url) ||
+    /music\.apple\.com.*\/(album|playlist)\//.test(url) ||
+    /soundcloud\.com\/.+\/sets\//.test(url);
+
+  const baseLabel = embedLabels[detectedType.value] || '🔗 Link';
+  embedLabel.value = isPlaylistUrl ? baseLabel + ' Playlist' : baseLabel;
 };
 
 // ─── FORM SUBMISSION ──────────────────────────────────────────────────────────
