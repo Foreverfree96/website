@@ -311,6 +311,10 @@ export const loginUser = async (req, res) => {
     if (user.isVerified === false)
       return res.status(403).json({ message: "Please verify your email before logging in." });
 
+    // Block banned accounts with a clear message
+    if (user.isBanned)
+      return res.status(403).json({ message: "This account has been permanently banned. If you believe this is a mistake, please contact support." });
+
     // Auto-grant admin privileges to the designated admin email if not already set
     if (process.env.ADMIN_EMAIL && user.email === process.env.ADMIN_EMAIL && !user.isAdmin) {
       user.isAdmin = true;
