@@ -61,15 +61,21 @@ const isValidUsername = (u) => u.length >= 2 && u.length <= 30 && /^[a-zA-Z0-9_]
  * @param {string} options.subject - Email subject line
  * @param {string} options.html    - HTML body content
  */
-const sendEmail = ({ to, subject, html }) => {
-  axios.post("https://api.brevo.com/v3/smtp/email", {
-    sender: { name: "Austin's Site", email: process.env.GMAIL_USER },
-    to: [{ email: to }],
-    subject,
-    htmlContent: html,
-  }, {
-    headers: { "api-key": process.env.BREVO_API_KEY, "Content-Type": "application/json" },
-  }).catch(err => console.error("❌ Email send failed:", err.response?.data || err.message));
+const sendEmail = async ({ to, subject, html }) => {
+  try {
+    const res = await axios.post("https://api.brevo.com/v3/smtp/email", {
+      sender: { name: "Austin's Site", email: process.env.GMAIL_USER },
+      to: [{ email: to }],
+      subject,
+      htmlContent: html,
+    }, {
+      headers: { "api-key": process.env.BREVO_API_KEY, "Content-Type": "application/json" },
+    });
+    console.log("✅ Email sent:", res.data);
+  } catch (err) {
+    console.error("❌ Email send failed:", JSON.stringify(err.response?.data || err.message));
+    throw err;
+  }
 };
 
 // ─── REGISTER ────────────────────────────────────────────────────────────────
@@ -789,7 +795,7 @@ export const forgotEmail = async (req, res) => {
 
     if (!user) return res.status(404).json({ message: "Username not found." });
 
-    sendEmail({
+    await sendEmail({
       to: user.email,
       subject: "Your Registered Email Address",
       html: `
@@ -804,8 +810,8 @@ export const forgotEmail = async (req, res) => {
 
     res.json({ message: "Your email address has been sent to your registered inbox." });
   } catch (err) {
-    console.error("❌ Forgot Email Error:", err);
-    res.status(500).json({ message: "Server error" });
+    console.error("❌ Forgot Email Error:", err.response?.data || err.message);
+    res.status(500).json({ message: err.response?.data?.message || "Failed to send email. Check server logs." });
   }
 };
 
