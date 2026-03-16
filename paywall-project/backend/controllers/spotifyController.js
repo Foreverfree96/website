@@ -224,7 +224,7 @@ export const spotifyShuffleOff = async (req, res) => {
 // token (which has the full scope set) is used instead.
 export const getPlaylistTracks = async (req, res) => {
   const playlistId = req.params.id;
-  const url = `https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=100&fields=items(track(name%2Curi%2Cduration_ms%2Cartists(name)%2Calbum(images)))`;
+  const url = `https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=100`;
   try {
     // Try client credentials first — works for all public playlists with no user scope needed
     let appToken;

@@ -484,7 +484,6 @@ onMounted(async () => {
     player.addListener('player_state_changed', async (s) => {
       if (!s) return;
 
-      const isFirst = !firstStateReceived;
       firstStateReceived = true;
 
       paused.value    = s.paused;
@@ -503,6 +502,26 @@ onMounted(async () => {
         };
       }
 
+      // Build queue from SDK track_window — works instantly with zero API calls.
+      // previous_tracks + current + next_tracks gives us nearby context.
+      // If the full playlist fetch succeeded, don't overwrite it.
+      if (props.isPlaylist && s.track_window) {
+        const sdkTracks = [
+          ...(s.track_window.previous_tracks || []),
+          ...(t ? [t] : []),
+          ...(s.track_window.next_tracks || []),
+        ].filter(Boolean).map(tr => ({
+          name:     tr.name     || '',
+          uri:      tr.uri,
+          artist:   tr.artists?.map(a => a.name).join(', ') || '',
+          duration: tr.duration_ms || 0,
+          art:      tr.album?.images?.[0]?.url || '',
+        }));
+        // Only use SDK tracks if we don't yet have the full playlist list
+        if (playlistTracks.value.length === 0 && sdkTracks.length > 0) {
+          playlistTracks.value = sdkTracks;
+        }
+      }
 
       if (!s.paused) startTicker();
       else           stopTicker();
