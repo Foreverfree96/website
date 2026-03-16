@@ -12,6 +12,28 @@ const SCOPES = [
   "playlist-read-collaborative",
 ].join(" ");
 
+// ─── CLIENT CREDENTIALS TOKEN (app-level, no user scopes needed) ──────────────
+// Used as fallback for fetching public playlist data when the user's token
+// is missing playlist scopes (connected before those scopes were added).
+let _clientCredCache = null; // { token, expiresAt }
+
+const getClientCredToken = async () => {
+  if (_clientCredCache && Date.now() < _clientCredCache.expiresAt - 60_000) {
+    return _clientCredCache.token;
+  }
+  const credentials = Buffer.from(
+    `${process.env.SPOTIFY_CLIENT_ID}:${process.env.SPOTIFY_CLIENT_SECRET}`
+  ).toString("base64");
+  const res = await axios.post(
+    "https://accounts.spotify.com/api/token",
+    new URLSearchParams({ grant_type: "client_credentials" }),
+    { headers: { Authorization: `Basic ${credentials}`, "Content-Type": "application/x-www-form-urlencoded" } }
+  );
+  const { access_token, expires_in } = res.data;
+  _clientCredCache = { token: access_token, expiresAt: Date.now() + expires_in * 1000 };
+  return access_token;
+};
+
 // ─── SHARED HELPER: refresh access token ──────────────────────────────────────
 const refreshAccessToken = async (userId, refreshToken) => {
   const credentials = Buffer.from(
@@ -201,14 +223,23 @@ export const spotifyShuffleOff = async (req, res) => {
 // never needs the playlist-read-private scope directly — the stored server-side
 // token (which has the full scope set) is used instead.
 export const getPlaylistTracks = async (req, res) => {
+  const url = `https://api.spotify.com/v1/playlists/${req.params.id}/tracks?limit=100&fields=items(track(name,uri,duration_ms,artists(name),album(images)))`;
   try {
+    // Try with user token first (works for private playlists they own)
     const result = await getValidToken(req.user.id, false);
-    if (result.error) return res.status(result.error).json({ message: result.message });
+    if (!result.error) {
+      try {
+        const response = await axios.get(url, { headers: { Authorization: `Bearer ${result.accessToken}` } });
+        return res.json(response.data);
+      } catch (err) {
+        // 403 means token is missing playlist scopes — fall through to client credentials
+        if (err.response?.status !== 403) throw err;
+      }
+    }
 
-    const response = await axios.get(
-      `https://api.spotify.com/v1/playlists/${req.params.id}/tracks?limit=100&fields=items(track(name,uri,duration_ms,artists(name),album(images)))`,
-      { headers: { Authorization: `Bearer ${result.accessToken}` } }
-    );
+    // Fallback: app-level client credentials token (works for all public playlists)
+    const appToken = await getClientCredToken();
+    const response = await axios.get(url, { headers: { Authorization: `Bearer ${appToken}` } });
     res.json(response.data);
   } catch (err) {
     const status = err.response?.status || 500;
