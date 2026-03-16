@@ -14,8 +14,20 @@
           </div>
         </div>
 
-        <!-- Player -->
-        <div class="mp-body">
+        <!-- ── Preview (click to start) ── -->
+        <div v-if="!playerReady" class="mp-preview">
+          <div class="mp-preview-thumb-wrap">
+            <img v-if="previewThumb" :src="previewThumb" class="mp-preview-thumb" />
+            <div v-else class="mp-preview-icon">{{ previewIcon }}</div>
+          </div>
+          <div class="mp-preview-meta">
+            <span class="mp-preview-type">{{ previewLabel }}</span>
+          </div>
+          <button class="mp-preview-play" @click="startPlay">▶ Play</button>
+        </div>
+
+        <!-- ── Player (after user clicks Play) ── -->
+        <div v-if="playerReady" class="mp-body">
           <SpotifyPlayer
             v-if="nowPlaying.type === 'spotify'"
             :mediaUrl="nowPlaying.url"
@@ -42,7 +54,7 @@
         </div>
 
         <!-- YouTube playlist shuffle bar -->
-        <div v-if="nowPlaying.type === 'youtube' && nowPlaying.isPlaylist" class="mp-yt-bar">
+        <div v-if="playerReady && nowPlaying.type === 'youtube' && nowPlaying.isPlaylist" class="mp-yt-bar">
           <button
             class="mp-shuffle-btn"
             :class="{ 'mp-shuffle-btn--on': mpYtShuffle }"
@@ -77,6 +89,7 @@ import SpotifyPlayer from './SpotifyPlayer.vue';
 const { nowPlaying, close } = useNowPlaying();
 
 const expanded     = ref(false);
+const playerReady  = ref(false);
 const mpYtShuffle  = ref(false);
 const mpYtId       = 'mp-yt-' + Math.random().toString(36).slice(2, 7);
 const mpScFrame    = ref(null);
@@ -209,15 +222,21 @@ const collapse = () => {
     mpScWidget = null;
   }
   expanded.value = false;
+  playerReady.value = false;
 };
 
-// ── Expand: show panel, init player once DOM is ready ────────────────────────
-const expand = async () => {
+// ── Expand: show panel with preview, don't init player yet ───────────────────
+const expand = () => {
   expanded.value = true;
+};
+
+// ── Start play: init the actual player after user clicks ▶ ───────────────────
+const startPlay = async () => {
+  playerReady.value = true;
   await nextTick(); // wait for v-if to render the div/iframe into DOM
   const np = nowPlaying.value;
   if (!np) return;
-  if (np.type === 'youtube')     await initYtPlayer(np);
+  if (np.type === 'youtube')         await initYtPlayer(np);
   else if (np.type === 'soundcloud') await initScWidget(np);
   else if (np.type !== 'spotify')    reg().set('mp-player', stopMiniPlayer);
 };
@@ -239,11 +258,41 @@ watch(nowPlaying, (np, old) => {
   if (old && (old.type !== np?.type || old.url !== np?.url)) {
     cleanupPlayers();
     mpYtShuffle.value = false;
+    playerReady.value = false;
   }
   if (!np) {
     expanded.value = false;
+    playerReady.value = false;
   }
-  // Don't auto-expand — user clicks bubble to open
+});
+
+// ── Preview computed ──────────────────────────────────────────────────────────
+const previewThumb = computed(() => {
+  const np = nowPlaying.value;
+  if (!np) return null;
+  if (np.type === 'youtube') {
+    const m = np.url.match(/youtu\.be\/([^?&/]+)|[?&]v=([^&]+)/);
+    const id = m?.[1] || m?.[2];
+    return id ? `https://img.youtube.com/vi/${id}/hqdefault.jpg` : null;
+  }
+  return null;
+});
+
+const previewIcon = computed(() => {
+  const t = nowPlaying.value?.type;
+  if (t === 'spotify')    return '🎵';
+  if (t === 'youtube')    return '▶';
+  if (t === 'soundcloud') return '☁';
+  if (t === 'twitch')     return '📺';
+  return '♫';
+});
+
+const previewLabel = computed(() => {
+  const np = nowPlaying.value;
+  if (!np) return '';
+  const labels = { spotify: 'Spotify', youtube: 'YouTube', soundcloud: 'SoundCloud', twitch: 'Twitch', applemusic: 'Apple Music' };
+  const platform = labels[np.type] || np.type;
+  return np.isPlaylist ? `${platform} Playlist` : platform;
 });
 
 // ── Computed embed URLs ───────────────────────────────────────────────────────
@@ -375,6 +424,48 @@ const handleClose = () => {
 }
 .mp-hbtn:hover { background: #3a3a3a; color: #fff; }
 .mp-hbtn--close:hover { background: #e11d48; color: #fff; }
+
+/* ── Preview ── */
+.mp-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 20px 16px 18px;
+}
+.mp-preview-thumb-wrap { width: 100%; }
+.mp-preview-thumb {
+  width: 100%;
+  height: 160px;
+  object-fit: cover;
+  border-radius: 8px;
+  display: block;
+}
+.mp-preview-icon {
+  width: 100%;
+  height: 100px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 3rem;
+  background: #1a1a1a;
+  border-radius: 8px;
+}
+.mp-preview-meta { text-align: center; }
+.mp-preview-type { font-size: 0.8rem; color: #888; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+.mp-preview-play {
+  width: 100%;
+  padding: 11px;
+  background: #1db954;
+  border: none;
+  border-radius: 24px;
+  color: #000;
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+}
+.mp-preview-play:hover { background: #1ed760; transform: scale(1.02); }
 
 /* ── Body ── */
 .mp-body { overflow-y: auto; max-height: 440px; }
