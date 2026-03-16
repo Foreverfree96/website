@@ -273,36 +273,55 @@ export const getPlaylistTracks = async (req, res) => {
   const cached = getCachedPlaylist(playlistId);
   if (cached) return res.json(cached);
 
-  const url = `https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=100`;
-
-  // Helper: fetch, cache and return
-  const fetchAndCache = async (token) => {
-    const response = await axios.get(url, { headers: { Authorization: `Bearer ${token}` } });
-    _playlistCache.set(playlistId, { data: response.data, cachedAt: Date.now() });
-    return response.data;
+  // Helper: normalise to { items: [...] } shape and cache
+  const cacheAndReturn = (items) => {
+    const data = { items };
+    _playlistCache.set(playlistId, { data, cachedAt: Date.now() });
+    return data;
   };
 
+  const parseItems = (data) =>
+    (data.items || []).filter(item => item?.track?.uri);
+
   try {
-    // 1. User token first — most likely to have playlist-read-private after reconnect
     const result = await getValidToken(req.user.id, false);
+
     if (!result.error) {
+      const auth = { Authorization: `Bearer ${result.accessToken}` };
+
+      // 1. GET /v1/playlists/{id} — works for PUBLIC playlists without playlist-read-private
       try {
-        return res.json(await fetchAndCache(result.accessToken));
+        const r = await axios.get(`https://api.spotify.com/v1/playlists/${playlistId}`, { headers: auth });
+        const items = parseItems(r.data.tracks || {});
+        if (items.length) return res.json(cacheAndReturn(items));
       } catch (err) {
-        console.error("❌ Spotify playlist fetch (user token) failed:", err.response?.status, err.response?.data?.error);
+        if (err.response?.status !== 403) console.error("❌ Spotify GET playlist failed:", err.response?.status);
+      }
+
+      // 2. GET /v1/playlists/{id}/tracks — requires playlist-read-private
+      try {
+        const r = await axios.get(`https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=100`, { headers: auth });
+        const items = parseItems(r.data);
+        if (items.length) return res.json(cacheAndReturn(items));
+      } catch (err) {
+        console.error("❌ Spotify GET /tracks failed:", err.response?.status, err.response?.data?.error?.message);
         if (err.response?.status !== 403) throw err;
-        // 403 = missing scope, fall through to client credentials
       }
     }
 
-    // 2. Client credentials fallback (works for public playlists if Spotify allows it)
+    // 3. Client credentials (public playlists only — Spotify may restrict this)
     try {
       const appToken = await getClientCredToken();
-      return res.json(await fetchAndCache(appToken));
+      const r = await axios.get(`https://api.spotify.com/v1/playlists/${playlistId}`, {
+        headers: { Authorization: `Bearer ${appToken}` },
+      });
+      const items = parseItems(r.data.tracks || {});
+      if (items.length) return res.json(cacheAndReturn(items));
     } catch (err) {
-      console.error("❌ Spotify playlist fetch (client cred) failed:", err.response?.status, err.response?.data?.error);
-      throw err;
+      console.error("❌ Spotify client-cred playlist fetch failed:", err.response?.status);
     }
+
+    res.status(403).json({ message: 'Reconnect Spotify to load playlist tracks (playlist-read-private scope required)' });
   } catch (err) {
     const status = err.response?.status || 500;
     res.status(status).json({ message: err.response?.data?.error?.message || 'Failed to fetch tracks' });

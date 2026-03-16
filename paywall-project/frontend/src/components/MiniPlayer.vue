@@ -19,7 +19,7 @@
             ref="spotifyPlayerRef"
             :mediaUrl="nowPlaying.url"
             :isPlaylist="nowPlaying.isPlaylist || false"
-            :autoPlay="true"
+            :autoPlay="false"
             :defaultListOpen="true"
             :startPosition="nowPlaying.position || 0"
             :startTrackUri="nowPlaying.trackUri || ''"

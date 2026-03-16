@@ -378,27 +378,34 @@ const fetchPlaylistTracks = async () => {
         art,
       }));
 
-  // 1️⃣ Direct Spotify API call with SDK token
+  // 1️⃣ Direct Spotify API calls
   if (token) {
     try {
-      let albumArt = '';
       if (isAlbum) {
-        // Fetch album metadata for cover art
-        const ar = await fetch(`https://api.spotify.com/v1/albums/${id}`,
-          { headers: { Authorization: `Bearer ${token}` } }).catch(() => null);
-        if (ar?.ok) albumArt = (await ar.json()).images?.[0]?.url || '';
-      }
+        // Fetch album metadata + tracks in parallel
+        const [arRes, trRes] = await Promise.all([
+          fetch(`https://api.spotify.com/v1/albums/${id}`, { headers: { Authorization: `Bearer ${token}` } }).catch(() => null),
+          fetch(`https://api.spotify.com/v1/albums/${id}/tracks?limit=50`, { headers: { Authorization: `Bearer ${token}` } }),
+        ]);
+        const albumArt = arRes?.ok ? (await arRes.json()).images?.[0]?.url || '' : '';
+        if (trRes.ok) {
+          if (applyTracks(parseAlbum(await trRes.json(), albumArt))) return;
+        }
+      } else {
+        // 1a. GET /v1/playlists/{id} — works for public playlists WITHOUT playlist-read-private
+        //     (the /tracks sub-resource now always requires the scope; the parent object doesn't)
+        const pRes = await fetch(`https://api.spotify.com/v1/playlists/${id}`, { headers: { Authorization: `Bearer ${token}` } });
+        if (pRes.ok) {
+          const pData = await pRes.json();
+          if (pData.tracks && applyTracks(parsePlaylist(pData.tracks))) return;
+        }
 
-      const endpoint = isAlbum
-        ? `https://api.spotify.com/v1/albums/${id}/tracks?limit=50`
-        : `https://api.spotify.com/v1/playlists/${id}/tracks?limit=100`;
-
-      const res = await fetch(endpoint, { headers: { Authorization: `Bearer ${token}` } });
-      if (res.ok) {
-        const data = await res.json();
-        if (applyTracks(isAlbum ? parseAlbum(data, albumArt) : parsePlaylist(data))) return;
+        // 1b. Fallback: GET /v1/playlists/{id}/tracks (requires playlist-read-private)
+        const res = await fetch(`https://api.spotify.com/v1/playlists/${id}/tracks?limit=100`, { headers: { Authorization: `Bearer ${token}` } });
+        if (res.ok) {
+          if (applyTracks(parsePlaylist(await res.json()))) return;
+        }
       }
-      // Don't return on error — always try backend proxy next
     } catch { /* fall through */ }
   }
 
@@ -562,7 +569,15 @@ onMounted(async () => {
     // Cache is applied immediately; API fetch runs in background.
     if (props.isPlaylist) {
       const cached = loadCachedTracks(props.mediaUrl);
-      if (cached?.length) { playlistTracks.value = cached; fullTracksFetched = true; }
+      if (cached?.length) {
+        playlistTracks.value = cached;
+        fullTracksFetched = true;
+        // Pre-populate track info from the saved URI so the UI shows something before SDK connects
+        if (props.startTrackUri) {
+          const t = cached.find(t => t.uri === props.startTrackUri) || cached[0];
+          if (t) track.value = { name: t.name, artist: t.artist, album: '', art: t.art };
+        }
+      }
       fetchPlaylistTracks(); // background — doesn't block SDK init
     }
 
