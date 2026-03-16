@@ -311,6 +311,15 @@ export const markConversationRead = async (req, res) => {
     );
 
     res.json({ ok: true });
+
+    // Notify the other participant (the sender) that their messages were read
+    try {
+      const { getIo } = await import("../utils/socketEmitter.js");
+      const otherId = convo.participants.map(p => p.toString()).find(id => id !== req.user.id);
+      if (otherId) {
+        getIo()?.to(otherId).emit("dm:read", { conversationId: convo._id.toString() });
+      }
+    } catch { /* non-fatal */ }
   } catch (err) {
     console.error("❌ markConversationRead:", err);
     res.status(500).json({ message: "Server error" });

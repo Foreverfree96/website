@@ -164,7 +164,7 @@
             <!-- Normal mode: live messages only -->
             <TransitionGroup v-else name="msg-in" tag="div" class="messages-inner">
 
-              <div v-for="m in messages" :key="m._id" class="bubble-wrap" :class="[
+              <div v-for="(m, idx) in messages" :key="m._id" class="bubble-wrap" :class="[
                 m.sender._id === user.id ? 'mine' : 'theirs'
               ]">
 
@@ -177,6 +177,7 @@
                 </div>
 
                 <span class="bubble-time">{{ formatTime(m.createdAt) }}</span>
+                <span v-if="m.sender._id === user.id && idx === lastSeenIndex" class="bubble-seen">Seen</span>
 
               </div>
 
@@ -308,7 +309,7 @@ import { ref, onMounted, onUnmounted, nextTick, computed, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import axios from 'axios';
 import { useAuth } from '../composables/useAuth.js';
-import { useNotifications } from '../composables/useNotifications.js';
+import { useNotifications, playBump } from '../composables/useNotifications.js';
 import AppModal from '../components/AppModal.vue';
 
 // ─── API BASE URLS ────────────────────────────────────────────────────────────
@@ -330,7 +331,7 @@ const { user } = useAuth();
 //   addClearHandler — registers a callback for chat-clear socket events
 //   decrementDmCount — subtracts from the global unread DM badge in the nav
 //   setDmCount      — overrides the global unread DM badge count
-const { addDmHandler, addClearHandler, decrementDmCount, setDmCount } = useNotifications();
+const { addDmHandler, addClearHandler, addReadHandler, decrementDmCount, setDmCount } = useNotifications();
 
 // ─── CONVERSATION LIST STATE ──────────────────────────────────────────────────
 
@@ -623,6 +624,20 @@ const submitReport = async () => {
 // ─── COMPUTED ─────────────────────────────────────────────────────────────────
 
 /**
+ * lastSeenIndex
+ * The index (within `messages`) of the last message sent by the current user
+ * that has been read (read === true). Used to display the "Seen" receipt below
+ * that message only. Returns -1 when no sent messages have been read yet.
+ */
+const lastSeenIndex = computed(() => {
+  let idx = -1;
+  messages.value.forEach((m, i) => {
+    if (m.sender._id === user.value?.id && m.read) idx = i;
+  });
+  return idx;
+});
+
+/**
  * filteredMutuals
  * Client-side filter of the mutual followers list used in the "New Message" modal.
  * Returns all mutuals when the search query is empty, otherwise returns only
@@ -635,10 +650,11 @@ const filteredMutuals = computed(() => {
 
 // ─── SOCKET HANDLER CLEANUP REFS ─────────────────────────────────────────────
 
-// Hold the de-registration functions returned by addDmHandler / addClearHandler.
+// Hold the de-registration functions returned by addDmHandler / addClearHandler / addReadHandler.
 // Called in onUnmounted to prevent the handlers from firing after the page is gone.
 let removeDmHandler = null;
 let removeClearHandler = null;
+let removeReadHandler = null;
 
 // ─── LIFECYCLE: MOUNT ─────────────────────────────────────────────────────────
 
@@ -666,6 +682,17 @@ onMounted(async () => {
     const c = conversations.value.find(c => c._id === data.conversationId);
     if (c) c.lastMessage = '';
     if (activeConvo.value?._id === data.conversationId) messages.value = [];
+  });
+
+  // ── SOCKET: READ RECEIPT HANDLER ─────────────────────────────────────────
+  // Fired when the other participant reads our messages.
+  // Marks all sent messages in that conversation as read so "Seen" appears.
+  removeReadHandler = addReadHandler((data) => {
+    if (activeConvo.value?._id === data.conversationId) {
+      messages.value.forEach(m => {
+        if (m.sender._id === user.value.id) m.read = true;
+      });
+    }
   });
 
   // ── SOCKET: INCOMING DM HANDLER ──────────────────────────────────────────
@@ -699,6 +726,7 @@ onUnmounted(() => {
   // Remove socket handlers to avoid them firing on a destroyed component instance
   if (removeDmHandler) removeDmHandler();
   if (removeClearHandler) removeClearHandler();
+  if (removeReadHandler) removeReadHandler();
 });
 
 // ─── CONVERSATION ACTIONS ─────────────────────────────────────────────────────
@@ -776,6 +804,7 @@ const sendMsg = async () => {
   if (!draft.value.trim() || !activeConvo.value) return;
   const body = draft.value.trim();
   draft.value = '';
+  playBump();
   try {
     const res = await axios.post(`${API}/${activeConvo.value._id}`, { body });
     messages.value.push(res.data);
@@ -1359,6 +1388,15 @@ const formatTime = (d) => {
   color: #999;
   margin-top: 2px;
   padding: 0 4px;
+}
+
+.bubble-seen {
+  font-size: 0.62rem;
+  color: #e91e8c;
+  padding: 0 4px;
+  margin-top: 1px;
+  text-align: right;
+  align-self: flex-end;
 }
 
 /* Incoming message animation */

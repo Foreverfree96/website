@@ -26,21 +26,53 @@ import { ref } from "vue";
 import axios from "axios";
 import { io as socketIo } from "socket.io-client";
 
-// ── Ping sound via Web Audio API (no audio file needed) ───────────────────────
-const playPing = () => {
+// ── Notification ping (high, bright) ──────────────────────────────────────────
+const playNotifPing = () => {
   try {
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
     const osc  = ctx.createOscillator();
     const gain = ctx.createGain();
-    osc.connect(gain);
-    gain.connect(ctx.destination);
+    osc.connect(gain); gain.connect(ctx.destination);
     osc.type = 'sine';
     osc.frequency.setValueAtTime(880, ctx.currentTime);
     osc.frequency.exponentialRampToValueAtTime(440, ctx.currentTime + 0.15);
     gain.gain.setValueAtTime(0.25, ctx.currentTime);
     gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
-    osc.start(ctx.currentTime);
-    osc.stop(ctx.currentTime + 0.6);
+    osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.6);
+    osc.onended = () => ctx.close();
+  } catch { /* browser audio blocked */ }
+};
+
+// ── DM ping (softer, lower pitch) ─────────────────────────────────────────────
+const playDmPing = () => {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc  = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(520, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(380, ctx.currentTime + 0.12);
+    gain.gain.setValueAtTime(0.18, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.45);
+    osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.45);
+    osc.onended = () => ctx.close();
+  } catch { /* browser audio blocked */ }
+};
+
+// ── Send bump (very soft, brief) ──────────────────────────────────────────────
+export const playBump = () => {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc  = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(300, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(200, ctx.currentTime + 0.08);
+    gain.gain.setValueAtTime(0.1, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
+    osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.15);
     osc.onended = () => ctx.close();
   } catch { /* browser audio blocked */ }
 };
@@ -72,6 +104,7 @@ const modUnreadCount = ref(0);
 // Using arrays allows multiple components to listen without overwriting each other.
 let dmHandlers = [];
 let clearHandlers = [];
+let readHandlers = [];
 
 // =============================================================================
 // useNotifications — composable factory function
@@ -215,13 +248,13 @@ export function useNotifications() {
     socket.on("notification", (notif) => {
       notifications.value.unshift(notif); // Prepend so newest is first
       unreadCount.value += 1;
-      playPing();
+      playNotifPing();
     });
 
     // New direct message pushed from the server
     socket.on("dm", (data) => {
       dmUnreadCount.value += 1;
-      playPing();
+      playDmPing();
       // Invoke all registered DM listeners (e.g. MessagesPage live-appends the message)
       dmHandlers.forEach(h => h(data));
     });
@@ -229,6 +262,11 @@ export function useNotifications() {
     // The other party cleared a conversation
     socket.on("conversation_cleared", (data) => {
       clearHandlers.forEach(h => h(data));
+    });
+
+    // Recipient read our messages — notify any registered read handlers
+    socket.on("dm:read", (data) => {
+      readHandlers.forEach(h => h(data));
     });
 
     // A new report was submitted — increment the mod badge for admins
@@ -262,6 +300,7 @@ export function useNotifications() {
     modUnreadCount.value = 0;
     dmHandlers = [];
     clearHandlers = [];
+    readHandlers = [];
   };
 
   // ── DM handler registration ─────────────────────────────────────────────────
@@ -288,6 +327,15 @@ export function useNotifications() {
   const addClearHandler = (fn) => {
     clearHandlers.push(fn);
     return () => { clearHandlers = clearHandlers.filter(h => h !== fn); };
+  };
+
+  /**
+   * Registers a callback for "dm:read" socket events (sender's messages were read).
+   * Returns an unsubscribe function.
+   */
+  const addReadHandler = (fn) => {
+    readHandlers.push(fn);
+    return () => { readHandlers = readHandlers.filter(h => h !== fn); };
   };
 
   // ── DM count helpers ────────────────────────────────────────────────────────
@@ -325,6 +373,7 @@ export function useNotifications() {
     disconnectSocket,
     addDmHandler,
     addClearHandler,
+    addReadHandler,
     setDmCount,
     clearModCount,
     decrementDmCount,
