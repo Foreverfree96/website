@@ -308,6 +308,9 @@ onMounted(async () => {
       deviceId = device_id;
       statusMsg.value = 'Loading…';
       try {
+        // Small delay: Spotify's Connect API needs ~800ms after the SDK fires
+        // 'ready' before it acknowledges the device_id — otherwise /play 404s.
+        await new Promise(r => setTimeout(r, 900));
         await startPlayback();
         // Don't set state='ready' yet — wait for player_state_changed to fire
         // with actual track data so the UI is never shown blank.
