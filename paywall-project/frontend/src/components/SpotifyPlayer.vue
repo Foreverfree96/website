@@ -168,14 +168,16 @@ const spotifyFetch = (method, path, body) =>
   });
 
 // ── Token ──────────────────────────────────────────────────────────────────────
+// Returns { token } on success, { needsConnect: true } if not linked/premium, { unavailable: true } on other errors
 const fetchToken = async () => {
   const jwt = localStorage.getItem('jwtToken');
-  if (!jwt) return null;
+  if (!jwt) return { needsConnect: true };
   const res = await fetch(`${API}/api/spotify/token`, {
     headers: { Authorization: `Bearer ${jwt}` },
   });
-  if (!res.ok) return null;
-  return (await res.json()).accessToken;
+  if (res.status === 403 || res.status === 404) return { needsConnect: true };
+  if (!res.ok) return { unavailable: true };
+  return { token: (await res.json()).accessToken };
 };
 
 // ── SDK loader ─────────────────────────────────────────────────────────────────
@@ -353,15 +355,17 @@ const startVolScrub = (e) => {
 
 // ── Mount ──────────────────────────────────────────────────────────────────────
 onMounted(async () => {
-  // Global fallback: no matter where it hangs, show message after 8s
+  // Global fallback: if SDK never connects, fall back to iframe embed after 8s
   connectTimeout = setTimeout(() => {
-    if (state.value !== 'ready') state.value = 'needs-connect';
+    if (state.value !== 'ready') state.value = 'unavailable';
   }, 8000);
 
   try {
     statusMsg.value = 'Fetching credentials…';
-    token = await fetchToken();
-    if (!token) { state.value = 'unavailable'; return; }
+    const tokenResult = await fetchToken();
+    if (tokenResult.needsConnect) { clearTimeout(connectTimeout); state.value = 'needs-connect'; return; }
+    if (tokenResult.unavailable)  { clearTimeout(connectTimeout); state.value = 'unavailable'; return; }
+    token = tokenResult.token;
 
     statusMsg.value = 'Loading Spotify SDK…';
     await loadSDK();
@@ -422,13 +426,13 @@ onMounted(async () => {
       else           stopTicker();
     });
 
-    player.addListener('initialization_error', () => { state.value = 'needs-connect'; });
-    player.addListener('authentication_error',  () => { state.value = 'needs-connect'; });
-    player.addListener('account_error',         () => { state.value = 'needs-connect'; });
+    player.addListener('initialization_error', () => { clearTimeout(connectTimeout); state.value = 'unavailable'; });
+    player.addListener('authentication_error',  () => { clearTimeout(connectTimeout); state.value = 'unavailable'; });
+    player.addListener('account_error',         () => { clearTimeout(connectTimeout); state.value = 'needs-connect'; });
 
     await player.connect();
   } catch {
-    state.value = 'needs-connect';
+    state.value = 'unavailable';
   }
 });
 

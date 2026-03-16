@@ -157,8 +157,11 @@ const initYtPlayer = async (np) => {
   const videoId      = videoIdMatch?.[1] || videoIdMatch?.[2] || null;
   const startSecs    = Math.max(0, Math.floor((np.position || 0) / 1000));
 
+  // Treat as playlist if it has a list param, even if isPlaylist flag isn't set
+  const isList = !!(np.isPlaylist && listMatch) || (!videoId && !!listMatch);
+
   const playerVars = { autoplay: 1, start: startSecs };
-  if (np.isPlaylist && listMatch) {
+  if (isList && listMatch) {
     Object.assign(playerVars, {
       listType: 'playlist',
       list:     listMatch[1],
@@ -166,10 +169,13 @@ const initYtPlayer = async (np) => {
     });
   }
 
+  // Don't attempt player creation if we have neither a videoId nor a playlist
+  if (!isList && !videoId) return;
+
   mpYtPlayer = new YT.Player(mpYtId, {
     width: '100%',
     height: '180',
-    videoId: np.isPlaylist ? undefined : videoId,
+    videoId: isList ? undefined : videoId,
     playerVars,
     events: {
       onReady: () => {
