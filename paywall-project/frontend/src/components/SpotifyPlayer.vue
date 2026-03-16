@@ -80,6 +80,11 @@
         </div>
       </div>
 
+      <!-- ── Reconnect nudge (missing playlist scope) ────────────────────── -->
+      <div v-if="needsReconnect" class="sp-reconnect-banner">
+        ⚠ <a href="/profile">Reconnect Spotify</a> to enable playlist queue.
+      </div>
+
       <!-- ── Scrollable playlist track list ───────────────────────────────── -->
       <div v-if="isPlaylist && playlistTracks.length" class="sp-tracklist">
         <div class="sp-tracklist-header" @click="listOpen = !listOpen">
@@ -140,6 +145,7 @@ const track           = ref({ name: '', artist: '', album: '', art: '' });
 const currentTrackUri = ref('');
 const playlistTracks  = ref([]);
 const listOpen        = ref(props.defaultListOpen); // tracklist collapsed/expanded
+const needsReconnect  = ref(false); // true when old token is missing playlist scopes
 
 const progressBar = ref(null);
 const volTrack    = ref(null);
@@ -284,6 +290,11 @@ const fetchPlaylistTracks = async () => {
     const res = await fetch(`${API}/api/spotify/playlist/${m[1]}/tracks`, {
       headers: { Authorization: `Bearer ${jwt}` },
     });
+    if (res.status === 403) {
+      // Old OAuth token missing playlist scope — user must reconnect Spotify
+      needsReconnect.value = true;
+      return;
+    }
     if (!res.ok) return;
     const data = await res.json();
     playlistTracks.value = (data.items || [])
@@ -630,6 +641,14 @@ defineExpose({ position });
 .sp-vol-track:hover .sp-vol-fill  { background: #1ed760; }
 .sp-vol-track:hover .sp-vol-thumb { transform: translate(-50%, -50%) scale(1.2); }
 .sp-vol-pct { font-size: 0.75rem; color: #888; min-width: 30px; text-align: right; font-variant-numeric: tabular-nums; }
+
+/* ── Reconnect banner ── */
+.sp-reconnect-banner {
+  font-size: 0.78rem; color: #f59e0b; background: rgba(245,158,11,0.1);
+  border: 1px solid rgba(245,158,11,0.3); border-radius: 8px;
+  padding: 8px 12px; text-align: center;
+}
+.sp-reconnect-banner a { color: #1db954; font-weight: 700; text-decoration: underline; }
 
 /* ── Playlist track list ── */
 .sp-tracklist {

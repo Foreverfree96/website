@@ -4,6 +4,7 @@
     <!-- Popped out overlay -->
     <div v-if="isPoppedOut" class="embed-popped-static">
       <span>♫ Playing in mini player</span>
+      <button class="embed-popin-btn" @click="popIn()" title="Return to post">↙ Pop back in</button>
     </div>
 
     <template v-else>
@@ -56,7 +57,7 @@ const props = defineProps({
   embedType: { type: String, default: '' },
 });
 
-const { nowPlaying, popOut, lastPosition } = useNowPlaying();
+const { nowPlaying, popOut, lastPosition, popIn } = useNowPlaying();
 
 const active    = ref(false);
 const embedKey  = ref(0);
@@ -137,15 +138,21 @@ const onMessage = (e) => {
 onMounted(() => window.addEventListener('message', onMessage));
 onUnmounted(() => window.removeEventListener('message', onMessage));
 
-// When mini player closes, restore position in post embed
+// When mini player closes/pops back in, restore position in post embed
 watch(isPoppedOut, (isPopped, wasPopped) => {
-  if (wasPopped && !isPopped && props.embedType === 'youtube') {
+  if (!wasPopped || isPopped) return;
+
+  if (props.embedType === 'youtube') {
     const secs = Math.floor((lastPosition.value.position || 0) / 1000);
     if (secs > 0) {
       startFrom.value = secs;
       embedKey.value++;
-      active.value = true;
     }
+    active.value = true;
+  } else {
+    // Spotify, SoundCloud, Twitch, Apple Music — just re-activate the embed
+    embedKey.value++;
+    active.value = true;
   }
 });
 
@@ -269,12 +276,32 @@ const platformLabel = computed(() => ({ instagram: 'View on Instagram', tiktok: 
 .embed-popped-static {
   background: #121212;
   border-radius: 10px;
-  padding: 28px;
+  padding: 20px 28px;
   text-align: center;
   color: #1db954;
   font-weight: 700;
   font-size: 0.95rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
 }
+
+.embed-popin-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 18px;
+  border-radius: 24px;
+  border: 1.5px solid #1db954;
+  background: transparent;
+  color: #1db954;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, transform 0.1s;
+}
+.embed-popin-btn:hover { background: #1db954; color: #000; transform: scale(1.04); }
 
 /* Link card */
 .link-card {

@@ -20,7 +20,7 @@
             :mediaUrl="nowPlaying.url"
             :isPlaylist="nowPlaying.isPlaylist || false"
             :autoPlay="false"
-            :defaultListOpen="false"
+            :defaultListOpen="true"
           />
         </div>
 
@@ -53,12 +53,37 @@
             />
           </div>
 
-          <!-- YouTube playlist skip controls -->
-          <div v-if="playerReady && isYtPlaylist" class="mp-skip-bar">
-            <button class="mp-skip-btn" @click="skipSong(-1)" title="Previous">⏮</button>
-            <span class="mp-skip-label">Track {{ ytPlaylistIndex + 1 }}</span>
-            <button class="mp-skip-btn" @click="skipSong(1)" title="Next">⏭</button>
-          </div>
+          <!-- YouTube playlist skip controls + queue -->
+          <template v-if="playerReady && isYtPlaylist">
+            <div class="mp-skip-bar">
+              <button class="mp-skip-btn" @click="skipSong(-1)" title="Previous">⏮</button>
+              <span class="mp-skip-label">Track {{ ytPlaylistIndex + 1 }}{{ ytPlaylistLength ? ` / ${ytPlaylistLength}` : '' }}</span>
+              <button class="mp-skip-btn" @click="skipSong(1)" title="Next">⏭</button>
+            </div>
+
+            <!-- Up Next queue -->
+            <div v-if="ytPlaylistLength > 1" class="mp-queue">
+              <div class="mp-queue-header" @click="ytQueueOpen = !ytQueueOpen">
+                <span>Queue ({{ ytPlaylistLength }} tracks)</span>
+                <span class="mp-queue-arrow">{{ ytQueueOpen ? '▲' : '▼' }}</span>
+              </div>
+              <div v-show="ytQueueOpen" class="mp-queue-list">
+                <div
+                  v-for="i in ytPlaylistLength"
+                  :key="i - 1"
+                  class="mp-queue-row"
+                  :class="{ 'mp-queue-row--active': i - 1 === ytPlaylistIndex }"
+                  @click="jumpToTrack(i - 1)"
+                >
+                  <span class="mp-queue-num">{{ i }}</span>
+                  <span class="mp-queue-name">
+                    {{ i - 1 === ytPlaylistIndex && ytCurrentTitle ? ytCurrentTitle : `Track ${i}` }}
+                    <span v-if="i - 1 === ytPlaylistIndex" class="mp-queue-playing">▶</span>
+                  </span>
+                </div>
+              </div>
+            </div>
+          </template>
 
         </template>
 
@@ -84,7 +109,7 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useNowPlaying } from '../composables/useNowPlaying.js';
 import SpotifyPlayer from './SpotifyPlayer.vue';
 
-const { nowPlaying, close } = useNowPlaying();
+const { nowPlaying, close, popInRequested } = useNowPlaying();
 
 const expanded          = ref(false);
 const playerReady       = ref(false);
@@ -92,6 +117,9 @@ const iframeEl          = ref(null);
 const iframeKey         = ref(0);
 const ytTime            = ref(0);
 const ytPlaylistIndex   = ref(0);
+const ytPlaylistLength  = ref(0);
+const ytCurrentTitle    = ref('');
+const ytQueueOpen       = ref(false);
 const spotifyPlayerRef  = ref(null);
 
 const isSpotify   = computed(() => nowPlaying.value?.type === 'spotify');
@@ -102,12 +130,18 @@ const isYtPlaylist = computed(() =>
 // Reset when media changes or clears
 watch(nowPlaying, (np, old) => {
   if (!np) {
-    expanded.value    = false;
-    playerReady.value = false;
+    expanded.value        = false;
+    playerReady.value     = false;
+    ytPlaylistLength.value = 0;
+    ytCurrentTitle.value  = '';
+    ytQueueOpen.value     = false;
   } else if (old && (old.url !== np.url || old.type !== np.type)) {
-    playerReady.value   = false;
-    ytTime.value        = 0;
-    ytPlaylistIndex.value = np.playlistIndex || 0;
+    playerReady.value      = false;
+    ytTime.value           = 0;
+    ytPlaylistIndex.value  = np.playlistIndex || 0;
+    ytPlaylistLength.value = 0;
+    ytCurrentTitle.value   = '';
+    ytQueueOpen.value      = false;
   }
 });
 
@@ -120,7 +154,16 @@ const skipSong = (dir) => {
   );
 };
 
-// ── YouTube postMessage: position + playlist index tracking ───────────────────
+// ── Jump to a specific track index in the YT playlist ─────────────────────────
+const jumpToTrack = (index) => {
+  if (!iframeEl.value) return;
+  iframeEl.value.contentWindow?.postMessage(
+    JSON.stringify({ event: 'command', func: 'playVideoAt', args: [index] }),
+    '*'
+  );
+};
+
+// ── YouTube postMessage: position + playlist tracking ─────────────────────────
 const onIframeLoad = () => {
   if (nowPlaying.value?.type === 'youtube') {
     iframeEl.value?.contentWindow?.postMessage(JSON.stringify({ event: 'listening' }), '*');
@@ -132,8 +175,12 @@ const onMessage = (e) => {
   try {
     const d = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
     if (d.event === 'infoDelivery' && d.info) {
-      if (d.info.currentTime  != null) ytTime.value = d.info.currentTime;
-      if (d.info.playlistIndex != null) ytPlaylistIndex.value = d.info.playlistIndex;
+      if (d.info.currentTime   != null) ytTime.value           = d.info.currentTime;
+      if (d.info.playlistIndex != null) ytPlaylistIndex.value  = d.info.playlistIndex;
+      if (Array.isArray(d.info.playlist) && d.info.playlist.length > ytPlaylistLength.value) {
+        ytPlaylistLength.value = d.info.playlist.length;
+      }
+      if (d.info.videoData?.title) ytCurrentTitle.value = d.info.videoData.title;
     }
   } catch { /* ignore */ }
 };
@@ -141,7 +188,7 @@ const onMessage = (e) => {
 onMounted(() => window.addEventListener('message', onMessage));
 onUnmounted(() => window.removeEventListener('message', onMessage));
 
-const handleClose = () => {
+const savePositionAndClose = () => {
   if (nowPlaying.value?.type === 'youtube' && ytTime.value > 0) {
     nowPlaying.value = { ...nowPlaying.value, position: Math.floor(ytTime.value * 1000) };
   }
@@ -152,6 +199,15 @@ const handleClose = () => {
   expanded.value    = false;
   close();
 };
+
+const handleClose = savePositionAndClose;
+
+// "Pop back in" requested by the in-post embed button
+watch(popInRequested, (requested) => {
+  if (!requested) return;
+  popInRequested.value = false;
+  savePositionAndClose();
+});
 
 // ── Build embed URL (non-Spotify platforms only) ──────────────────────────────
 const embedUrl = computed(() => {
@@ -300,7 +356,7 @@ const previewLabel = computed(() => {
 .mp-spotify-wrap { overflow: hidden; }
 .mp-spotify-wrap :deep(.sp-wrap)          { margin-top: 0; }
 .mp-spotify-wrap :deep(.sp-card)          { border: none; border-radius: 0; padding: 14px; gap: 12px; }
-.mp-spotify-wrap :deep(.sp-tracklist)     { max-height: 180px; }
+.mp-spotify-wrap :deep(.sp-tracklist)     { max-height: 200px; }
 .mp-spotify-wrap :deep(.sp-brand)         { display: none; }
 .mp-spotify-wrap :deep(.sp-vol-track)     { width: 58px; min-width: 40px; }
 .mp-spotify-wrap :deep(.sp-vol-pct)       { display: none; }
@@ -365,8 +421,76 @@ const previewLabel = computed(() => {
   font-size: 0.78rem;
   font-weight: 700;
   color: #888;
-  min-width: 60px;
+  min-width: 70px;
   text-align: center;
+}
+
+/* ── YouTube Queue ── */
+.mp-queue {
+  border-top: 1px solid #2a2a2a;
+}
+.mp-queue-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px 6px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #555;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  user-select: none;
+  background: #121212;
+  position: sticky;
+  top: 0;
+}
+.mp-queue-header:hover { color: #aaa; }
+.mp-queue-arrow { font-size: 0.6rem; }
+
+.mp-queue-list {
+  max-height: 200px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #333 transparent;
+}
+.mp-queue-list::-webkit-scrollbar { width: 4px; }
+.mp-queue-list::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
+
+.mp-queue-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 14px;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.mp-queue-row:hover { background: #1a1a1a; }
+.mp-queue-row--active { background: #1a2e1a; }
+.mp-queue-row--active .mp-queue-name { color: #1db954; }
+
+.mp-queue-num {
+  font-size: 0.72rem;
+  color: #555;
+  min-width: 18px;
+  text-align: right;
+  flex-shrink: 0;
+}
+.mp-queue-name {
+  flex: 1;
+  font-size: 0.82rem;
+  color: #ccc;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.mp-queue-playing {
+  font-size: 0.6rem;
+  color: #1db954;
+  flex-shrink: 0;
 }
 
 /* ── Slide transition ── */

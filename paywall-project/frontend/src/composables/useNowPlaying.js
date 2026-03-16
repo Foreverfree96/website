@@ -7,6 +7,10 @@ const nowPlaying   = ref(null);
 // Saved when mini player closes so in-post player can resume from same spot
 const lastPosition = ref({ url: null, position: 0, playlistIndex: 0 });
 
+// Set to true by MediaEmbed "pop back in" button; MiniPlayer watches this,
+// saves current position, then calls close() so the post embed can resume.
+const popInRequested = ref(false);
+
 export function useNowPlaying() {
   const isActive = computed(() => !!nowPlaying.value);
 
@@ -26,5 +30,8 @@ export function useNowPlaying() {
     nowPlaying.value = null;
   };
 
-  return { nowPlaying, isActive, popOut, close, lastPosition };
+  // Called by the in-post "Pop back in" button — MiniPlayer handles the rest
+  const popIn = () => { popInRequested.value = true; };
+
+  return { nowPlaying, isActive, popOut, close, lastPosition, popIn, popInRequested };
 }
