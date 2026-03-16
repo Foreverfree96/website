@@ -2,7 +2,7 @@
   <div class="mp-root" v-if="nowPlaying">
 
     <transition name="mp-slide">
-      <div v-if="expanded" class="mp-panel">
+      <div v-show="expanded" class="mp-panel">
 
         <!-- Header -->
         <div class="mp-header">
