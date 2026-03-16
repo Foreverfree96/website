@@ -87,15 +87,29 @@ export const spotifyCallback = async (req, res) => {
       `${process.env.SPOTIFY_CLIENT_ID}:${process.env.SPOTIFY_CLIENT_SECRET}`
     ).toString("base64");
 
-    const tokenRes = await axios.post(
-      "https://accounts.spotify.com/api/token",
-      new URLSearchParams({
-        grant_type:   "authorization_code",
-        code,
-        redirect_uri: process.env.SPOTIFY_REDIRECT_URI,
-      }),
-      { headers: { Authorization: `Basic ${credentials}`, "Content-Type": "application/x-www-form-urlencoded" } }
-    );
+    // Retry once on invalid_grant — Render cold starts can cause the first
+    // attempt to fail if the instance wasn't warm when Spotify hit the callback.
+    let tokenRes;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        tokenRes = await axios.post(
+          "https://accounts.spotify.com/api/token",
+          new URLSearchParams({
+            grant_type:   "authorization_code",
+            code,
+            redirect_uri: process.env.SPOTIFY_REDIRECT_URI,
+          }),
+          { headers: { Authorization: `Basic ${credentials}`, "Content-Type": "application/x-www-form-urlencoded" } }
+        );
+        break;
+      } catch (e) {
+        if (attempt === 0 && e.response?.data?.error === "invalid_grant") {
+          await new Promise(r => setTimeout(r, 800));
+          continue;
+        }
+        throw e;
+      }
+    }
 
     const { access_token, refresh_token, expires_in } = tokenRes.data;
 
