@@ -251,7 +251,7 @@ const previewLabel = computed(() => {
 
 /* ── Embed ── */
 .mp-body { line-height: 0; }
-.mp-embed { width: 100%; height: 232px; border: none; display: block; }
+.mp-embed { width: 100%; height: 300px; border: none; display: block; }
 
 /* ── Slide transition ── */
 .mp-slide-enter-active, .mp-slide-leave-active { transition: opacity 0.22s ease, transform 0.22s ease; }

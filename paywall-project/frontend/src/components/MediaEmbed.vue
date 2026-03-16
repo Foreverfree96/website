@@ -158,13 +158,13 @@ const platformLabel = computed(() => {
 /* Default video height */
 .embed-iframe {
   width: 100%;
-  height: 360px;
+  height: 460px;
   border-radius: 10px;
   display: block;
   border: none;
 }
-.embed-iframe--audio    { height: 166px; }
-.embed-iframe--playlist { height: 460px; }
+.embed-iframe--audio    { height: 200px; }
+.embed-iframe--playlist { height: 560px; }
 
 /* Click-to-play guard */
 .embed-guard {
