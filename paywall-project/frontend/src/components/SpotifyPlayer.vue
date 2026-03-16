@@ -121,6 +121,7 @@
 
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 
 const props = defineProps({
   mediaUrl:        { type: String,  default: '' },
@@ -130,7 +131,9 @@ const props = defineProps({
   startPosition:   { type: Number,  default: 0     }, // ms — resume from this position
 });
 
-const API = import.meta.env.VITE_API_URL;
+const API    = import.meta.env.VITE_API_URL;
+const route  = useRoute();
+const router = useRouter();
 
 // ── Module-level token cache — persists across mounts/route changes ────────────
 // This prevents re-fetching the token every time the component mounts and
@@ -175,7 +178,8 @@ const embedUrl           = computed(() =>
 );
 const spotifyReconnectUrl = computed(() => {
   const jwt = localStorage.getItem('jwtToken');
-  return `${API}/api/spotify/login?token=${jwt}`;
+  const returnTo = encodeURIComponent(window.location.href);
+  return `${API}/api/spotify/login?token=${jwt}&returnTo=${returnTo}`;
 });
 
 // ── Auto-scroll active track into view when song changes ───────────────────────
@@ -522,10 +526,14 @@ onMounted(async () => {
       deviceId = device_id;
       clearTimeout(connectTimeout);
       state.value = 'ready';
-      console.log('[Spotify] Player ready | deviceId:', device_id, '| isPlaylist:', props.isPlaylist, '| mediaUrl:', props.mediaUrl);
-      // Fetch playlist tracks as soon as device is ready (works regardless of autoPlay)
-      if (props.isPlaylist) fetchPlaylistTracks();
-      else console.log('[Spotify] Skipping fetchPlaylistTracks — isPlaylist is false');
+
+      if (props.isPlaylist) {
+        // If returning from Spotify OAuth on this page, clean the URL first
+        if (route.query.spotify === 'connected') {
+          router.replace({ query: { ...route.query, spotify: undefined, premium: undefined } });
+        }
+        fetchPlaylistTracks();
+      }
       startPlayback(props.autoPlay).catch(() => {});
     });
 

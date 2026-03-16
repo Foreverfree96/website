@@ -79,9 +79,25 @@ const getValidToken = async (userId, requirePremium = true) => {
   return { accessToken, expiresAt };
 };
 
+// ─── HELPERS ──────────────────────────────────────────────────────────────────
+// Only redirect back to our own frontend domain to prevent open-redirect attacks
+const isSafeReturn = (url) => {
+  try {
+    const parsed   = new URL(url);
+    const frontend = new URL(process.env.FRONTEND_URL);
+    return parsed.hostname === frontend.hostname;
+  } catch { return false; }
+};
+
+const appendSpotifyParams = (baseUrl, params) => {
+  const u = new URL(baseUrl);
+  Object.entries(params).forEach(([k, v]) => u.searchParams.set(k, v));
+  return u.toString();
+};
+
 // ─── SPOTIFY LOGIN ────────────────────────────────────────────────────────────
 export const spotifyLogin = (req, res) => {
-  const { token } = req.query;
+  const { token, returnTo } = req.query;
   if (!token) return res.status(401).json({ message: "Not authenticated" });
 
   let userId;
@@ -92,12 +108,16 @@ export const spotifyLogin = (req, res) => {
     return res.status(401).json({ message: "Invalid token" });
   }
 
+  // Encode userId + safe returnTo URL in state so callback can redirect back
+  const safeReturn = returnTo && isSafeReturn(returnTo) ? returnTo : '';
+  const state = Buffer.from(JSON.stringify({ id: userId, ret: safeReturn })).toString('base64');
+
   const params = new URLSearchParams({
     response_type: "code",
     client_id:     process.env.SPOTIFY_CLIENT_ID,
     scope:         SCOPES,
     redirect_uri:  process.env.SPOTIFY_REDIRECT_URI,
-    state:         userId,
+    state,
     show_dialog:   "true",
   });
 
@@ -106,10 +126,23 @@ export const spotifyLogin = (req, res) => {
 
 // ─── SPOTIFY CALLBACK ─────────────────────────────────────────────────────────
 export const spotifyCallback = async (req, res) => {
-  const { code, state: userId, error } = req.query;
+  const { code, state: rawState, error } = req.query;
+
+  // Decode state — supports both new base64-JSON format and legacy plain userId
+  let userId, returnTo;
+  try {
+    const decoded = JSON.parse(Buffer.from(rawState, 'base64').toString('utf8'));
+    userId   = decoded.id;
+    returnTo = decoded.ret && isSafeReturn(decoded.ret) ? decoded.ret : '';
+  } catch {
+    userId   = rawState; // legacy: state was just the userId string
+    returnTo = '';
+  }
+
+  const fallback = `${process.env.FRONTEND_URL}/profile`;
 
   if (error || !code || !userId) {
-    return res.redirect(`${process.env.FRONTEND_URL}/profile?spotify=error`);
+    return res.redirect(appendSpotifyParams(returnTo || fallback, { spotify: 'error' }));
   }
 
   try {
@@ -159,10 +192,11 @@ export const spotifyCallback = async (req, res) => {
       spotifyTokenExpiry:  new Date(Date.now() + expires_in * 1000),
     });
 
-    res.redirect(`${process.env.FRONTEND_URL}/profile?spotify=connected&premium=${isPremium}`);
+    const dest = returnTo || fallback;
+    res.redirect(appendSpotifyParams(dest, { spotify: 'connected', premium: String(isPremium) }));
   } catch (err) {
     console.error("❌ Spotify OAuth error:", err.response?.data || err.message);
-    res.redirect(`${process.env.FRONTEND_URL}/profile?spotify=error`);
+    res.redirect(appendSpotifyParams(returnTo || fallback, { spotify: 'error' }));
   }
 };
 
