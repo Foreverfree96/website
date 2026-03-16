@@ -644,7 +644,8 @@ onMounted(() => {
 .comment-count--clickable:hover { background: #e5e7eb; border-color: #000; color: #000; }
 
 @media (hover: none) {
-  /* Touch devices — remove hover styles that can get stuck */
+  /* Touch devices — prevent hover states from getting stuck */
+  .like-btn:hover .like-icon { transform: none; }
   .like-count--clickable:hover .like-num { transform: none; }
   .comment-count--clickable:hover { background: #f3f4f6; border-color: #e5e7eb; color: inherit; }
 }
@@ -652,7 +653,7 @@ onMounted(() => {
 @media (max-width: 640px) {
   /* Bigger tap targets on mobile */
   .like-btn { padding: 8px 12px; font-size: 1.1rem; }
-  .like-count { padding: 8px 18px 8px 4px; font-size: 1rem; }
+  .like-count { padding: 8px 18px 8px 8px; font-size: 1rem; }
   .comment-count { padding: 8px 20px; font-size: 1rem; }
 }
 
