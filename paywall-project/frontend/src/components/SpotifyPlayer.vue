@@ -156,6 +156,7 @@ let deviceId       = null;
 let ticker         = null;
 let token          = null;
 let connectTimeout = null;
+let tokenRefresher = null; // background interval to keep token alive
 let prevVol  = 70;
 let firstStateReceived = false;
 
@@ -195,8 +196,8 @@ const fetchToken = async () => {
   const jwt = localStorage.getItem('jwtToken');
   if (!jwt) return { needsConnect: true };
 
-  // Return cached token if still valid (60 s safety buffer)
-  if (_tokenCache && Date.now() < _tokenCache.expiresAt - 60_000) {
+  // Return cached token if still valid (5 min safety buffer before real expiry)
+  if (_tokenCache && Date.now() < _tokenCache.expiresAt - 5 * 60 * 1000) {
     return { token: _tokenCache.token };
   }
 
@@ -206,8 +207,9 @@ const fetchToken = async () => {
   if (res.status === 403 || res.status === 404) return { needsConnect: true };
   if (!res.ok) return { unavailable: true };
   const data = await res.json();
-  // Spotify access tokens last 3600 s — cache for 50 min to be safe
-  _tokenCache = { token: data.accessToken, expiresAt: Date.now() + 50 * 60 * 1000 };
+  // Use server-provided expiry (backend already proactively refreshed if near-expiry)
+  const expiresAt = data.expiresAt ? new Date(data.expiresAt).getTime() : Date.now() + 55 * 60 * 1000;
+  _tokenCache = { token: data.accessToken, expiresAt };
   return { token: data.accessToken };
 };
 
@@ -283,32 +285,20 @@ const startPlayback = async (shouldPlay = true) => {
   await spotifyFetch('PUT', `/me/player/shuffle?state=false&device_id=${deviceId}`).catch(() => {});
 };
 
-// ── Fetch playlist tracks directly from Spotify using the SDK's active token ──
-// Uses the in-memory `token` so we always have the freshest token the SDK holds,
-// bypassing the backend-stored token which may be missing playlist scopes.
+// ── Fetch playlist tracks via backend proxy ────────────────────────────────────
+// Routes through the backend so we always use the server-stored token with the
+// full scope set, avoiding 403s from tokens missing playlist scopes.
 const fetchPlaylistTracks = async () => {
   const m = props.mediaUrl.match(/open\.spotify\.com\/playlist\/([a-zA-Z0-9]+)/);
-  console.log('[Spotify] fetchPlaylistTracks called', { url: props.mediaUrl, matched: !!m, hasToken: !!token });
-  if (!m) { console.warn('[Spotify] URL did not match playlist pattern:', props.mediaUrl); return; }
-  if (!token) { console.warn('[Spotify] No token available yet'); return; }
+  if (!m) return;
+  const jwt = localStorage.getItem('jwtToken');
+  if (!jwt) return;
   try {
-    const apiUrl = `https://api.spotify.com/v1/playlists/${m[1]}/tracks?limit=100`;
-    console.log('[Spotify] Fetching tracks from:', apiUrl, '| token prefix:', token.slice(0, 12) + '...');
-    const res = await fetch(apiUrl, { headers: { Authorization: `Bearer ${token}` } });
-    console.log('[Spotify] Tracks response status:', res.status);
-    if (res.status === 403) {
-      const body = await res.json().catch(() => ({}));
-      console.error('[Spotify] 403 Forbidden:', body);
-      needsReconnect.value = true;
-      return;
-    }
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      console.error('[Spotify] Tracks fetch failed:', res.status, body);
-      return;
-    }
+    const res = await fetch(`${API}/api/spotify/playlist/${m[1]}/tracks`, {
+      headers: { Authorization: `Bearer ${jwt}` },
+    });
+    if (!res.ok) return;
     const data = await res.json();
-    console.log('[Spotify] Raw items count:', data.items?.length, '| total:', data.total);
     const tracks = (data.items || [])
       .filter(item => item?.track?.uri)
       .map(item => ({
@@ -318,7 +308,6 @@ const fetchPlaylistTracks = async () => {
         duration: item.track.duration_ms || 0,
         art:      item.track.album?.images?.[0]?.url || '',
       }));
-    console.log('[Spotify] Parsed tracks:', tracks.length, tracks[0] || '(empty)');
     playlistTracks.value = tracks;
 
     // Pre-populate track display with first track so info shows before play
@@ -528,6 +517,13 @@ onMounted(async () => {
     });
 
     await player.connect();
+
+    // Refresh the token every 45 min so it never expires mid-session
+    tokenRefresher = setInterval(async () => {
+      _tokenCache = null; // force a real backend fetch
+      const result = await fetchToken();
+      if (result.token) token = result.token;
+    }, 45 * 60 * 1000);
   } catch {
     state.value = 'unavailable';
   }
@@ -535,6 +531,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   clearTimeout(connectTimeout);
+  clearInterval(tokenRefresher);
   stopTicker();
   player?.disconnect();
   player = null;

@@ -24,15 +24,16 @@ const refreshAccessToken = async (userId, refreshToken) => {
     { headers: { Authorization: `Basic ${credentials}`, "Content-Type": "application/x-www-form-urlencoded" } }
   );
 
-  const { access_token, expires_in } = res.data;
-  await User.findByIdAndUpdate(userId, {
-    spotifyAccessToken: access_token,
-    spotifyTokenExpiry: new Date(Date.now() + expires_in * 1000),
-  });
-  return access_token;
+  const { access_token, refresh_token: new_refresh_token, expires_in } = res.data;
+  const expiresAt = new Date(Date.now() + expires_in * 1000);
+  const update = { spotifyAccessToken: access_token, spotifyTokenExpiry: expiresAt };
+  // Spotify may rotate the refresh token — persist it if provided
+  if (new_refresh_token) update.spotifyRefreshToken = new_refresh_token;
+  await User.findByIdAndUpdate(userId, update);
+  return { accessToken: access_token, expiresAt };
 };
 
-// ─── SHARED HELPER: get valid access token (refresh if expired) ───────────────
+// ─── SHARED HELPER: get valid access token (refresh if expired or near-expiry) ─
 // requirePremium=true  → used for playback endpoints (SDK requires Premium)
 // requirePremium=false → used for non-playback endpoints like playlist tracks
 const getValidToken = async (userId, requirePremium = true) => {
@@ -43,10 +44,17 @@ const getValidToken = async (userId, requirePremium = true) => {
   if (requirePremium && !user.spotifyIsPremium) return { error: 403, message: "Spotify Premium required" };
 
   let accessToken = user.spotifyAccessToken;
-  if (!user.spotifyTokenExpiry || user.spotifyTokenExpiry < new Date()) {
-    accessToken = await refreshAccessToken(userId, user.spotifyRefreshToken);
+  let expiresAt   = user.spotifyTokenExpiry;
+
+  // Proactively refresh if expired or expiring within 5 minutes
+  const fiveMinFromNow = new Date(Date.now() + 5 * 60 * 1000);
+  if (!expiresAt || expiresAt < fiveMinFromNow) {
+    const refreshed = await refreshAccessToken(userId, user.spotifyRefreshToken);
+    accessToken = refreshed.accessToken;
+    expiresAt   = refreshed.expiresAt;
   }
-  return { accessToken };
+
+  return { accessToken, expiresAt };
 };
 
 // ─── SPOTIFY LOGIN ────────────────────────────────────────────────────────────
@@ -164,7 +172,7 @@ export const spotifyGetToken = async (req, res) => {
   try {
     const result = await getValidToken(req.user.id);
     if (result.error) return res.status(result.error).json({ message: result.message });
-    res.json({ accessToken: result.accessToken });
+    res.json({ accessToken: result.accessToken, expiresAt: result.expiresAt });
   } catch {
     res.status(500).json({ message: "Server error" });
   }
@@ -198,7 +206,7 @@ export const getPlaylistTracks = async (req, res) => {
     if (result.error) return res.status(result.error).json({ message: result.message });
 
     const response = await axios.get(
-      `https://api.spotify.com/v1/playlists/${req.params.id}/tracks?limit=50&fields=items(track(name,uri,duration_ms,artists(name)))`,
+      `https://api.spotify.com/v1/playlists/${req.params.id}/tracks?limit=100&fields=items(track(name,uri,duration_ms,artists(name),album(images)))`,
       { headers: { Authorization: `Bearer ${result.accessToken}` } }
     );
     res.json(response.data);
