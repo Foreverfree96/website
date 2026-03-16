@@ -223,25 +223,35 @@ export const spotifyShuffleOff = async (req, res) => {
 // never needs the playlist-read-private scope directly — the stored server-side
 // token (which has the full scope set) is used instead.
 export const getPlaylistTracks = async (req, res) => {
-  const url = `https://api.spotify.com/v1/playlists/${req.params.id}/tracks?limit=100&fields=items(track(name,uri,duration_ms,artists(name),album(images)))`;
+  const playlistId = req.params.id;
+  const url = `https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=100&fields=items(track(name%2Curi%2Cduration_ms%2Cartists(name)%2Calbum(images)))`;
   try {
-    // Try with user token first (works for private playlists they own)
-    const result = await getValidToken(req.user.id, false);
-    if (!result.error) {
+    // Try client credentials first — works for all public playlists with no user scope needed
+    let appToken;
+    try {
+      appToken = await getClientCredToken();
+    } catch (credErr) {
+      console.error("❌ Spotify client credentials failed:", credErr.response?.data || credErr.message);
+    }
+
+    if (appToken) {
       try {
-        const response = await axios.get(url, { headers: { Authorization: `Bearer ${result.accessToken}` } });
+        const response = await axios.get(url, { headers: { Authorization: `Bearer ${appToken}` } });
         return res.json(response.data);
       } catch (err) {
-        // 403 means token is missing playlist scopes — fall through to client credentials
+        console.error("❌ Spotify playlist fetch (client cred) failed:", err.response?.status, err.response?.data);
+        // 403 = private playlist — fall through to user token
         if (err.response?.status !== 403) throw err;
       }
     }
 
-    // Fallback: app-level client credentials token (works for all public playlists)
-    const appToken = await getClientCredToken();
-    const response = await axios.get(url, { headers: { Authorization: `Bearer ${appToken}` } });
+    // Fallback: user token (needed for private playlists the user owns)
+    const result = await getValidToken(req.user.id, false);
+    if (result.error) return res.status(result.error).json({ message: result.message });
+    const response = await axios.get(url, { headers: { Authorization: `Bearer ${result.accessToken}` } });
     res.json(response.data);
   } catch (err) {
+    console.error("❌ getPlaylistTracks final error:", err.response?.status, err.response?.data || err.message);
     const status = err.response?.status || 500;
     res.status(status).json({ message: err.response?.data?.error?.message || 'Failed to fetch tracks' });
   }
