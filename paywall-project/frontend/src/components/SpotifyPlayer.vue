@@ -181,28 +181,39 @@ const loadSDK = () => new Promise((resolve) => {
   }
 });
 
-// ── Start playback context (retries up to 4× on 404 while device registers) ──
+// ── Wait until our device appears in Spotify's Connect device list ────────────
+const waitForDevice = async (maxWaitMs = 10000) => {
+  const start = Date.now();
+  while (Date.now() - start < maxWaitMs) {
+    try {
+      const res = await spotifyFetch('GET', '/me/player/devices');
+      if (res.ok) {
+        const data = await res.json();
+        if ((data.devices || []).some(d => d.id === deviceId)) return true;
+      }
+    } catch { /* keep polling */ }
+    await new Promise(r => setTimeout(r, 600));
+  }
+  return false;
+};
+
+// ── Start playback context (waits for device to register, then plays) ─────────
 const startPlayback = async () => {
+  const found = await waitForDevice();
+  if (!found) return; // device never appeared — give up silently
+
   const uri     = getSpotifyUri(props.mediaUrl);
   const isTrack = uri?.startsWith('spotify:track:');
 
-  const attempt = async () => {
-    if (!uri) {
-      return spotifyFetch('PUT', '/me/player', { device_ids: [deviceId], play: false });
-    }
-    return spotifyFetch('PUT', `/me/player/play?device_id=${deviceId}`,
-      isTrack
-        ? { uris: [uri] }
-        : { context_uri: uri, offset: { position: 0 }, position_ms: 0 }
-    );
-  };
-
-  // Retry with back-off: 0ms → 700ms → 1400ms → 2100ms
-  for (let i = 0; i < 4; i++) {
-    if (i > 0) await new Promise(r => setTimeout(r, 700 * i));
-    const res = await attempt();
-    if (res.status !== 404) return; // success (or a non-404 error — stop retrying)
+  if (!uri) {
+    await spotifyFetch('PUT', '/me/player', { device_ids: [deviceId], play: false });
+    return;
   }
+  await spotifyFetch('PUT', `/me/player/play?device_id=${deviceId}`,
+    isTrack
+      ? { uris: [uri] }
+      : { context_uri: uri, offset: { position: 0 }, position_ms: 0 }
+  );
 };
 
 // ── Fetch playlist tracks from Spotify API ────────────────────────────────────
