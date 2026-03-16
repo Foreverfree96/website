@@ -545,6 +545,14 @@ onMounted(async () => {
     if (tokenResult.unavailable)  { clearTimeout(connectTimeout); state.value = 'unavailable'; return; }
     token = tokenResult.token;
 
+    // Load tracks as early as possible — in parallel with SDK connecting.
+    // Cache is applied immediately; API fetch runs in background.
+    if (props.isPlaylist) {
+      const cached = loadCachedTracks(props.mediaUrl);
+      if (cached?.length) { playlistTracks.value = cached; fullTracksFetched = true; }
+      fetchPlaylistTracks(); // background — doesn't block SDK init
+    }
+
     statusMsg.value = 'Loading Spotify SDK…';
     await loadSDK();
 
@@ -566,21 +574,9 @@ onMounted(async () => {
       clearTimeout(connectTimeout);
       state.value = 'ready';
 
-      if (props.isPlaylist) {
-        // Restore cached tracks immediately so the queue shows without waiting for API
-        const cached = loadCachedTracks(props.mediaUrl);
-        if (cached?.length) {
-          playlistTracks.value = cached;
-          fullTracksFetched = true;
-        }
-
-        // If returning from Spotify OAuth on this page, clean the URL first
-        if (route.query.spotify === 'connected') {
-          router.replace({ query: { ...route.query, spotify: undefined, premium: undefined } });
-        }
-
-        // Always try a fresh fetch in the background to pick up playlist changes
-        fetchPlaylistTracks();
+      // Clean OAuth query params if returning from Spotify reconnect
+      if (route.query.spotify === 'connected') {
+        router.replace({ query: { ...route.query, spotify: undefined, premium: undefined } });
       }
       startPlayback(props.autoPlay).catch(() => {});
     });
