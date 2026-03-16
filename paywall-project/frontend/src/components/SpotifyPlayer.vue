@@ -144,6 +144,33 @@ let _tokenCache = null; // { token, expiresAt }
 const _savedVol     = parseFloat(localStorage.getItem('sp_volume')  ?? '70');
 const _savedShuffle = localStorage.getItem('sp_shuffle') === 'true';
 
+// ── Playlist track cache helpers ───────────────────────────────────────────────
+const TRACK_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
+
+const _playlistCacheKey = (url) => {
+  const m = url.match(/open\.spotify\.com\/playlist\/([a-zA-Z0-9]+)/);
+  return m ? `sp_tracks_${m[1]}` : null;
+};
+
+const loadCachedTracks = (url) => {
+  try {
+    const key = _playlistCacheKey(url);
+    if (!key) return null;
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const { tracks, savedAt } = JSON.parse(raw);
+    if (Date.now() - savedAt > TRACK_CACHE_TTL) { localStorage.removeItem(key); return null; }
+    return tracks;
+  } catch { return null; }
+};
+
+const saveCachedTracks = (url, tracks) => {
+  try {
+    const key = _playlistCacheKey(url);
+    if (key) localStorage.setItem(key, JSON.stringify({ tracks, savedAt: Date.now() }));
+  } catch { /* localStorage full — ignore */ }
+};
+
 // ── State ──────────────────────────────────────────────────────────────────────
 const state           = ref('loading');
 const statusMsg       = ref('Connecting to Spotify…');
@@ -334,6 +361,7 @@ const fetchPlaylistTracks = async () => {
     if (!tracks.length) return false;
     playlistTracks.value = tracks;
     fullTracksFetched = true;
+    saveCachedTracks(props.mediaUrl, tracks);
     if (!currentTrackUri.value) {
       track.value = { name: tracks[0].name, artist: tracks[0].artist, album: '', art: tracks[0].art };
     }
@@ -539,10 +567,19 @@ onMounted(async () => {
       state.value = 'ready';
 
       if (props.isPlaylist) {
+        // Restore cached tracks immediately so the queue shows without waiting for API
+        const cached = loadCachedTracks(props.mediaUrl);
+        if (cached?.length) {
+          playlistTracks.value = cached;
+          fullTracksFetched = true;
+        }
+
         // If returning from Spotify OAuth on this page, clean the URL first
         if (route.query.spotify === 'connected') {
           router.replace({ query: { ...route.query, spotify: undefined, premium: undefined } });
         }
+
+        // Always try a fresh fetch in the background to pick up playlist changes
         fetchPlaylistTracks();
       }
       startPlayback(props.autoPlay).catch(() => {});
