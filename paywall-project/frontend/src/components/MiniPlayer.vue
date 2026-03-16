@@ -19,7 +19,7 @@
             ref="spotifyPlayerRef"
             :mediaUrl="nowPlaying.url"
             :isPlaylist="nowPlaying.isPlaylist || false"
-            :autoPlay="false"
+            :autoPlay="!!(nowPlaying.position > 0 || nowPlaying.resumeOnLoad)"
             :defaultListOpen="true"
             :startPosition="nowPlaying.position || 0"
           />
@@ -106,13 +106,14 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted, watchEffect } from 'vue';
 import { useNowPlaying } from '../composables/useNowPlaying.js';
 import SpotifyPlayer from './SpotifyPlayer.vue';
 
 const { nowPlaying, close, popInRequested } = useNowPlaying();
 
-const expanded          = ref(false);
+// Auto-expand and resume if there was something playing before the page refreshed
+const expanded          = ref(!!nowPlaying.value);
 const playerReady       = ref(false);
 const iframeEl          = ref(null);
 const iframeKey         = ref(0);
@@ -210,6 +211,21 @@ const onMessage = (e) => {
 
 onMounted(() => window.addEventListener('message', onMessage));
 onUnmounted(() => window.removeEventListener('message', onMessage));
+
+// Persist Spotify position every 5 s so page refresh can resume from same spot
+let positionSaver = null;
+watchEffect(() => {
+  clearInterval(positionSaver);
+  if (nowPlaying.value?.type === 'spotify' && spotifyPlayerRef.value) {
+    positionSaver = setInterval(() => {
+      const pos = spotifyPlayerRef.value?.position?.value;
+      if (pos > 0 && nowPlaying.value) {
+        nowPlaying.value = { ...nowPlaying.value, position: pos, resumeOnLoad: true };
+      }
+    }, 5000);
+  }
+});
+onUnmounted(() => clearInterval(positionSaver));
 
 const savePositionAndClose = () => {
   if (nowPlaying.value?.type === 'youtube' && ytTime.value > 0) {

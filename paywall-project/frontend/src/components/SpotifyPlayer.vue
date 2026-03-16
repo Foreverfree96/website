@@ -168,9 +168,10 @@ let deviceId       = null;
 let ticker         = null;
 let token          = null;
 let connectTimeout = null;
-let tokenRefresher = null; // background interval to keep token alive
-let prevVol  = 70;
+let tokenRefresher = null;
+let prevVol        = _savedVol;
 let firstStateReceived = false;
+let fullTracksFetched  = false; // true once the API returns the full 100-track list
 
 // ── Computed ───────────────────────────────────────────────────────────────────
 const progressPct        = computed(() =>
@@ -332,6 +333,7 @@ const fetchPlaylistTracks = async () => {
   const applyTracks = (tracks) => {
     if (!tracks.length) return false;
     playlistTracks.value = tracks;
+    fullTracksFetched = true;
     if (!currentTrackUri.value) {
       track.value = { name: tracks[0].name, artist: tracks[0].artist, album: '', art: tracks[0].art };
     }
@@ -571,9 +573,9 @@ onMounted(async () => {
         };
       }
 
-      // SDK track_window safety net — only used if the full playlist fetch hasn't
-      // returned yet (e.g. slow network). Replaced once the real fetch completes.
-      if (props.isPlaylist && s.track_window && playlistTracks.value.length === 0) {
+      // SDK track_window fallback — keeps the queue live until the full API fetch
+      // succeeds. Updates on every state change so navigation feels responsive.
+      if (props.isPlaylist && s.track_window && !fullTracksFetched) {
         const sdkTracks = [
           ...(s.track_window.previous_tracks || []),
           ...(t ? [t] : []),
