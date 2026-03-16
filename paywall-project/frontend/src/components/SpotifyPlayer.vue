@@ -291,7 +291,7 @@ const fetchPlaylistTracks = async () => {
   if (!m || !token) return;
   try {
     const res = await fetch(
-      `https://api.spotify.com/v1/playlists/${m[1]}/tracks?limit=50&fields=items(track(name,uri,duration_ms,artists(name),album(images)))`,
+      `https://api.spotify.com/v1/playlists/${m[1]}/tracks?limit=20`,
       { headers: { Authorization: `Bearer ${token}` } }
     );
     if (res.status === 403) { needsReconnect.value = true; return; }
@@ -300,10 +300,10 @@ const fetchPlaylistTracks = async () => {
     const tracks = (data.items || [])
       .filter(item => item?.track?.uri)
       .map(item => ({
-        name:     item.track.name,
+        name:     item.track.name     || '',
         uri:      item.track.uri,
         artist:   item.track.artists?.map(a => a.name).join(', ') || '',
-        duration: item.track.duration_ms,
+        duration: item.track.duration_ms || 0,
         art:      item.track.album?.images?.[0]?.url || '',
       }));
     playlistTracks.value = tracks;
@@ -504,7 +504,11 @@ onMounted(async () => {
 
     player.addListener('initialization_error', () => { clearTimeout(connectTimeout); state.value = 'unavailable'; });
     player.addListener('authentication_error',  () => { clearTimeout(connectTimeout); state.value = 'unavailable'; });
-    player.addListener('account_error',         () => { clearTimeout(connectTimeout); state.value = 'needs-connect'; });
+    // account_error fires when premium is absent OR token is stale — only act
+    // on it once so it doesn't keep resetting a player that was already ready.
+    player.addListener('account_error', () => {
+      if (state.value !== 'ready') { clearTimeout(connectTimeout); state.value = 'needs-connect'; }
+    });
 
     await player.connect();
   } catch {
