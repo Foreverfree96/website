@@ -30,7 +30,7 @@
       <iframe ref="scIframe" :key="`sc-${resetKey}`"
         :src="`https://w.soundcloud.com/player/?url=${encodeURIComponent(mediaUrl)}&color=%2314532d&auto_play=false&show_artwork=true&visual=true`"
         frameborder="0" :class="['embed-iframe', isPlaylist ? 'embed-iframe--playlist' : 'embed-iframe--audio']" />
-      <div v-if="guardActive" class="embed-guard" @click="activateEmbed" title="Click to play" />
+      <div v-if="guardActive" class="embed-guard" @click="onSCClick" title="Click to play" />
     </div>
 
     <!-- ── Spotify ─────────────────────────────────────────────────────────── -->
@@ -140,6 +140,12 @@ const activateEmbed = () => {
 const onSingleYtClick = () => {
   activateEmbed();
   ytSinglePlayer?.playVideo?.();
+};
+
+// Called when the guard over a SoundCloud embed is clicked
+const onSCClick = () => {
+  activateEmbed();
+  scWidget?.play?.();
 };
 
 // ── YouTube shuffle ────────────────────────────────────────────────────────────
