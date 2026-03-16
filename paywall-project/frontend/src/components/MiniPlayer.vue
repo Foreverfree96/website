@@ -16,9 +16,11 @@
         <!-- ── Spotify: use full SDK player ──────────────────────────────── -->
         <div v-if="isSpotify" class="mp-spotify-wrap">
           <SpotifyPlayer
+            ref="spotifyPlayerRef"
             :mediaUrl="nowPlaying.url"
             :isPlaylist="nowPlaying.isPlaylist || false"
             :autoPlay="false"
+            :defaultListOpen="false"
           />
         </div>
 
@@ -84,12 +86,13 @@ import SpotifyPlayer from './SpotifyPlayer.vue';
 
 const { nowPlaying, close } = useNowPlaying();
 
-const expanded        = ref(false);
-const playerReady     = ref(false);
-const iframeEl        = ref(null);
-const iframeKey       = ref(0);
-const ytTime          = ref(0);
-const ytPlaylistIndex = ref(0);
+const expanded          = ref(false);
+const playerReady       = ref(false);
+const iframeEl          = ref(null);
+const iframeKey         = ref(0);
+const ytTime            = ref(0);
+const ytPlaylistIndex   = ref(0);
+const spotifyPlayerRef  = ref(null);
 
 const isSpotify   = computed(() => nowPlaying.value?.type === 'spotify');
 const isYtPlaylist = computed(() =>
@@ -141,6 +144,9 @@ onUnmounted(() => window.removeEventListener('message', onMessage));
 const handleClose = () => {
   if (nowPlaying.value?.type === 'youtube' && ytTime.value > 0) {
     nowPlaying.value = { ...nowPlaying.value, position: Math.floor(ytTime.value * 1000) };
+  }
+  if (nowPlaying.value?.type === 'spotify' && spotifyPlayerRef.value?.position > 0) {
+    nowPlaying.value = { ...nowPlaying.value, position: spotifyPlayerRef.value.position };
   }
   playerReady.value = false;
   expanded.value    = false;

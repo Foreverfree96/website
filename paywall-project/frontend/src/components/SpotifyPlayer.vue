@@ -82,20 +82,25 @@
 
       <!-- ── Scrollable playlist track list ───────────────────────────────── -->
       <div v-if="isPlaylist && playlistTracks.length" class="sp-tracklist">
-        <div class="sp-tracklist-header">Queue</div>
-        <div
-          v-for="(t, i) in playlistTracks"
-          :key="t.uri"
-          class="sp-track-row"
-          :class="{ 'sp-track-row--active': t.uri === currentTrackUri }"
-          @click="playTrackFromList(t.uri)"
-        >
-          <span class="sp-track-row-num">{{ i + 1 }}</span>
-          <div class="sp-track-row-info">
-            <span class="sp-track-row-name">{{ t.name }}</span>
-            <span class="sp-track-row-artist">{{ t.artist }}</span>
+        <div class="sp-tracklist-header" @click="listOpen = !listOpen">
+          <span>Queue ({{ playlistTracks.length }})</span>
+          <span class="sp-tracklist-arrow">{{ listOpen ? '▲' : '▼' }}</span>
+        </div>
+        <div v-show="listOpen">
+          <div
+            v-for="(t, i) in playlistTracks"
+            :key="t.uri"
+            class="sp-track-row"
+            :class="{ 'sp-track-row--active': t.uri === currentTrackUri }"
+            @click="playTrackFromList(t.uri)"
+          >
+            <span class="sp-track-row-num">{{ i + 1 }}</span>
+            <div class="sp-track-row-info">
+              <span class="sp-track-row-name">{{ t.name }}</span>
+              <span class="sp-track-row-artist">{{ t.artist }}</span>
+            </div>
+            <span class="sp-track-row-dur">{{ fmtMs(t.duration) }}</span>
           </div>
-          <span class="sp-track-row-dur">{{ fmtMs(t.duration) }}</span>
         </div>
       </div>
 
@@ -109,9 +114,10 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 
 const props = defineProps({
-  mediaUrl:   { type: String,  default: '' },
-  isPlaylist: { type: Boolean, default: false },
-  autoPlay:   { type: Boolean, default: false },
+  mediaUrl:        { type: String,  default: '' },
+  isPlaylist:      { type: Boolean, default: false },
+  autoPlay:        { type: Boolean, default: false },
+  defaultListOpen: { type: Boolean, default: true  }, // false = tracklist starts collapsed
 });
 
 const API = import.meta.env.VITE_API_URL;
@@ -122,17 +128,18 @@ const API = import.meta.env.VITE_API_URL;
 let _tokenCache = null; // { token, expiresAt }
 
 // ── State ──────────────────────────────────────────────────────────────────────
-const state          = ref('loading');
-const statusMsg      = ref('Connecting to Spotify…');
-const paused         = ref(true);
-const position       = ref(0);
-const duration       = ref(0);
-const volume         = ref(70);
-const muted          = ref(false);
-const shuffleOn      = ref(false);
-const track          = ref({ name: '', artist: '', album: '', art: '' });
+const state           = ref('loading');
+const statusMsg       = ref('Connecting to Spotify…');
+const paused          = ref(true);
+const position        = ref(0);
+const duration        = ref(0);
+const volume          = ref(70);
+const muted           = ref(false);
+const shuffleOn       = ref(false);
+const track           = ref({ name: '', artist: '', album: '', art: '' });
 const currentTrackUri = ref('');
-const playlistTracks = ref([]);
+const playlistTracks  = ref([]);
+const listOpen        = ref(props.defaultListOpen); // tracklist collapsed/expanded
 
 const progressBar = ref(null);
 const volTrack    = ref(null);
@@ -239,17 +246,16 @@ const waitForDevice = async (maxWaitMs = 8000) => {
 };
 
 // ── Start playback context ─────────────────────────────────────────────────────
-// shouldPlay = true  → transfer device + begin playing the media URL context
-// shouldPlay = false → transfer device only; user clicks play to start
+// shouldPlay = false → do nothing; device is registered, user clicks play to load URL at pos 0
+// shouldPlay = true  → wait for device then play the specific media URL from position 0
 const startPlayback = async (shouldPlay = true) => {
+  // When not auto-playing, skip the transfer entirely so the device doesn't
+  // pull in whatever was last playing on Spotify — clicking play will always
+  // load the specific URL from position 0.
+  if (!shouldPlay) return;
+
   const found = await waitForDevice();
   if (!found) { state.value = 'needs-connect'; return; }
-
-  if (!shouldPlay) {
-    // Just make our device the active one without starting audio
-    await spotifyFetch('PUT', '/me/player', { device_ids: [deviceId], play: false });
-    return;
-  }
 
   const uri     = getSpotifyUri(props.mediaUrl);
   const isTrack = uri?.startsWith('spotify:track:');
@@ -260,7 +266,7 @@ const startPlayback = async (shouldPlay = true) => {
   }
   await spotifyFetch('PUT', `/me/player/play?device_id=${deviceId}`,
     isTrack
-      ? { uris: [uri] }
+      ? { uris: [uri], position_ms: 0 }
       : { context_uri: uri, offset: { position: 0 }, position_ms: 0 }
   );
 };
@@ -308,15 +314,26 @@ const stopTicker = () => { clearInterval(ticker); ticker = null; };
 
 // ── Controls ───────────────────────────────────────────────────────────────────
 const togglePlay = async () => {
-  // If no track is loaded yet (device transferred but not playing), start the context
-  if (paused.value && !currentTrackUri.value) {
+  // No track loaded yet — load the specific URL from position 0
+  if (!currentTrackUri.value) {
     await startPlayback(true);
   } else {
     player?.togglePlay();
   }
 };
-const nextTrack  = () => player?.nextTrack();
-const prevTrack  = () => player?.previousTrack();
+
+const nextTrack = () => player?.nextTrack();
+
+// ⏮ first press: restart current song; second press (when already at start): go to previous track
+const prevTrack = async () => {
+  if (position.value > 3000) {
+    // Restart current song via REST seek (more reliable than SDK previousTrack at >3s)
+    position.value = 0;
+    await spotifyFetch('PUT', `/me/player/seek?position_ms=0&device_id=${deviceId}`).catch(() => {});
+  } else {
+    player?.previousTrack();
+  }
+};
 
 const toggleShuffle = async () => {
   shuffleOn.value = !shuffleOn.value;
@@ -476,6 +493,9 @@ onUnmounted(() => {
   player?.disconnect();
   player = null;
 });
+
+// Expose position so parent (MiniPlayer) can save it before unmounting
+defineExpose({ position });
 </script>
 
 <style scoped>
@@ -618,6 +638,9 @@ onUnmounted(() => {
 .sp-tracklist::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
 
 .sp-tracklist-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   padding: 8px 12px 4px;
   font-size: 0.7rem;
   font-weight: 700;
@@ -627,7 +650,11 @@ onUnmounted(() => {
   position: sticky;
   top: 0;
   background: #121212;
+  cursor: pointer;
+  user-select: none;
 }
+.sp-tracklist-header:hover { color: #aaa; }
+.sp-tracklist-arrow { font-size: 0.6rem; }
 
 .sp-track-row {
   display: flex;

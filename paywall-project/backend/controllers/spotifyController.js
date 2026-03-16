@@ -8,6 +8,8 @@ const SCOPES = [
   "user-modify-playback-state",
   "user-read-playback-state",
   "streaming",
+  "playlist-read-private",
+  "playlist-read-collaborative",
 ].join(" ");
 
 // ─── SHARED HELPER: refresh access token ──────────────────────────────────────
