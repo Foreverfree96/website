@@ -86,11 +86,11 @@ const embedUrl = computed(() => {
     const videoId      = videoIdMatch?.[1] || videoIdMatch?.[2] || videoIdMatch?.[3] || null;
     const start        = startFrom.value > 0 ? `&start=${startFrom.value}` : '';
     if (listMatch && (isPlaylist.value || !videoId))
-      return `https://www.youtube.com/embed/videoseries?list=${listMatch[1]}&autoplay=1&enablejsapi=1`;
+      return `https://www.youtube.com/embed/videoseries?list=${listMatch[1]}&enablejsapi=1`;
     if (videoId && listMatch)
-      return `https://www.youtube.com/embed/${videoId}?list=${listMatch[1]}&autoplay=1&enablejsapi=1${start}`;
+      return `https://www.youtube.com/embed/${videoId}?list=${listMatch[1]}&enablejsapi=1${start}`;
     if (videoId)
-      return `https://www.youtube.com/embed/${videoId}?autoplay=1&enablejsapi=1${start}`;
+      return `https://www.youtube.com/embed/${videoId}?enablejsapi=1${start}`;
     return '';
   }
 

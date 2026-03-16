@@ -13,38 +13,52 @@
           </div>
         </div>
 
-        <!-- Preview -->
-        <div v-if="!playerReady" class="mp-preview">
-          <div class="mp-preview-thumb-wrap">
-            <img v-if="previewThumb" :src="previewThumb" class="mp-preview-thumb" />
-            <div v-else class="mp-preview-icon">{{ previewIcon }}</div>
-          </div>
-          <div class="mp-preview-meta">
-            <span class="mp-preview-type">{{ previewLabel }}</span>
-          </div>
-          <button class="mp-preview-play" @click="playerReady = true">▶ Play</button>
-        </div>
-
-        <!-- Embed player -->
-        <div v-if="playerReady" class="mp-body" :class="{ 'mp-body--spotify': nowPlaying.type === 'spotify' }">
-          <iframe
-            :key="iframeKey"
-            ref="iframeEl"
-            :src="embedUrl"
-            frameborder="0"
-            class="mp-embed"
-            allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
-            allowfullscreen
-            @load="onIframeLoad"
+        <!-- ── Spotify: use full SDK player ──────────────────────────────── -->
+        <div v-if="isSpotify" class="mp-spotify-wrap">
+          <SpotifyPlayer
+            :mediaUrl="nowPlaying.url"
+            :isPlaylist="nowPlaying.isPlaylist || false"
+            :autoPlay="true"
           />
         </div>
 
-        <!-- YouTube playlist skip controls -->
-        <div v-if="playerReady && isYtPlaylist" class="mp-skip-bar">
-          <button class="mp-skip-btn" @click="skipSong(-1)" title="Previous song">⏮</button>
-          <span class="mp-skip-label">Track {{ (nowPlaying.playlistIndex || 0) + 1 }}</span>
-          <button class="mp-skip-btn" @click="skipSong(1)" title="Next song">⏭</button>
-        </div>
+        <!-- ── All other platforms: preview → iframe ─────────────────────── -->
+        <template v-else>
+
+          <!-- Preview card -->
+          <div v-if="!playerReady" class="mp-preview">
+            <div class="mp-preview-thumb-wrap">
+              <img v-if="previewThumb" :src="previewThumb" class="mp-preview-thumb" />
+              <div v-else class="mp-preview-icon">{{ previewIcon }}</div>
+            </div>
+            <div class="mp-preview-meta">
+              <span class="mp-preview-type">{{ previewLabel }}</span>
+            </div>
+            <button class="mp-preview-play" @click="playerReady = true">▶ Play</button>
+          </div>
+
+          <!-- Embed iframe -->
+          <div v-else class="mp-body">
+            <iframe
+              :key="iframeKey"
+              ref="iframeEl"
+              :src="embedUrl"
+              frameborder="0"
+              class="mp-embed"
+              allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
+              allowfullscreen
+              @load="onIframeLoad"
+            />
+          </div>
+
+          <!-- YouTube playlist skip controls -->
+          <div v-if="playerReady && isYtPlaylist" class="mp-skip-bar">
+            <button class="mp-skip-btn" @click="skipSong(-1)" title="Previous">⏮</button>
+            <span class="mp-skip-label">Track {{ ytPlaylistIndex + 1 }}</span>
+            <button class="mp-skip-btn" @click="skipSong(1)" title="Next">⏭</button>
+          </div>
+
+        </template>
 
       </div>
     </transition>
@@ -66,26 +80,21 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useNowPlaying } from '../composables/useNowPlaying.js';
+import SpotifyPlayer from './SpotifyPlayer.vue';
 
 const { nowPlaying, close } = useNowPlaying();
 
-const expanded    = ref(false);
-const playerReady = ref(false);
-const iframeEl    = ref(null);
-const ytTime      = ref(0);
-const iframeKey   = ref(0);
+const expanded        = ref(false);
+const playerReady     = ref(false);
+const iframeEl        = ref(null);
+const iframeKey       = ref(0);
+const ytTime          = ref(0);
+const ytPlaylistIndex = ref(0);
 
+const isSpotify   = computed(() => nowPlaying.value?.type === 'spotify');
 const isYtPlaylist = computed(() =>
   nowPlaying.value?.type === 'youtube' && nowPlaying.value?.isPlaylist
 );
-
-const skipSong = (dir) => {
-  if (!nowPlaying.value) return;
-  const idx = Math.max(0, (nowPlaying.value.playlistIndex || 0) + dir);
-  nowPlaying.value = { ...nowPlaying.value, playlistIndex: idx, position: 0 };
-  ytTime.value = 0;
-  iframeKey.value++;
-};
 
 // Reset when media changes or clears
 watch(nowPlaying, (np, old) => {
@@ -93,11 +102,22 @@ watch(nowPlaying, (np, old) => {
     expanded.value    = false;
     playerReady.value = false;
   } else if (old && (old.url !== np.url || old.type !== np.type)) {
-    playerReady.value = false;
+    playerReady.value   = false;
+    ytTime.value        = 0;
+    ytPlaylistIndex.value = np.playlistIndex || 0;
   }
 });
 
-// ── YouTube postMessage position tracking ─────────────────────────────────────
+// ── YouTube skip via postMessage API ──────────────────────────────────────────
+const skipSong = (dir) => {
+  if (!iframeEl.value) return;
+  iframeEl.value.contentWindow?.postMessage(
+    JSON.stringify({ event: 'command', func: dir > 0 ? 'nextVideo' : 'previousVideo', args: [] }),
+    '*'
+  );
+};
+
+// ── YouTube postMessage: position + playlist index tracking ───────────────────
 const onIframeLoad = () => {
   if (nowPlaying.value?.type === 'youtube') {
     iframeEl.value?.contentWindow?.postMessage(JSON.stringify({ event: 'listening' }), '*');
@@ -108,8 +128,9 @@ const onMessage = (e) => {
   if (!iframeEl.value || e.source !== iframeEl.value.contentWindow) return;
   try {
     const d = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
-    if (d.event === 'infoDelivery' && d.info?.currentTime != null) {
-      ytTime.value = d.info.currentTime;
+    if (d.event === 'infoDelivery' && d.info) {
+      if (d.info.currentTime  != null) ytTime.value = d.info.currentTime;
+      if (d.info.playlistIndex != null) ytPlaylistIndex.value = d.info.playlistIndex;
     }
   } catch { /* ignore */ }
 };
@@ -118,7 +139,6 @@ onMounted(() => window.addEventListener('message', onMessage));
 onUnmounted(() => window.removeEventListener('message', onMessage));
 
 const handleClose = () => {
-  // Save YouTube position to lastPosition before closing
   if (nowPlaying.value?.type === 'youtube' && ytTime.value > 0) {
     nowPlaying.value = { ...nowPlaying.value, position: Math.floor(ytTime.value * 1000) };
   }
@@ -127,7 +147,7 @@ const handleClose = () => {
   close();
 };
 
-// ── Build embed URL for each platform ────────────────────────────────────────
+// ── Build embed URL (non-Spotify platforms only) ──────────────────────────────
 const embedUrl = computed(() => {
   const np = nowPlaying.value;
   if (!np) return '';
@@ -145,12 +165,6 @@ const embedUrl = computed(() => {
       return `https://www.youtube.com/embed/${videoId}?autoplay=1&start=${startSecs}&enablejsapi=1`;
     }
     return '';
-  }
-
-  if (type === 'spotify') {
-    const m = url.match(/open\.spotify\.com\/(track|playlist|album|artist)\/([a-zA-Z0-9]+)/);
-    if (!m) return '';
-    return `https://open.spotify.com/embed/${m[1]}/${m[2]}?utm_source=generator&autoplay=1`;
   }
 
   if (type === 'soundcloud') {
@@ -184,14 +198,14 @@ const previewThumb = computed(() => {
 });
 
 const previewIcon = computed(() => {
-  const icons = { spotify: '🎵', youtube: '▶', soundcloud: '☁', twitch: '📺', applemusic: '🎵' };
+  const icons = { youtube: '▶', soundcloud: '☁', twitch: '📺', applemusic: '🎵' };
   return icons[nowPlaying.value?.type] || '♫';
 });
 
 const previewLabel = computed(() => {
   const np = nowPlaying.value;
   if (!np) return '';
-  const labels = { spotify: 'Spotify', youtube: 'YouTube', soundcloud: 'SoundCloud', twitch: 'Twitch', applemusic: 'Apple Music' };
+  const labels = { youtube: 'YouTube', soundcloud: 'SoundCloud', twitch: 'Twitch', applemusic: 'Apple Music' };
   const platform = labels[np.type] || np.type;
   return np.isPlaylist ? `${platform} Playlist` : platform;
 });
@@ -273,6 +287,17 @@ const previewLabel = computed(() => {
 .mp-hbtn:hover { background: #3a3a3a; color: #fff; }
 .mp-hbtn--close:hover { background: #e11d48; color: #fff; }
 
+/* ── Spotify SDK wrapper ── */
+.mp-spotify-wrap { overflow: hidden; }
+.mp-spotify-wrap :deep(.sp-wrap)       { margin-top: 0; }
+.mp-spotify-wrap :deep(.sp-card)       { border: none; border-radius: 0; padding: 14px; gap: 12px; }
+.mp-spotify-wrap :deep(.sp-tracklist)  { display: none; }
+.mp-spotify-wrap :deep(.sp-brand)      { display: none; }
+.mp-spotify-wrap :deep(.sp-vol-track)  { width: 58px; min-width: 40px; }
+.mp-spotify-wrap :deep(.sp-vol-pct)    { display: none; }
+.mp-spotify-wrap :deep(.sp-art)        { width: 56px; height: 56px; }
+.mp-spotify-wrap :deep(.sp-iframe)     { border-radius: 0; }
+
 /* ── Preview ── */
 .mp-preview {
   display: flex;
@@ -301,7 +326,6 @@ const previewLabel = computed(() => {
 /* ── Embed ── */
 .mp-body { line-height: 0; }
 .mp-embed { width: 100%; height: 300px; border: none; display: block; }
-.mp-body--spotify .mp-embed { height: 420px; }
 
 /* ── Skip bar (YouTube playlists) ── */
 .mp-skip-bar {
