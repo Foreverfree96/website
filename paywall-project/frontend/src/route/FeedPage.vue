@@ -723,9 +723,11 @@ onMounted(() => {
   width: 100%;
   max-width: 380px;
   max-height: 70vh;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 14px;
+  overflow: hidden;
 }
 .modal-header {
   display: flex;
@@ -737,12 +739,14 @@ onMounted(() => {
   background: none; border: none; font-size: 1.2rem; cursor: pointer;
 }
 .modal-empty { color: #555; font-size: 0.95rem; }
-.modal-list { overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+.modal-list { overflow-y: auto; flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 6px; }
 .modal-user {
   padding: 10px 14px;
+  background: #000;
   border: 2px solid #000;
   border-radius: 8px;
   font-weight: 600;
+  color: pink;
   cursor: pointer;
   transition: transform 0.15s, color 0.15s;
 }
