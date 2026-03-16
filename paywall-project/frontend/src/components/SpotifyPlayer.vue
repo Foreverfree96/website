@@ -82,7 +82,11 @@
 
       <!-- ── Reconnect nudge (missing playlist scope) ────────────────────── -->
       <div v-if="needsReconnect" class="sp-reconnect-banner">
-        ⚠ Queue unavailable — <a :href="spotifyReconnectUrl">Reconnect Spotify</a> to fix (one-time).
+        <span>⚠ Queue unavailable — <a :href="spotifyReconnectUrl">Reconnect Spotify</a> to fix (one-time).</span>
+        <div class="sp-reconnect-actions">
+          <button class="sp-reconnect-retry" @click="retryPlaylistFetch" title="Retry">↺ Retry</button>
+          <button class="sp-reconnect-dismiss" @click="needsReconnect = false" title="Dismiss">✕</button>
+        </div>
       </div>
 
       <!-- ── Scrollable playlist track list ───────────────────────────────── -->
@@ -357,6 +361,15 @@ const fetchPlaylistTracks = async () => {
   // Both paths returned 403 — playlist is private and token lacks playlist-read-private scope.
   // User needs to reconnect Spotify to re-authorize with the full scope set.
   needsReconnect.value = true;
+};
+
+// ── Retry fetching playlist after reconnect ────────────────────────────────────
+const retryPlaylistFetch = async () => {
+  needsReconnect.value = false;
+  _tokenCache = null; // force fresh token from backend
+  const result = await fetchToken();
+  if (result.token) token = result.token;
+  await fetchPlaylistTracks();
 };
 
 // ── Play a specific track from the queue list ─────────────────────────────────
@@ -726,9 +739,20 @@ defineExpose({ position });
 .sp-reconnect-banner {
   font-size: 0.78rem; color: #f59e0b; background: rgba(245,158,11,0.1);
   border: 1px solid rgba(245,158,11,0.3); border-radius: 8px;
-  padding: 8px 12px; text-align: center;
+  padding: 8px 12px;
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
 }
 .sp-reconnect-banner a { color: #1db954; font-weight: 700; text-decoration: underline; }
+.sp-reconnect-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.sp-reconnect-retry, .sp-reconnect-dismiss {
+  background: none; border: 1px solid; border-radius: 6px;
+  font-size: 0.72rem; cursor: pointer; padding: 2px 7px; line-height: 1.6;
+  transition: background 0.15s, color 0.15s;
+}
+.sp-reconnect-retry   { color: #1db954; border-color: #1db954; }
+.sp-reconnect-retry:hover { background: #1db954; color: #000; }
+.sp-reconnect-dismiss { color: #f59e0b; border-color: rgba(245,158,11,0.4); }
+.sp-reconnect-dismiss:hover { background: rgba(245,158,11,0.2); }
 
 /* ── Playlist track list ── */
 .sp-tracklist {
