@@ -18,7 +18,7 @@
     <!-- ── Player ───────────────────────────────────────────────────────────── -->
     <div v-else class="sp-card">
 
-      <!-- Album art + track info -->
+      <!-- Album art + track info + open link -->
       <div class="sp-top">
         <div class="sp-art-wrap">
           <img v-if="track.art" :src="track.art" class="sp-art" />
@@ -50,26 +50,17 @@
         </div>
       </div>
 
-      <!-- Controls row -->
+      <!-- Controls -->
       <div class="sp-controls">
-        <!-- Shuffle -->
         <button class="sp-btn sp-btn--shuffle" :class="{ 'sp-btn--shuffle-on': shuffleOn }"
-          @click="toggleShuffle" title="Shuffle">
-          🔀
-        </button>
-
+          @click="toggleShuffle" title="Shuffle">🔀</button>
         <button class="sp-btn sp-btn--skip" @click="prevTrack" title="Previous">⏮</button>
-
         <button class="sp-btn sp-btn--play" @click="togglePlay" :title="paused ? 'Play' : 'Pause'">
           {{ paused ? '▶' : '⏸' }}
         </button>
-
         <button class="sp-btn sp-btn--skip" @click="nextTrack" title="Next">⏭</button>
-
-        <!-- Volume -->
         <div class="sp-volume-wrap">
-          <button class="sp-btn sp-vol-icon" @click="toggleMute"
-            :title="muted ? 'Unmute' : 'Mute'">
+          <button class="sp-btn sp-vol-icon" @click="toggleMute" :title="muted ? 'Unmute' : 'Mute'">
             {{ muted || displayVolume === 0 ? '🔇' : displayVolume < 50 ? '🔉' : '🔊' }}
           </button>
           <div class="sp-vol-track" ref="volTrack"
@@ -78,6 +69,25 @@
             <div class="sp-vol-thumb" :style="{ left: displayVolume + '%' }"></div>
           </div>
           <span class="sp-vol-pct">{{ displayVolume }}%</span>
+        </div>
+      </div>
+
+      <!-- ── Scrollable playlist track list ───────────────────────────────── -->
+      <div v-if="isPlaylist && playlistTracks.length" class="sp-tracklist">
+        <div class="sp-tracklist-header">Queue</div>
+        <div
+          v-for="(t, i) in playlistTracks"
+          :key="t.uri"
+          class="sp-track-row"
+          :class="{ 'sp-track-row--active': t.uri === currentTrackUri }"
+          @click="playTrackFromList(t.uri)"
+        >
+          <span class="sp-track-row-num">{{ i + 1 }}</span>
+          <div class="sp-track-row-info">
+            <span class="sp-track-row-name">{{ t.name }}</span>
+            <span class="sp-track-row-artist">{{ t.artist }}</span>
+          </div>
+          <span class="sp-track-row-dur">{{ fmtMs(t.duration) }}</span>
         </div>
       </div>
 
@@ -91,22 +101,25 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 
 const props = defineProps({
-  mediaUrl:   { type: String, default: '' },
+  mediaUrl:   { type: String,  default: '' },
   isPlaylist: { type: Boolean, default: false },
+  autoPlay:   { type: Boolean, default: false }, // false = load paused (page embeds), true = play immediately (mini player)
 });
 
 const API = import.meta.env.VITE_API_URL;
 
 // ── State ──────────────────────────────────────────────────────────────────────
-const state     = ref('loading');
-const statusMsg = ref('Connecting to Spotify…');
-const paused    = ref(true);
-const position  = ref(0);
-const duration  = ref(0);
-const volume    = ref(70);   // 0-100
-const muted     = ref(false);
-const shuffleOn = ref(false);
-const track     = ref({ name: '', artist: '', album: '', art: '' });
+const state          = ref('loading');
+const statusMsg      = ref('Connecting to Spotify…');
+const paused         = ref(true);
+const position       = ref(0);
+const duration       = ref(0);
+const volume         = ref(70);
+const muted          = ref(false);
+const shuffleOn      = ref(false);
+const track          = ref({ name: '', artist: '', album: '', art: '' });
+const currentTrackUri = ref('');
+const playlistTracks = ref([]);
 
 const progressBar = ref(null);
 const volTrack    = ref(null);
@@ -116,14 +129,14 @@ let deviceId = null;
 let ticker   = null;
 let token    = null;
 let prevVol  = 70;
+let firstStateReceived = false;
 
 // ── Computed ───────────────────────────────────────────────────────────────────
-const progressPct  = computed(() =>
+const progressPct   = computed(() =>
   duration.value > 0 ? Math.min(100, (position.value / duration.value) * 100) : 0
 );
 const displayVolume = computed(() => muted.value ? 0 : volume.value);
-
-const embedUrl = computed(() =>
+const embedUrl      = computed(() =>
   props.mediaUrl.replace('open.spotify.com/', 'open.spotify.com/embed/')
 );
 
@@ -168,27 +181,59 @@ const loadSDK = () => new Promise((resolve) => {
   }
 });
 
-// ── Start playback ─────────────────────────────────────────────────────────────
-// device_id in query param implicitly transfers playback — avoids the separate
-// PUT /me/player call that 404s on fresh SDK sessions.
-// We do NOT auto-pause here; player_state_changed fires once the playlist/track
-// is resolved, which populates track info before we show the UI.
+// ── Start playback context (retries up to 4× on 404 while device registers) ──
 const startPlayback = async () => {
-  const uri = getSpotifyUri(props.mediaUrl);
-  if (uri) {
-    const isTrack = uri.startsWith('spotify:track:');
-    await spotifyFetch(
-      'PUT',
-      `/me/player/play?device_id=${deviceId}`,
+  const uri     = getSpotifyUri(props.mediaUrl);
+  const isTrack = uri?.startsWith('spotify:track:');
+
+  const attempt = async () => {
+    if (!uri) {
+      return spotifyFetch('PUT', '/me/player', { device_ids: [deviceId], play: false });
+    }
+    return spotifyFetch('PUT', `/me/player/play?device_id=${deviceId}`,
       isTrack
         ? { uris: [uri] }
         : { context_uri: uri, offset: { position: 0 }, position_ms: 0 }
     );
-  } else {
-    await spotifyFetch('PUT', '/me/player', { device_ids: [deviceId], play: false });
+  };
+
+  // Retry with back-off: 0ms → 700ms → 1400ms → 2100ms
+  for (let i = 0; i < 4; i++) {
+    if (i > 0) await new Promise(r => setTimeout(r, 700 * i));
+    const res = await attempt();
+    if (res.status !== 404) return; // success (or a non-404 error — stop retrying)
   }
-  // Shuffle state is synced via player_state_changed — no need to force it here
-  // (the immediate call 404s while Spotify is still registering the device)
+};
+
+// ── Fetch playlist tracks from Spotify API ────────────────────────────────────
+const fetchPlaylistTracks = async () => {
+  const m = props.mediaUrl.match(/open\.spotify\.com\/playlist\/([a-zA-Z0-9]+)/);
+  if (!m) return;
+  try {
+    const res = await spotifyFetch('GET',
+      `/playlists/${m[1]}/tracks?limit=50&fields=items(track(name,uri,duration_ms,artists(name)))`
+    );
+    if (!res.ok) return;
+    const data = await res.json();
+    playlistTracks.value = (data.items || [])
+      .filter(item => item?.track?.uri)
+      .map(item => ({
+        name:     item.track.name,
+        uri:      item.track.uri,
+        artist:   item.track.artists?.map(a => a.name).join(', ') || '',
+        duration: item.track.duration_ms,
+      }));
+  } catch { /* non-fatal */ }
+};
+
+// ── Play a specific track from the queue list ─────────────────────────────────
+const playTrackFromList = async (uri) => {
+  const contextUri = getSpotifyUri(props.mediaUrl);
+  await spotifyFetch('PUT', `/me/player/play?device_id=${deviceId}`,
+    contextUri
+      ? { context_uri: contextUri, offset: { uri }, position_ms: 0 }
+      : { uris: [uri] }
+  );
 };
 
 // ── Ticker ─────────────────────────────────────────────────────────────────────
@@ -208,17 +253,13 @@ const prevTrack  = () => player?.previousTrack();
 
 const toggleShuffle = async () => {
   shuffleOn.value = !shuffleOn.value;
-  await spotifyFetch('PUT', `/me/player/shuffle?state=${shuffleOn.value}`);
+  await spotifyFetch('PUT', `/me/player/shuffle?state=${shuffleOn.value}&device_id=${deviceId}`).catch(() => {});
 };
 
 const toggleMute = () => {
   muted.value = !muted.value;
-  if (muted.value) {
-    prevVol = volume.value;
-    player?.setVolume(0);
-  } else {
-    player?.setVolume(prevVol / 100);
-  }
+  if (muted.value) { prevVol = volume.value; player?.setVolume(0); }
+  else             { player?.setVolume(prevVol / 100); }
 };
 
 const applyVolume = (val) => {
@@ -227,20 +268,17 @@ const applyVolume = (val) => {
   player?.setVolume(volume.value / 100);
 };
 
-// ── Progress scrubbing (mouse + touch) ────────────────────────────────────────
+// ── Progress scrubbing ────────────────────────────────────────────────────────
 const startScrub = (e) => {
   e.preventDefault();
   const bar = progressBar.value;
   if (!bar) return;
-
-  const doScrub = (clientX) => {
+  const doScrub = (x) => {
     const rect = bar.getBoundingClientRect();
-    const pct  = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-    const ms   = Math.floor(pct * duration.value);
-    position.value = ms;
-    player?.seek(ms);
+    const pct  = Math.max(0, Math.min(1, (x - rect.left) / rect.width));
+    position.value = Math.floor(pct * duration.value);
+    player?.seek(position.value);
   };
-
   const onMove = (ev) => doScrub(ev.touches ? ev.touches[0].clientX : ev.clientX);
   const onUp   = (ev) => {
     doScrub(ev.changedTouches ? ev.changedTouches[0].clientX : ev.clientX);
@@ -249,7 +287,6 @@ const startScrub = (e) => {
     window.removeEventListener('touchmove', onMove);
     window.removeEventListener('touchend',  onUp);
   };
-
   doScrub(e.touches ? e.touches[0].clientX : e.clientX);
   window.addEventListener('mousemove', onMove);
   window.addEventListener('mouseup',   onUp);
@@ -257,18 +294,15 @@ const startScrub = (e) => {
   window.addEventListener('touchend',  onUp);
 };
 
-// ── Volume scrubbing (mouse + touch) ─────────────────────────────────────────
+// ── Volume scrubbing ──────────────────────────────────────────────────────────
 const startVolScrub = (e) => {
   e.preventDefault();
-  const track = volTrack.value;
-  if (!track) return;
-
-  const doVol = (clientX) => {
-    const rect = track.getBoundingClientRect();
-    const pct  = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-    applyVolume(Math.round(pct * 100));
+  const vt = volTrack.value;
+  if (!vt) return;
+  const doVol = (x) => {
+    const rect = vt.getBoundingClientRect();
+    applyVolume(Math.round(Math.max(0, Math.min(1, (x - rect.left) / rect.width)) * 100));
   };
-
   const onMove = (ev) => doVol(ev.touches ? ev.touches[0].clientX : ev.clientX);
   const onUp   = (ev) => {
     doVol(ev.changedTouches ? ev.changedTouches[0].clientX : ev.clientX);
@@ -277,7 +311,6 @@ const startVolScrub = (e) => {
     window.removeEventListener('touchmove', onMove);
     window.removeEventListener('touchend',  onUp);
   };
-
   doVol(e.touches ? e.touches[0].clientX : e.clientX);
   window.addEventListener('mousemove', onMove);
   window.addEventListener('mouseup',   onUp);
@@ -308,12 +341,8 @@ onMounted(async () => {
       deviceId = device_id;
       statusMsg.value = 'Loading…';
       try {
-        // Small delay: Spotify's Connect API needs ~800ms after the SDK fires
-        // 'ready' before it acknowledges the device_id — otherwise /play 404s.
-        await new Promise(r => setTimeout(r, 900));
         await startPlayback();
-        // Don't set state='ready' yet — wait for player_state_changed to fire
-        // with actual track data so the UI is never shown blank.
+        // state stays 'connecting' until player_state_changed fires with track data
       } catch {
         state.value = 'unavailable';
       }
@@ -323,10 +352,15 @@ onMounted(async () => {
       if (state.value === 'ready') state.value = 'connecting';
     });
 
-    player.addListener('player_state_changed', (s) => {
+    player.addListener('player_state_changed', async (s) => {
       if (!s) return;
-      // First state update — switch from 'connecting' to 'ready'
+
+      const isFirst = !firstStateReceived;
+      firstStateReceived = true;
+
+      // Show player UI once we have real track data
       if (state.value !== 'ready') state.value = 'ready';
+
       paused.value    = s.paused;
       position.value  = s.position;
       duration.value  = s.duration;
@@ -334,12 +368,23 @@ onMounted(async () => {
 
       const t = s.track_window?.current_track;
       if (t) {
+        currentTrackUri.value = t.uri;
         track.value = {
           name:   t.name,
           artist: t.artists?.map(a => a.name).join(', ') || '',
           album:  t.album?.name || '',
           art:    t.album?.images?.[0]?.url || '',
         };
+      }
+
+      // On first state: fetch track list for playlists; auto-pause if autoPlay=false
+      if (isFirst) {
+        if (props.isPlaylist) fetchPlaylistTracks();
+        if (!props.autoPlay && !s.paused) {
+          // Pause without interrupting — user clicks ▶ to start
+          spotifyFetch('PUT', `/me/player/pause?device_id=${deviceId}`).catch(() => {});
+          return;
+        }
       }
 
       if (!s.paused) startTicker();
@@ -370,7 +415,7 @@ onUnmounted(() => {
 .sp-iframe--audio    { height: 166px; }
 .sp-iframe--playlist { height: 460px; }
 
-/* ── Card ──────────────────────────────────────────────────────────────────── */
+/* ── Card ── */
 .sp-card {
   background: #121212;
   border: 2px solid #1db954;
@@ -385,230 +430,155 @@ onUnmounted(() => {
   overflow: hidden;
 }
 
-/* ── Loading ───────────────────────────────────────────────────────────────── */
+/* ── Loading ── */
 .sp-loading {
-  align-items: center;
-  justify-content: center;
-  flex-direction: row;
-  gap: 14px;
-  min-height: 100px;
+  align-items: center; justify-content: center;
+  flex-direction: row; gap: 14px; min-height: 100px;
 }
 .sp-spinner {
   width: 24px; height: 24px;
-  border: 3px solid #333;
-  border-top-color: #1db954;
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-  flex-shrink: 0;
+  border: 3px solid #333; border-top-color: #1db954;
+  border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 .sp-status-msg { font-size: 0.95rem; color: #aaa; }
 
-/* ── Top: art + info ───────────────────────────────────────────────────────── */
-.sp-top { display: flex; gap: 20px; align-items: center; }
+/* ── Top ── */
+.sp-top { display: flex; gap: 14px; align-items: center; }
 .sp-art-wrap { flex-shrink: 0; }
-.sp-art {
-  width: 90px; height: 90px;
-  border-radius: 10px;
-  object-fit: cover;
-  display: block;
-}
+.sp-art { width: 80px; height: 80px; border-radius: 10px; object-fit: cover; display: block; }
 .sp-art--empty {
-  background: #2a2a2a;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 2.2rem;
+  background: #2a2a2a; display: flex; align-items: center;
+  justify-content: center; font-size: 2rem;
 }
 .sp-info { flex: 1; min-width: 0; }
 .sp-track-name {
-  font-weight: 700;
-  font-size: 1.1rem;
-  color: #fff;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.sp-track-artist { font-size: 0.9rem; color: #aaa; margin-top: 4px; }
-.sp-track-album  {
-  font-size: 0.8rem; color: #666; margin-top: 3px;
+  font-weight: 700; font-size: 1rem; color: #fff;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+.sp-track-artist { font-size: 0.85rem; color: #aaa; margin-top: 3px; }
+.sp-track-album  { font-size: 0.78rem; color: #555; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-/* ── Open on Spotify button ────────────────────────────────────────────────── */
+/* ── Open on Spotify ── */
 .sp-open-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  flex-shrink: 0;
-  align-self: flex-start;
-  background: #1db954;
-  color: #000;
-  font-size: 0.78rem;
-  font-weight: 700;
-  padding: 6px 12px;
-  border-radius: 20px;
-  text-decoration: none;
-  transition: background 0.15s, transform 0.15s;
-  white-space: nowrap;
+  display: inline-flex; align-items: center; gap: 5px;
+  flex-shrink: 0; align-self: flex-start;
+  background: #1db954; color: #000;
+  font-size: 0.75rem; font-weight: 700;
+  padding: 5px 11px; border-radius: 20px; text-decoration: none;
+  transition: background 0.15s, transform 0.15s; white-space: nowrap;
 }
 .sp-open-btn:hover { background: #1ed760; transform: scale(1.05); }
-.sp-spotify-icon { width: 14px; height: 14px; flex-shrink: 0; }
+.sp-spotify-icon { width: 13px; height: 13px; flex-shrink: 0; }
 
-/* ── Progress ──────────────────────────────────────────────────────────────── */
-.sp-progress-wrap { cursor: pointer; user-select: none; padding: 8px 0; }
-.sp-bar {
-  position: relative;
-  height: 5px;
-  background: #333;
-  border-radius: 3px;
-  overflow: visible;
-}
-.sp-bar-fill {
-  height: 100%;
-  background: #1db954;
-  border-radius: 3px;
-  pointer-events: none;
-}
+/* ── Progress ── */
+.sp-progress-wrap { cursor: pointer; user-select: none; padding: 6px 0; }
+.sp-bar { position: relative; height: 5px; background: #333; border-radius: 3px; overflow: visible; }
+.sp-bar-fill { height: 100%; background: #1db954; border-radius: 3px; pointer-events: none; }
 .sp-bar-thumb {
-  position: absolute;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  width: 14px; height: 14px;
-  background: #fff;
-  border-radius: 50%;
-  opacity: 0;
-  transition: opacity 0.15s;
-  pointer-events: none;
+  position: absolute; top: 50%; transform: translate(-50%, -50%);
+  width: 13px; height: 13px; background: #fff; border-radius: 50%;
+  opacity: 0; transition: opacity 0.15s; pointer-events: none;
 }
 .sp-progress-wrap:hover .sp-bar-thumb { opacity: 1; }
 .sp-progress-wrap:hover .sp-bar-fill  { background: #1ed760; }
-.sp-times {
-  display: flex;
-  justify-content: space-between;
-  font-size: 0.75rem;
-  color: #666;
-  margin-top: 8px;
-}
+.sp-times { display: flex; justify-content: space-between; font-size: 0.72rem; color: #555; margin-top: 6px; }
 
-/* ── Controls ──────────────────────────────────────────────────────────────── */
-.sp-controls {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  min-width: 0;
-}
-
+/* ── Controls ── */
+.sp-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
 .sp-btn {
-  background: none;
-  border: none;
-  color: #aaa;
-  cursor: pointer;
-  border-radius: 50%;
-  transition: color 0.15s, background 0.15s, transform 0.15s;
-  line-height: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
+  background: none; border: none; color: #aaa; cursor: pointer;
+  border-radius: 50%; transition: color 0.15s, background 0.15s, transform 0.15s;
+  line-height: 1; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
 }
 .sp-btn:hover { color: #fff; background: #2a2a2a; }
-
-/* Skip buttons */
-.sp-btn--skip {
-  font-size: 1.4rem;
-  padding: 8px;
-  width: 42px; height: 42px;
-}
-
-/* Play/Pause */
-.sp-btn--play {
-  width: 52px; height: 52px;
-  font-size: 1.3rem;
-  background: #1db954;
-  color: #000;
-}
-.sp-btn--play:hover { background: #1ed760; color: #000; transform: scale(1.08); }
-
-/* Shuffle */
-.sp-btn--shuffle {
-  font-size: 1.1rem;
-  padding: 7px;
-  width: 38px; height: 38px;
-  opacity: 0.45;
-}
+.sp-btn--skip { font-size: 1.3rem; padding: 7px; width: 40px; height: 40px; }
+.sp-btn--play { width: 50px; height: 50px; font-size: 1.2rem; background: #1db954; color: #000; }
+.sp-btn--play:hover { background: #1ed760; color: #000; transform: scale(1.06); }
+.sp-btn--shuffle { font-size: 1rem; padding: 7px; width: 36px; height: 36px; opacity: 0.45; }
 .sp-btn--shuffle:hover { opacity: 1; }
-.sp-btn--shuffle-on    { opacity: 1; color: #1db954; }
+.sp-btn--shuffle-on   { opacity: 1; color: #1db954; }
 .sp-btn--shuffle-on:hover { color: #1ed760; }
 
-/* ── Volume ────────────────────────────────────────────────────────────────── */
-.sp-volume-wrap {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-left: auto;
-  min-width: 0;
-  flex-shrink: 1;
-}
-
-.sp-vol-icon {
-  font-size: 1.2rem;
-  padding: 6px;
-  width: 36px; height: 36px;
-  flex-shrink: 0;
-}
-
-/* Custom draggable volume track */
+/* ── Volume ── */
+.sp-volume-wrap { display: flex; align-items: center; gap: 6px; margin-left: auto; min-width: 0; flex-shrink: 1; }
+.sp-vol-icon { font-size: 1.1rem; padding: 5px; width: 34px; height: 34px; flex-shrink: 0; }
 .sp-vol-track {
-  position: relative;
-  width: clamp(50px, 80px, 100px);
-  min-width: 50px;
-  max-width: 100px;
-  height: 5px;
-  background: #333;
-  border-radius: 3px;
-  cursor: pointer;
-  flex-shrink: 1;
+  position: relative; width: clamp(50px, 80px, 100px); min-width: 50px;
+  height: 5px; background: #333; border-radius: 3px; cursor: pointer; flex-shrink: 1;
 }
-.sp-vol-fill {
-  height: 100%;
-  background: #1db954;
-  border-radius: 3px;
-  pointer-events: none;
-}
+.sp-vol-fill  { height: 100%; background: #1db954; border-radius: 3px; pointer-events: none; }
 .sp-vol-thumb {
-  position: absolute;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  width: 14px; height: 14px;
-  background: #fff;
-  border-radius: 50%;
-  pointer-events: none;
-  transition: transform 0.1s;
+  position: absolute; top: 50%; transform: translate(-50%, -50%);
+  width: 13px; height: 13px; background: #fff; border-radius: 50%;
+  pointer-events: none; transition: transform 0.1s;
 }
 .sp-vol-track:hover .sp-vol-fill  { background: #1ed760; }
 .sp-vol-track:hover .sp-vol-thumb { transform: translate(-50%, -50%) scale(1.2); }
+.sp-vol-pct { font-size: 0.75rem; color: #888; min-width: 30px; text-align: right; font-variant-numeric: tabular-nums; }
 
-.sp-vol-pct {
-  font-size: 0.78rem;
-  color: #888;
-  min-width: 32px;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
+/* ── Playlist track list ── */
+.sp-tracklist {
+  margin-top: -8px;
+  border-top: 1px solid #2a2a2a;
+  max-height: 220px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #333 transparent;
+}
+.sp-tracklist::-webkit-scrollbar { width: 4px; }
+.sp-tracklist::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
+
+.sp-tracklist-header {
+  padding: 8px 12px 4px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #555;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  position: sticky;
+  top: 0;
+  background: #121212;
 }
 
-/* ── Branding ──────────────────────────────────────────────────────────────── */
-.sp-brand { font-size: 0.7rem; color: #444; text-align: right; }
+.sp-track-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 12px;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: background 0.12s;
+  min-width: 0;
+}
+.sp-track-row:hover { background: #1a1a1a; }
+.sp-track-row--active { background: #1a2e1a; }
+.sp-track-row--active .sp-track-row-name { color: #1db954; }
 
-/* ── Mobile ────────────────────────────────────────────────────────────────── */
+.sp-track-row-num {
+  font-size: 0.75rem; color: #555; min-width: 18px; text-align: right; flex-shrink: 0;
+}
+.sp-track-row-info { flex: 1; min-width: 0; }
+.sp-track-row-name {
+  font-size: 0.85rem; font-weight: 600; color: #ddd;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block;
+}
+.sp-track-row-artist {
+  font-size: 0.75rem; color: #666; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block;
+}
+.sp-track-row-dur { font-size: 0.72rem; color: #555; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+
+/* ── Branding ── */
+.sp-brand { font-size: 0.68rem; color: #333; text-align: right; margin-top: -8px; }
+
+/* ── Mobile ── */
 @media (max-width: 560px) {
-  .sp-card  { padding: 16px; gap: 14px; }
-  .sp-art   { width: 70px; height: 70px; }
-  .sp-track-name   { font-size: 1rem; }
-  .sp-btn--play    { width: 46px; height: 46px; font-size: 1.15rem; }
-  .sp-btn--skip    { width: 36px; height: 36px; font-size: 1.2rem; }
-  .sp-vol-track    { width: 70px; }
-  .sp-vol-pct      { display: none; }
+  .sp-card { padding: 14px; gap: 14px; }
+  .sp-art  { width: 64px; height: 64px; }
+  .sp-track-name { font-size: 0.92rem; }
+  .sp-btn--play  { width: 44px; height: 44px; font-size: 1.1rem; }
+  .sp-btn--skip  { width: 34px; height: 34px; font-size: 1.1rem; }
+  .sp-vol-track  { width: 60px; }
+  .sp-vol-pct    { display: none; }
 }
 </style>

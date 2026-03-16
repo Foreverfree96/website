@@ -20,6 +20,7 @@
             v-if="nowPlaying.type === 'spotify'"
             :mediaUrl="nowPlaying.url"
             :isPlaylist="nowPlaying.isPlaylist"
+            :autoPlay="true"
           />
           <!-- YouTube: IFrame API injects into this div once it exists in DOM -->
           <div v-else-if="nowPlaying.type === 'youtube'" :id="mpYtId" class="mp-yt"></div>
