@@ -2,12 +2,10 @@
   <div class="sp-wrap">
 
     <!-- ── Fallback iframe ──────────────────────────────────────────────────── -->
-    <template v-if="state === 'unavailable'">
-      <iframe :src="embedUrl" frameborder="0"
-        allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
-        loading="lazy"
-        :class="['sp-iframe', isPlaylist ? 'sp-iframe--playlist' : 'sp-iframe--audio']" />
-    </template>
+    <iframe v-if="state === 'unavailable'" :src="embedUrl" frameborder="0"
+      allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
+      loading="lazy"
+      :class="['sp-iframe', isPlaylist ? 'sp-iframe--playlist' : 'sp-iframe--audio']" />
 
     <!-- ── Needs Spotify connect ────────────────────────────────────────────── -->
     <div v-else-if="state === 'needs-connect'" class="sp-card sp-needs-connect">
@@ -200,11 +198,17 @@ const loadSDK = () => new Promise((resolve, reject) => {
 });
 
 // ── Wait until our device appears in Spotify's Connect device list ────────────
-const waitForDevice = async (maxWaitMs = 10000) => {
+const waitForDevice = async (maxWaitMs = 8000) => {
   const start = Date.now();
   while (Date.now() - start < maxWaitMs) {
     try {
-      const res = await spotifyFetch('GET', '/me/player/devices');
+      const abort = new AbortController();
+      const timer = setTimeout(() => abort.abort(), 3000);
+      const res = await fetch('https://api.spotify.com/v1/me/player/devices', {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: abort.signal,
+      });
+      clearTimeout(timer);
       if (res.ok) {
         const data = await res.json();
         if ((data.devices || []).some(d => d.id === deviceId)) return true;
@@ -349,10 +353,10 @@ const startVolScrub = (e) => {
 
 // ── Mount ──────────────────────────────────────────────────────────────────────
 onMounted(async () => {
-  // Global fallback: no matter where it hangs, show message after 10s
+  // Global fallback: no matter where it hangs, show message after 8s
   connectTimeout = setTimeout(() => {
     if (state.value !== 'ready') state.value = 'needs-connect';
-  }, 10000);
+  }, 8000);
 
   try {
     statusMsg.value = 'Fetching credentials…';
