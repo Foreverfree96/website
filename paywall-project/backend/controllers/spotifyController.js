@@ -33,12 +33,14 @@ const refreshAccessToken = async (userId, refreshToken) => {
 };
 
 // ─── SHARED HELPER: get valid access token (refresh if expired) ───────────────
-const getValidToken = async (userId) => {
+// requirePremium=true  → used for playback endpoints (SDK requires Premium)
+// requirePremium=false → used for non-playback endpoints like playlist tracks
+const getValidToken = async (userId, requirePremium = true) => {
   const user = await User.findById(userId).select(
     "+spotifyAccessToken +spotifyRefreshToken spotifyTokenExpiry spotifyIsPremium spotifyId"
   );
   if (!user?.spotifyId) return { error: 404, message: "Spotify not connected" };
-  if (!user.spotifyIsPremium) return { error: 403, message: "Spotify Premium required" };
+  if (requirePremium && !user.spotifyIsPremium) return { error: 403, message: "Spotify Premium required" };
 
   let accessToken = user.spotifyAccessToken;
   if (!user.spotifyTokenExpiry || user.spotifyTokenExpiry < new Date()) {
@@ -178,7 +180,7 @@ export const spotifyShuffleOff = async (req, res) => {
 // token (which has the full scope set) is used instead.
 export const getPlaylistTracks = async (req, res) => {
   try {
-    const result = await getValidToken(req.user.id);
+    const result = await getValidToken(req.user.id, false);
     if (result.error) return res.status(result.error).json({ message: result.message });
 
     const response = await axios.get(
