@@ -250,18 +250,20 @@ const platformLabel = computed(() => ({ instagram: 'View on Instagram', tiktok: 
 .embed-popout-pill {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 6px 16px;
-  border-radius: 20px;
-  border: 2px solid #1db954;
-  background: transparent;
-  color: #1db954;
-  font-size: 0.82rem;
-  font-weight: 700;
+  gap: 6px;
+  padding: 9px 20px;
+  border-radius: 24px;
+  border: none;
+  background: #1db954;
+  color: #000;
+  font-size: 0.9rem;
+  font-weight: 800;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+  letter-spacing: 0.01em;
+  box-shadow: 0 2px 10px rgba(29,185,84,0.45);
+  transition: background 0.15s, transform 0.1s, box-shadow 0.15s;
 }
-.embed-popout-pill:hover { background: #1db954; color: #000; }
+.embed-popout-pill:hover { background: #1ed760; transform: scale(1.04); box-shadow: 0 4px 16px rgba(29,185,84,0.55); }
 
 /* Popped-out state */
 .embed-popped-static {

@@ -225,7 +225,7 @@ const previewLabel = computed(() => {
 
 /* ── Panel ── */
 .mp-panel {
-  width: 320px;
+  width: 360px;
   background: #121212;
   border-radius: 16px;
   border: 1px solid #2a2a2a;
@@ -289,6 +289,6 @@ const previewLabel = computed(() => {
 /* ── Mobile ── */
 @media (max-width: 600px) {
   .mp-root  { bottom: 14px; left: 14px; }
-  .mp-panel { width: calc(100vw - 28px); max-width: 320px; }
+  .mp-panel { width: calc(100vw - 28px); max-width: 360px; }
 }
 </style>
