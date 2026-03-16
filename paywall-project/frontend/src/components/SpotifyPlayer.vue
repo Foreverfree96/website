@@ -181,13 +181,20 @@ const fetchToken = async () => {
 };
 
 // ── SDK loader ─────────────────────────────────────────────────────────────────
-const loadSDK = () => new Promise((resolve) => {
+const loadSDK = () => new Promise((resolve, reject) => {
   if (window.Spotify?.Player) { resolve(); return; }
+  // If script is already in DOM but SDK not ready yet, wait for callback
+  const timer = setTimeout(() => reject(new Error('SDK load timeout')), 8000);
   const prev = window.onSpotifyWebPlaybackSDKReady;
-  window.onSpotifyWebPlaybackSDKReady = () => { prev?.(); resolve(); };
+  window.onSpotifyWebPlaybackSDKReady = () => {
+    clearTimeout(timer);
+    prev?.();
+    resolve();
+  };
   if (!document.querySelector('script[src*="spotify-player"]')) {
     const s = document.createElement('script');
     s.src = 'https://sdk.scdn.co/spotify-player.js';
+    s.onerror = () => { clearTimeout(timer); reject(new Error('SDK load failed')); };
     document.head.appendChild(s);
   }
 });
@@ -342,6 +349,11 @@ const startVolScrub = (e) => {
 
 // ── Mount ──────────────────────────────────────────────────────────────────────
 onMounted(async () => {
+  // Global fallback: no matter where it hangs, show message after 10s
+  connectTimeout = setTimeout(() => {
+    if (state.value !== 'ready') state.value = 'needs-connect';
+  }, 10000);
+
   try {
     statusMsg.value = 'Fetching credentials…';
     token = await fetchToken();
@@ -364,9 +376,8 @@ onMounted(async () => {
       statusMsg.value = 'Loading…';
       try {
         await startPlayback();
-        // state stays 'connecting' until player_state_changed fires with track data
       } catch {
-        state.value = 'unavailable';
+        state.value = 'needs-connect';
       }
     });
 
@@ -380,7 +391,6 @@ onMounted(async () => {
       const isFirst = !firstStateReceived;
       firstStateReceived = true;
 
-      // Show player UI once we have real track data
       if (state.value !== 'ready') {
         clearTimeout(connectTimeout);
         state.value = 'ready';
@@ -402,11 +412,9 @@ onMounted(async () => {
         };
       }
 
-      // On first state: fetch track list for playlists; auto-pause if autoPlay=false
       if (isFirst) {
         if (props.isPlaylist) fetchPlaylistTracks();
         if (!props.autoPlay && !s.paused) {
-          // Pause without interrupting — user clicks ▶ to start
           spotifyFetch('PUT', `/me/player/pause?device_id=${deviceId}`).catch(() => {});
           return;
         }
@@ -416,18 +424,13 @@ onMounted(async () => {
       else           stopTicker();
     });
 
-    player.addListener('initialization_error', () => { state.value = 'unavailable'; });
-    player.addListener('authentication_error',  () => { state.value = 'unavailable'; });
-    player.addListener('account_error',         () => { state.value = 'unavailable'; });
+    player.addListener('initialization_error', () => { state.value = 'needs-connect'; });
+    player.addListener('authentication_error',  () => { state.value = 'needs-connect'; });
+    player.addListener('account_error',         () => { state.value = 'needs-connect'; });
 
     await player.connect();
-
-    // Fallback: if player_state_changed never fires within 15s, show connect message
-    connectTimeout = setTimeout(() => {
-      if (state.value !== 'ready') state.value = 'needs-connect';
-    }, 15000);
   } catch {
-    state.value = 'unavailable';
+    state.value = 'needs-connect';
   }
 });
 
