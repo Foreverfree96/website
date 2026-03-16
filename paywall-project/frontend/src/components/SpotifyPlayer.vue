@@ -169,20 +169,26 @@ const loadSDK = () => new Promise((resolve) => {
 });
 
 // ── Start playback ─────────────────────────────────────────────────────────────
+// Passing device_id as a query param implicitly transfers playback to this
+// device — avoids a separate PUT /me/player call that 404s on fresh sessions.
 const startPlayback = async () => {
   const uri = getSpotifyUri(props.mediaUrl);
-  await spotifyFetch('PUT', '/me/player', { device_ids: [deviceId], play: false });
   if (uri) {
     const isTrack = uri.startsWith('spotify:track:');
-    await spotifyFetch('PUT', `/me/player/play?device_id=${deviceId}`,
+    await spotifyFetch(
+      'PUT',
+      `/me/player/play?device_id=${deviceId}`,
       isTrack
         ? { uris: [uri], position_ms: 0 }
         : { context_uri: uri, offset: { position: 0 }, position_ms: 0 }
     );
+  } else {
+    // No extractable URI — just transfer device without starting playback
+    await spotifyFetch('PUT', '/me/player', { device_ids: [deviceId], play: false });
   }
-  await spotifyFetch('PUT', '/me/player/shuffle?state=false');
-  await new Promise(r => setTimeout(r, 500));
-  await spotifyFetch('PUT', '/me/player/pause');
+  await spotifyFetch('PUT', `/me/player/shuffle?state=false&device_id=${deviceId}`);
+  await new Promise(r => setTimeout(r, 400));
+  await spotifyFetch('PUT', `/me/player/pause?device_id=${deviceId}`);
 };
 
 // ── Ticker ─────────────────────────────────────────────────────────────────────
