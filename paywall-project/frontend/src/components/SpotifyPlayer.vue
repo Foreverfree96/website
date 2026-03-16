@@ -281,20 +281,18 @@ const startPlayback = async (shouldPlay = true) => {
   await spotifyFetch('PUT', `/me/player/shuffle?state=false&device_id=${deviceId}`).catch(() => {});
 };
 
-// ── Fetch playlist tracks via backend proxy (avoids browser-scope issues) ─────
+// ── Fetch playlist tracks directly from Spotify using the SDK's active token ──
+// Uses the in-memory `token` so we always have the freshest token the SDK holds,
+// bypassing the backend-stored token which may be missing playlist scopes.
 const fetchPlaylistTracks = async () => {
   const m = props.mediaUrl.match(/open\.spotify\.com\/playlist\/([a-zA-Z0-9]+)/);
-  if (!m) return;
+  if (!m || !token) return;
   try {
-    const jwt = localStorage.getItem('jwtToken');
-    const res = await fetch(`${API}/api/spotify/playlist/${m[1]}/tracks`, {
-      headers: { Authorization: `Bearer ${jwt}` },
-    });
-    if (res.status === 403) {
-      // Old OAuth token missing playlist scope — user must reconnect Spotify
-      needsReconnect.value = true;
-      return;
-    }
+    const res = await fetch(
+      `https://api.spotify.com/v1/playlists/${m[1]}/tracks?limit=50&fields=items(track(name,uri,duration_ms,artists(name)))`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    if (res.status === 403) { needsReconnect.value = true; return; }
     if (!res.ok) return;
     const data = await res.json();
     playlistTracks.value = (data.items || [])
