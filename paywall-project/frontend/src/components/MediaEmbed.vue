@@ -145,6 +145,9 @@ const ytShuffle = ref(false);
 const toggleYouTubeShuffle = () => {
   ytShuffle.value = !ytShuffle.value;
   ytPlayer?.setShuffle?.(ytShuffle.value);
+  // Persist shuffle preference for this playlist
+  const listMatch = props.mediaUrl.match(/[?&]list=([^&]+)/);
+  if (listMatch) localStorage.setItem(`yt_shuffle_${listMatch[1]}`, ytShuffle.value);
 };
 
 // ── Playlist / album detection ─────────────────────────────────────────────────
@@ -242,9 +245,14 @@ onMounted(async () => {
     const listMatch = props.mediaUrl.match(/[?&]list=([^&]+)/);
     if (!listMatch) return;
 
-    const listId     = listMatch[1];
-    const posKey     = `yt_pos_${listId}`;
-    const savedIndex = parseInt(localStorage.getItem(posKey) || '0', 10);
+    const listId       = listMatch[1];
+    const posKey       = `yt_pos_${listId}`;
+    const shuffleKey   = `yt_shuffle_${listId}`;
+    const savedIndex   = parseInt(localStorage.getItem(posKey) || '0', 10);
+    const savedShuffle = localStorage.getItem(shuffleKey) === 'true';
+
+    // Restore saved shuffle state into the reactive ref
+    ytShuffle.value = savedShuffle;
 
     const YT = await loadYouTubeAPI();
     ytPlayer = new YT.Player(playerId, {
@@ -252,6 +260,10 @@ onMounted(async () => {
       height: '460',
       playerVars: { listType: 'playlist', list: listId, index: savedIndex, autoplay: 0, shuffle: 0 },
       events: {
+        onReady: () => {
+          // Apply saved shuffle after player is ready
+          if (savedShuffle) ytPlayer.setShuffle(true);
+        },
         onStateChange: (event) => {
           if (event.data === window.YT.PlayerState.PLAYING) {
             activateEmbed();
