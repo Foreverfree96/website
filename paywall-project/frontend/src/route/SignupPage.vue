@@ -49,7 +49,14 @@
           Shown after a successful signup call — prompts the user to check
           their email for the verification link.
         -->
-        <p v-if="sent" class="sent-msg">✅ Check your email to confirm your account before logging in.</p>
+        <!-- Success: email sent -->
+        <template v-if="sent">
+          <p class="sent-msg">✅ Check your email to confirm your account before logging in.</p>
+          <p class="resend-hint">Didn't get it? Check your spam folder or resend below.</p>
+          <button class="resend-btn" :disabled="resendSent || resendLoading" @click="handleResend">
+            {{ resendLoading ? 'Sending…' : resendSent ? '✅ Email resent!' : 'Resend verification email' }}
+          </button>
+        </template>
         <!-- Backend or validation error message -->
         <p v-if="error" class="auth-error">{{ error }}</p>
     </div>
@@ -74,9 +81,11 @@ import { ref } from 'vue';
 import { useAuth } from '../composables/useAuth.js';
 import axios from 'axios';
 
+const API_BASE = import.meta.env.VITE_API_URL + '/api/users';
+
 // Base URL for availability-check endpoints (not in useAuth because they're
 // unauthenticated pre-signup calls)
-const API_URL = import.meta.env.VITE_API_URL + '/api/users';
+const API_URL = API_BASE;
 
 const { signup, error } = useAuth();
 
@@ -91,6 +100,10 @@ const sent    = ref(false);
 
 // True while the signup request is in flight (disables the submit button)
 const loading = ref(false);
+
+// Resend verification state
+const resendSent    = ref(false);
+const resendLoading = ref(false);
 
 // ── Username availability state ────────────────────────────────────────────────
 
@@ -174,6 +187,19 @@ const handleSignup = async () => {
         loading.value = false;
     }
 };
+
+const handleResend = async () => {
+    resendLoading.value = true;
+    try {
+        await axios.post(`${API_URL}/resend-verification`, { email: email.value });
+        resendSent.value = true;
+        setTimeout(() => { resendSent.value = false; }, 6000);
+    } catch {
+        // silently ignore — generic message shown
+    } finally {
+        resendLoading.value = false;
+    }
+};
 </script>
 
 <style scoped>
@@ -208,6 +234,28 @@ const handleSignup = async () => {
     text-align: center;
     margin-top: 12px;
 }
+
+/* Hint text below "check your email" */
+.resend-hint {
+    font-size: 0.82rem;
+    color: #555;
+    text-align: center;
+    margin: 4px 0 0;
+}
+
+/* Resend button */
+.resend-btn {
+    background: none;
+    border: none;
+    color: #003087;
+    font-weight: 700;
+    font-size: 0.9rem;
+    cursor: pointer;
+    text-decoration: underline;
+    padding: 0;
+    margin-top: 2px;
+}
+.resend-btn:disabled { color: #555; cursor: default; text-decoration: none; }
 
 /* ── Responsive ── */
 @media (max-width: 600px) {

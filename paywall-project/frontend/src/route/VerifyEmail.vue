@@ -24,8 +24,23 @@
     <template v-else>
       <h2 class="lgn-sgnup-txt">Verification Failed</h2>
       <p class="auth-error">{{ errorMsg }}</p>
-      <!-- Link back to signup so the user can request a new verification email -->
-      <router-link to="/signup" class="auth-button button-size" style="margin-top:16px;">Back to Sign Up</router-link>
+
+      <!-- Resend form -->
+      <div class="resend-wrap">
+        <p class="resend-label">Enter your email to get a new verification link:</p>
+        <input v-model="resendEmail" type="email" placeholder="Your email" class="auth-input" :disabled="resendSent" />
+        <button
+          class="auth-button button-size"
+          style="margin-top:8px;"
+          :disabled="!resendEmail || resendLoading || resendSent"
+          @click="handleResend"
+        >
+          {{ resendLoading ? 'Sending…' : resendSent ? '✅ Email sent!' : 'Resend verification email' }}
+        </button>
+        <p v-if="resendSent" class="resend-success">Check your inbox (and spam folder).</p>
+      </div>
+
+      <router-link to="/signup" class="txt-tag" style="font-size:14px;font-weight:600;margin-top:12px;text-decoration:underline;">Back to Sign Up</router-link>
     </template>
   </div>
 </template>
@@ -59,6 +74,8 @@ import { ref, onMounted } from 'vue';
 import { useRoute } from 'vue-router';
 import axios from 'axios';
 
+const API = import.meta.env.VITE_API_URL + '/api/users';
+
 // useRoute provides access to the :token dynamic segment of /verify-email/:token
 const route = useRoute();
 
@@ -73,6 +90,23 @@ const success  = ref(false);
 
 // Error message from the backend (or a generic fallback)
 const errorMsg = ref('');
+
+// Resend state
+const resendEmail   = ref('');
+const resendSent    = ref(false);
+const resendLoading = ref(false);
+
+const handleResend = async () => {
+  resendLoading.value = true;
+  try {
+    await axios.post(`${API}/resend-verification`, { email: resendEmail.value });
+    resendSent.value = true;
+  } catch {
+    resendSent.value = true; // same generic message regardless
+  } finally {
+    resendLoading.value = false;
+  }
+};
 
 // ── Lifecycle: verify on mount ─────────────────────────────────────────────────
 
@@ -104,5 +138,29 @@ onMounted(async () => {
   color: #000;
   text-align: center;
   margin: 8px 0;
+}
+
+.resend-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  margin-top: 20px;
+  width: 100%;
+  max-width: 360px;
+}
+.resend-label {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: #333;
+  margin: 0;
+  text-align: center;
+}
+.resend-success {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #14532d;
+  margin: 0;
+  text-align: center;
 }
 </style>
