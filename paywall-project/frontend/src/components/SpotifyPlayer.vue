@@ -288,15 +288,27 @@ const startPlayback = async (shouldPlay = true) => {
 // bypassing the backend-stored token which may be missing playlist scopes.
 const fetchPlaylistTracks = async () => {
   const m = props.mediaUrl.match(/open\.spotify\.com\/playlist\/([a-zA-Z0-9]+)/);
-  if (!m || !token) return;
+  console.log('[Spotify] fetchPlaylistTracks called', { url: props.mediaUrl, matched: !!m, hasToken: !!token });
+  if (!m) { console.warn('[Spotify] URL did not match playlist pattern:', props.mediaUrl); return; }
+  if (!token) { console.warn('[Spotify] No token available yet'); return; }
   try {
-    const res = await fetch(
-      `https://api.spotify.com/v1/playlists/${m[1]}/tracks?limit=20`,
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
-    if (res.status === 403) { needsReconnect.value = true; return; }
-    if (!res.ok) return;
+    const apiUrl = `https://api.spotify.com/v1/playlists/${m[1]}/tracks?limit=100`;
+    console.log('[Spotify] Fetching tracks from:', apiUrl, '| token prefix:', token.slice(0, 12) + '...');
+    const res = await fetch(apiUrl, { headers: { Authorization: `Bearer ${token}` } });
+    console.log('[Spotify] Tracks response status:', res.status);
+    if (res.status === 403) {
+      const body = await res.json().catch(() => ({}));
+      console.error('[Spotify] 403 Forbidden:', body);
+      needsReconnect.value = true;
+      return;
+    }
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      console.error('[Spotify] Tracks fetch failed:', res.status, body);
+      return;
+    }
     const data = await res.json();
+    console.log('[Spotify] Raw items count:', data.items?.length, '| total:', data.total);
     const tracks = (data.items || [])
       .filter(item => item?.track?.uri)
       .map(item => ({
@@ -306,6 +318,7 @@ const fetchPlaylistTracks = async () => {
         duration: item.track.duration_ms || 0,
         art:      item.track.album?.images?.[0]?.url || '',
       }));
+    console.log('[Spotify] Parsed tracks:', tracks.length, tracks[0] || '(empty)');
     playlistTracks.value = tracks;
 
     // Pre-populate track display with first track so info shows before play
@@ -313,7 +326,9 @@ const fetchPlaylistTracks = async () => {
       const first = tracks[0];
       track.value = { name: first.name, artist: first.artist, album: '', art: first.art };
     }
-  } catch { /* non-fatal */ }
+  } catch (err) {
+    console.error('[Spotify] fetchPlaylistTracks exception:', err);
+  }
 };
 
 // ── Play a specific track from the queue list ─────────────────────────────────
@@ -466,8 +481,10 @@ onMounted(async () => {
       deviceId = device_id;
       clearTimeout(connectTimeout);
       state.value = 'ready';
+      console.log('[Spotify] Player ready | deviceId:', device_id, '| isPlaylist:', props.isPlaylist, '| mediaUrl:', props.mediaUrl);
       // Fetch playlist tracks as soon as device is ready (works regardless of autoPlay)
       if (props.isPlaylist) fetchPlaylistTracks();
+      else console.log('[Spotify] Skipping fetchPlaylistTracks — isPlaylist is false');
       startPlayback(props.autoPlay).catch(() => {});
     });
 
