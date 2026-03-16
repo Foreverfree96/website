@@ -377,12 +377,11 @@ onMounted(async () => {
 
     player.addListener('ready', async ({ device_id }) => {
       deviceId = device_id;
-      statusMsg.value = 'Loading…';
-      try {
-        await startPlayback();
-      } catch {
-        state.value = 'needs-connect';
-      }
+      // Show the player UI immediately — don't wait for player_state_changed
+      clearTimeout(connectTimeout);
+      state.value = 'ready';
+      // Start playback in the background; player_state_changed will update track info
+      startPlayback().catch(() => {});
     });
 
     player.addListener('not_ready', () => {
@@ -394,11 +393,6 @@ onMounted(async () => {
 
       const isFirst = !firstStateReceived;
       firstStateReceived = true;
-
-      if (state.value !== 'ready') {
-        clearTimeout(connectTimeout);
-        state.value = 'ready';
-      }
 
       paused.value    = s.paused;
       position.value  = s.position;
