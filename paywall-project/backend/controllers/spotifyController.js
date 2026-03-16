@@ -108,9 +108,10 @@ export const spotifyLogin = (req, res) => {
     return res.status(401).json({ message: "Invalid token" });
   }
 
-  // Encode userId + safe returnTo URL in state so callback can redirect back
+  // Encode userId + safe returnTo URL in state so callback can redirect back.
+  // Use base64url (not base64) — regular base64 has +/= chars that URL encoding mangles.
   const safeReturn = returnTo && isSafeReturn(returnTo) ? returnTo : '';
-  const state = Buffer.from(JSON.stringify({ id: userId, ret: safeReturn })).toString('base64');
+  const state = Buffer.from(JSON.stringify({ id: userId, ret: safeReturn })).toString('base64url');
 
   const params = new URLSearchParams({
     response_type: "code",
@@ -128,10 +129,10 @@ export const spotifyLogin = (req, res) => {
 export const spotifyCallback = async (req, res) => {
   const { code, state: rawState, error } = req.query;
 
-  // Decode state — supports both new base64-JSON format and legacy plain userId
+  // Decode state — try base64url first (new format), fall back to legacy plain userId
   let userId, returnTo;
   try {
-    const decoded = JSON.parse(Buffer.from(rawState, 'base64').toString('utf8'));
+    const decoded = JSON.parse(Buffer.from(rawState, 'base64url').toString('utf8'));
     userId   = decoded.id;
     returnTo = decoded.ret && isSafeReturn(decoded.ret) ? decoded.ret : '';
   } catch {
