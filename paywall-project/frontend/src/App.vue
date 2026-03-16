@@ -95,6 +95,9 @@
 
     <!-- Floating chat widget — only mounted when the user is authenticated -->
     <ChatWidget v-if="isLoggedIn" />
+
+    <!-- Floating mini player — persists across route changes -->
+    <MiniPlayer v-if="isLoggedIn" />
   </div>
 </template>
 
@@ -125,6 +128,7 @@ import { useRouter } from "vue-router";
 import { useAuth } from "./composables/useAuth.js";
 import { useNotifications } from "./composables/useNotifications.js";
 import ChatWidget from "./components/ChatWidget.vue";
+import MiniPlayer from "./components/MiniPlayer.vue";
 
 const router = useRouter();
 

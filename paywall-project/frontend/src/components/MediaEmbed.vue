@@ -6,15 +6,27 @@
          Single videos: IFrame API — timestamp memory via playerVars.start
     ──────────────────────────────────────────────────────────────────────── -->
     <template v-if="embedType === 'youtube'">
-      <div v-if="isPlaylist" :id="playerId" class="embed-iframe"></div>
+      <!-- Playlist -->
+      <div v-if="isPlaylist" class="embed-wrap embed-wrap--yt-pl">
+        <div :id="playerId" class="embed-iframe"></div>
+        <div v-if="isPoppedOut" class="embed-popped-overlay">
+          <span>♫ Playing in mini player</span>
+        </div>
+        <div class="embed-controls">
+          <button class="shuffle-btn" :class="{ 'shuffle-btn--on': ytShuffle }" @click="toggleYouTubeShuffle">
+            🔀 {{ ytShuffle ? 'Shuffle: On' : 'Shuffle: Off' }}
+          </button>
+          <button v-if="!isPoppedOut" class="embed-popout-pill" @click.stop="popOutEmbed" title="Pop out to mini player">↗ Mini</button>
+        </div>
+      </div>
+      <!-- Single video -->
       <div v-else class="embed-wrap">
         <div :id="singleId" class="embed-iframe"></div>
-        <div v-if="guardActive" class="embed-guard" @click="onSingleYtClick" title="Click to play" />
-      </div>
-      <div v-if="isPlaylist" class="embed-controls">
-        <button class="shuffle-btn" :class="{ 'shuffle-btn--on': ytShuffle }" @click="toggleYouTubeShuffle">
-          🔀 {{ ytShuffle ? 'Shuffle: On' : 'Shuffle: Off' }}
-        </button>
+        <div v-if="guardActive && !isPoppedOut" class="embed-guard" @click="onSingleYtClick" title="Click to play" />
+        <div v-if="isPoppedOut" class="embed-popped-overlay">
+          <span>♫ Playing in mini player</span>
+        </div>
+        <button v-if="!guardActive && !isPoppedOut" class="embed-popout-btn" @click.stop="popOutEmbed" title="Pop out to mini player">↗</button>
       </div>
     </template>
 
@@ -22,7 +34,9 @@
     <div v-else-if="embedType === 'twitch'" class="embed-wrap">
       <iframe :key="`twitch-${resetKey}`" :src="twitchEmbedUrl"
         frameborder="0" allowfullscreen class="embed-iframe" />
-      <div v-if="guardActive" class="embed-guard" @click="activateEmbed" title="Click to play" />
+      <div v-if="guardActive && !isPoppedOut" class="embed-guard" @click="activateEmbed" title="Click to play" />
+      <div v-if="isPoppedOut" class="embed-popped-overlay"><span>♫ Playing in mini player</span></div>
+      <button v-if="!guardActive && !isPoppedOut" class="embed-popout-btn" @click.stop="popOutEmbed" title="Pop out to mini player">↗</button>
     </div>
 
     <!-- ── SoundCloud ─────────────────────────────────────────────────────── -->
@@ -30,17 +44,23 @@
       <iframe ref="scIframe" :key="`sc-${resetKey}`"
         :src="`https://w.soundcloud.com/player/?url=${encodeURIComponent(mediaUrl)}&color=%2314532d&auto_play=false&show_artwork=true&visual=true`"
         frameborder="0" :class="['embed-iframe', isPlaylist ? 'embed-iframe--playlist' : 'embed-iframe--audio']" />
-      <div v-if="guardActive" class="embed-guard" @click="onSCClick" title="Click to play" />
+      <div v-if="guardActive && !isPoppedOut" class="embed-guard" @click="onSCClick" title="Click to play" />
+      <div v-if="isPoppedOut" class="embed-popped-overlay"><span>♫ Playing in mini player</span></div>
+      <button v-if="!guardActive && !isPoppedOut" class="embed-popout-btn" @click.stop="popOutEmbed" title="Pop out to mini player">↗</button>
     </div>
 
     <!-- ── Spotify ─────────────────────────────────────────────────────────── -->
-    <!-- SpotifyPlayer handles Premium detection internally;
-         falls back to iframe embed for free/unlinked users -->
-    <SpotifyPlayer
-      v-else-if="embedType === 'spotify'"
-      :mediaUrl="mediaUrl"
-      :isPlaylist="isPlaylist"
-    />
+    <div v-else-if="embedType === 'spotify'" class="embed-spotify-wrap">
+      <div v-if="isPoppedOut" class="embed-popped-static">
+        <span>♫ Playing in mini player</span>
+      </div>
+      <!-- SpotifyPlayer handles Premium detection; unmounts when popped out so
+           the mini player's SpotifyPlayer can own the SDK device exclusively -->
+      <SpotifyPlayer v-else :mediaUrl="mediaUrl" :isPlaylist="isPlaylist" />
+      <div class="embed-controls" v-if="!isPoppedOut">
+        <button class="embed-popout-pill" @click.stop="popOutEmbed" title="Pop out to mini player">↗ Mini</button>
+      </div>
+    </div>
 
     <!-- ── Apple Music ────────────────────────────────────────────────────── -->
     <div v-else-if="embedType === 'applemusic'" class="embed-wrap">
@@ -48,7 +68,9 @@
         frameborder="0" allow="autoplay *; encrypted-media *; fullscreen *"
         sandbox="allow-forms allow-popups allow-same-origin allow-scripts allow-storage-access-by-user-activation allow-top-navigation-by-user-activation"
         :class="['embed-iframe', isPlaylist ? 'embed-iframe--playlist' : 'embed-iframe--audio']" />
-      <div v-if="guardActive" class="embed-guard" @click="activateEmbed" title="Click to play" />
+      <div v-if="guardActive && !isPoppedOut" class="embed-guard" @click="activateEmbed" title="Click to play" />
+      <div v-if="isPoppedOut" class="embed-popped-overlay"><span>♫ Playing in mini player</span></div>
+      <button v-if="!guardActive && !isPoppedOut" class="embed-popout-btn" @click.stop="popOutEmbed" title="Pop out to mini player">↗</button>
     </div>
 
     <!-- ── Link card fallback ─────────────────────────────────────────────── -->
@@ -63,6 +85,12 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import SpotifyPlayer from './SpotifyPlayer.vue';
+import { useNowPlaying } from '../composables/useNowPlaying.js';
+
+const { nowPlaying, popOut } = useNowPlaying();
+
+// True when this embed's URL is currently playing in the mini player
+const isPoppedOut = computed(() => nowPlaying.value?.url === props.mediaUrl);
 
 const props = defineProps({
   mediaUrl:  { type: String, default: '' },
@@ -137,6 +165,39 @@ const onSingleYtClick = () => {
 const onSCClick = () => {
   activateEmbed();
   scWidget?.play?.();
+};
+
+// ── Pop out to mini player ────────────────────────────────────────────────────
+const popOutEmbed = () => {
+  if (isPoppedOut.value) return;
+  const base = { url: props.mediaUrl, type: props.embedType, isPlaylist: isPlaylist.value };
+
+  if (props.embedType === 'youtube' && isPlaylist.value && ytPlayer) {
+    const idx = ytPlayer.getPlaylistIndex?.() ?? 0;
+    const pos = Math.floor((ytPlayer.getCurrentTime?.() || 0) * 1000);
+    popOut({ ...base, position: pos, playlistIndex: idx });
+    ytPlayer.pauseVideo?.();
+    guardActive.value = true;
+
+  } else if (props.embedType === 'youtube' && !isPlaylist.value && ytSinglePlayer) {
+    const pos = Math.floor((ytSinglePlayer.getCurrentTime?.() || 0) * 1000);
+    popOut({ ...base, position: pos });
+    ytSinglePlayer.pauseVideo?.();
+    guardActive.value = true;
+
+  } else if (props.embedType === 'soundcloud' && scWidget) {
+    scWidget.getPosition?.((ms) => {
+      popOut({ ...base, position: ms || 0 });
+    });
+    scWidget.pause?.();
+    guardActive.value = true;
+
+  } else {
+    // Spotify, Twitch, Apple Music — no precise position to capture
+    popOut({ ...base, position: 0 });
+    guardActive.value = true;
+    if (props.embedType !== 'spotify') resetKey.value++;
+  }
 };
 
 // ── YouTube shuffle ────────────────────────────────────────────────────────────
@@ -418,4 +479,84 @@ onUnmounted(() => {
 .link-card__icon { font-size: 1.8rem; flex-shrink: 0; }
 .link-card__text { font-size: 0.95rem; word-break: break-all; }
 .link-card__text small { font-weight: 400; opacity: 0.7; }
+
+/* ── Pop-out & popped-out overlay ─────────────────────────────────────────── */
+
+/* Wrapper for YouTube playlist (needs relative positioning for overlay) */
+.embed-wrap--yt-pl {
+  position: relative;
+}
+
+/* Floating ↗ button over active video embeds */
+.embed-popout-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 3;
+  background: rgba(0, 0, 0, 0.72);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  backdrop-filter: blur(4px);
+  transition: background 0.15s, transform 0.15s;
+}
+.embed-popout-btn:hover {
+  background: rgba(0, 0, 0, 0.92);
+  transform: scale(1.05);
+}
+
+/* Pill-style button in controls bar (YouTube playlist, Spotify) */
+.embed-popout-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 16px;
+  border-radius: 20px;
+  border: 2px solid #000;
+  background: #fff;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  color: #000;
+  transition: background 0.15s, color 0.15s;
+  user-select: none;
+}
+.embed-popout-pill:hover { background: #f3f4f6; }
+
+/* Semi-transparent overlay shown when embed is playing in mini player */
+.embed-popped-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  background: rgba(0, 0, 0, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  color: #1db954;
+  font-weight: 700;
+  font-size: 0.95rem;
+  text-align: center;
+  pointer-events: all;
+}
+
+/* Static (non-absolute) popped-out state for Spotify */
+.embed-popped-static {
+  background: #121212;
+  border-radius: 10px;
+  padding: 28px;
+  text-align: center;
+  color: #1db954;
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+
+/* Wrapper for Spotify section (static layout) */
+.embed-spotify-wrap {
+  width: 100%;
+}
 </style>
