@@ -140,15 +140,19 @@ const router = useRouter();
 // ensures getOAuthToken always hands Spotify a fresh token when it asks.
 let _tokenCache = null; // { token, expiresAt }
 
+// ── Persisted prefs (volume + shuffle survive page reloads) ───────────────────
+const _savedVol     = parseFloat(localStorage.getItem('sp_volume')  ?? '70');
+const _savedShuffle = localStorage.getItem('sp_shuffle') === 'true';
+
 // ── State ──────────────────────────────────────────────────────────────────────
 const state           = ref('loading');
 const statusMsg       = ref('Connecting to Spotify…');
 const paused          = ref(true);
 const position        = ref(0);
 const duration        = ref(0);
-const volume          = ref(70);
+const volume          = ref(_savedVol);
 const muted           = ref(false);
-const shuffleOn       = ref(false);
+const shuffleOn       = ref(_savedShuffle);
 const track           = ref({ name: '', artist: '', album: '', art: '' });
 const currentTrackUri = ref('');
 const playlistTracks  = ref([]);
@@ -421,6 +425,7 @@ const prevTrack = async () => {
 
 const toggleShuffle = async () => {
   shuffleOn.value = !shuffleOn.value;
+  localStorage.setItem('sp_shuffle', shuffleOn.value);
   await spotifyFetch('PUT', `/me/player/shuffle?state=${shuffleOn.value}&device_id=${deviceId}`).catch(() => {});
 };
 
@@ -433,6 +438,7 @@ const toggleMute = () => {
 const applyVolume = (val) => {
   volume.value = Math.round(val);
   muted.value  = false;
+  localStorage.setItem('sp_volume', volume.value);
   player?.setVolume(volume.value / 100);
 };
 
@@ -500,6 +506,9 @@ onMounted(async () => {
   }, 15000);
 
   try {
+    // If returning from Spotify OAuth, force a fresh token so the new scopes are picked up
+    if (route.query.spotify === 'connected') _tokenCache = null;
+
     statusMsg.value = 'Fetching credentials…';
     const tokenResult = await fetchToken();
     if (tokenResult.needsConnect) { clearTimeout(connectTimeout); state.value = 'needs-connect'; return; }

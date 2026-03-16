@@ -252,41 +252,58 @@ export const spotifyShuffleOff = async (req, res) => {
   }
 };
 
+// ─── SERVER-SIDE PLAYLIST CACHE ───────────────────────────────────────────────
+// Once any user with the right scope fetches a playlist successfully, the result
+// is cached here for 1 hour so everyone else benefits without needing the scope.
+const _playlistCache = new Map(); // playlistId → { data, cachedAt }
+const PLAYLIST_CACHE_TTL = 60 * 60 * 1000; // 1 hour
+
+const getCachedPlaylist = (id) => {
+  const entry = _playlistCache.get(id);
+  if (entry && Date.now() - entry.cachedAt < PLAYLIST_CACHE_TTL) return entry.data;
+  return null;
+};
+
 // ─── SPOTIFY PLAYLIST TRACKS ──────────────────────────────────────────────────
 // GET /api/spotify/playlist/:id/tracks  (protected)
-// Proxies the Spotify playlist-tracks call through the backend so the browser
-// never needs the playlist-read-private scope directly — the stored server-side
-// token (which has the full scope set) is used instead.
 export const getPlaylistTracks = async (req, res) => {
   const playlistId = req.params.id;
-  const url = `https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=100`;
-  try {
-    // Try client credentials first — works for all public playlists with no user scope needed
-    let appToken;
-    try {
-      appToken = await getClientCredToken();
-    } catch (credErr) {
-      console.error("❌ Spotify client credentials failed:", credErr.response?.data || credErr.message);
-    }
 
-    if (appToken) {
+  // Return cached result if available
+  const cached = getCachedPlaylist(playlistId);
+  if (cached) return res.json(cached);
+
+  const url = `https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=100`;
+
+  // Helper: fetch, cache and return
+  const fetchAndCache = async (token) => {
+    const response = await axios.get(url, { headers: { Authorization: `Bearer ${token}` } });
+    _playlistCache.set(playlistId, { data: response.data, cachedAt: Date.now() });
+    return response.data;
+  };
+
+  try {
+    // 1. User token first — most likely to have playlist-read-private after reconnect
+    const result = await getValidToken(req.user.id, false);
+    if (!result.error) {
       try {
-        const response = await axios.get(url, { headers: { Authorization: `Bearer ${appToken}` } });
-        return res.json(response.data);
+        return res.json(await fetchAndCache(result.accessToken));
       } catch (err) {
-        console.error("❌ Spotify playlist fetch (client cred) failed:", err.response?.status, err.response?.data);
-        // 403 = private playlist — fall through to user token
+        console.error("❌ Spotify playlist fetch (user token) failed:", err.response?.status, err.response?.data?.error);
         if (err.response?.status !== 403) throw err;
+        // 403 = missing scope, fall through to client credentials
       }
     }
 
-    // Fallback: user token (needed for private playlists the user owns)
-    const result = await getValidToken(req.user.id, false);
-    if (result.error) return res.status(result.error).json({ message: result.message });
-    const response = await axios.get(url, { headers: { Authorization: `Bearer ${result.accessToken}` } });
-    res.json(response.data);
+    // 2. Client credentials fallback (works for public playlists if Spotify allows it)
+    try {
+      const appToken = await getClientCredToken();
+      return res.json(await fetchAndCache(appToken));
+    } catch (err) {
+      console.error("❌ Spotify playlist fetch (client cred) failed:", err.response?.status, err.response?.data?.error);
+      throw err;
+    }
   } catch (err) {
-    console.error("❌ getPlaylistTracks final error:", err.response?.status, err.response?.data || err.message);
     const status = err.response?.status || 500;
     res.status(status).json({ message: err.response?.data?.error?.message || 'Failed to fetch tracks' });
   }
