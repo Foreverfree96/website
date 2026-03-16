@@ -82,7 +82,7 @@
 
       <!-- ── Reconnect nudge (missing playlist scope) ────────────────────── -->
       <div v-if="needsReconnect" class="sp-reconnect-banner">
-        ⚠ <a href="/profile">Reconnect Spotify</a> to load this playlist's queue (one-time fix).
+        ⚠ Queue unavailable — go to <a href="/profile">Profile → Disconnect → Reconnect Spotify</a> (one-time fix).
       </div>
 
       <!-- ── Scrollable playlist track list ───────────────────────────────── -->
