@@ -6,6 +6,7 @@ import {
   spotifyGetToken,
   spotifyShuffleOff,
   spotifyDisconnect,
+  getPlaylistTracks,
 } from "../controllers/spotifyController.js";
 import { protect } from "../middleware/auth.js";
 
@@ -19,6 +20,7 @@ router.get("/callback", spotifyCallback);
 router.get("/status",       protect, spotifyStatus);
 router.get("/token",        protect, spotifyGetToken);
 router.post("/shuffle-off", protect, spotifyShuffleOff);
-router.delete("/disconnect", protect, spotifyDisconnect);
+router.delete("/disconnect",             protect, spotifyDisconnect);
+router.get("/playlist/:id/tracks",      protect, getPlaylistTracks);
 
 export default router;

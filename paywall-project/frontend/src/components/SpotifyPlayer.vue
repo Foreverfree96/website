@@ -271,14 +271,15 @@ const startPlayback = async (shouldPlay = true) => {
   );
 };
 
-// ── Fetch playlist tracks from Spotify API ────────────────────────────────────
+// ── Fetch playlist tracks via backend proxy (avoids browser-scope issues) ─────
 const fetchPlaylistTracks = async () => {
   const m = props.mediaUrl.match(/open\.spotify\.com\/playlist\/([a-zA-Z0-9]+)/);
   if (!m) return;
   try {
-    const res = await spotifyFetch('GET',
-      `/playlists/${m[1]}/tracks?limit=50&fields=items(track(name,uri,duration_ms,artists(name)))`
-    );
+    const jwt = localStorage.getItem('jwtToken');
+    const res = await fetch(`${API}/api/spotify/playlist/${m[1]}/tracks`, {
+      headers: { Authorization: `Bearer ${jwt}` },
+    });
     if (!res.ok) return;
     const data = await res.json();
     playlistTracks.value = (data.items || [])
@@ -442,6 +443,8 @@ onMounted(async () => {
       deviceId = device_id;
       clearTimeout(connectTimeout);
       state.value = 'ready';
+      // Fetch playlist tracks as soon as device is ready (works regardless of autoPlay)
+      if (props.isPlaylist) fetchPlaylistTracks();
       startPlayback(props.autoPlay).catch(() => {});
     });
 
@@ -471,7 +474,6 @@ onMounted(async () => {
         };
       }
 
-      if (isFirst && props.isPlaylist) fetchPlaylistTracks();
 
       if (!s.paused) startTicker();
       else           stopTicker();

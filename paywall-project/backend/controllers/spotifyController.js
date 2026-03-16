@@ -171,6 +171,27 @@ export const spotifyShuffleOff = async (req, res) => {
   }
 };
 
+// ─── SPOTIFY PLAYLIST TRACKS ──────────────────────────────────────────────────
+// GET /api/spotify/playlist/:id/tracks  (protected)
+// Proxies the Spotify playlist-tracks call through the backend so the browser
+// never needs the playlist-read-private scope directly — the stored server-side
+// token (which has the full scope set) is used instead.
+export const getPlaylistTracks = async (req, res) => {
+  try {
+    const result = await getValidToken(req.user.id);
+    if (result.error) return res.status(result.error).json({ message: result.message });
+
+    const response = await axios.get(
+      `https://api.spotify.com/v1/playlists/${req.params.id}/tracks?limit=50&fields=items(track(name,uri,duration_ms,artists(name)))`,
+      { headers: { Authorization: `Bearer ${result.accessToken}` } }
+    );
+    res.json(response.data);
+  } catch (err) {
+    const status = err.response?.status || 500;
+    res.status(status).json({ message: err.response?.data?.error?.message || 'Failed to fetch tracks' });
+  }
+};
+
 // ─── SPOTIFY DISCONNECT ───────────────────────────────────────────────────────
 export const spotifyDisconnect = async (req, res) => {
   try {
