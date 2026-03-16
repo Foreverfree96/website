@@ -28,6 +28,7 @@
         <!-- Embed player -->
         <div v-if="playerReady" class="mp-body" :class="{ 'mp-body--spotify': nowPlaying.type === 'spotify' }">
           <iframe
+            :key="iframeKey"
             ref="iframeEl"
             :src="embedUrl"
             frameborder="0"
@@ -36,6 +37,13 @@
             allowfullscreen
             @load="onIframeLoad"
           />
+        </div>
+
+        <!-- YouTube playlist skip controls -->
+        <div v-if="playerReady && isYtPlaylist" class="mp-skip-bar">
+          <button class="mp-skip-btn" @click="skipSong(-1)" title="Previous song">⏮</button>
+          <span class="mp-skip-label">Track {{ (nowPlaying.playlistIndex || 0) + 1 }}</span>
+          <button class="mp-skip-btn" @click="skipSong(1)" title="Next song">⏭</button>
         </div>
 
       </div>
@@ -65,6 +73,19 @@ const expanded    = ref(false);
 const playerReady = ref(false);
 const iframeEl    = ref(null);
 const ytTime      = ref(0);
+const iframeKey   = ref(0);
+
+const isYtPlaylist = computed(() =>
+  nowPlaying.value?.type === 'youtube' && nowPlaying.value?.isPlaylist
+);
+
+const skipSong = (dir) => {
+  if (!nowPlaying.value) return;
+  const idx = Math.max(0, (nowPlaying.value.playlistIndex || 0) + dir);
+  nowPlaying.value = { ...nowPlaying.value, playlistIndex: idx, position: 0 };
+  ytTime.value = 0;
+  iframeKey.value++;
+};
 
 // Reset when media changes or clears
 watch(nowPlaying, (np, old) => {
@@ -281,6 +302,39 @@ const previewLabel = computed(() => {
 .mp-body { line-height: 0; }
 .mp-embed { width: 100%; height: 300px; border: none; display: block; }
 .mp-body--spotify .mp-embed { height: 420px; }
+
+/* ── Skip bar (YouTube playlists) ── */
+.mp-skip-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 10px 14px;
+  background: #1a1a1a;
+  border-top: 1px solid #2a2a2a;
+}
+.mp-skip-btn {
+  background: #2a2a2a;
+  border: none;
+  color: #fff;
+  font-size: 1.1rem;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, transform 0.1s;
+}
+.mp-skip-btn:hover { background: #1db954; transform: scale(1.1); }
+.mp-skip-label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #888;
+  min-width: 60px;
+  text-align: center;
+}
 
 /* ── Slide transition ── */
 .mp-slide-enter-active, .mp-slide-leave-active { transition: opacity 0.22s ease, transform 0.22s ease; }
