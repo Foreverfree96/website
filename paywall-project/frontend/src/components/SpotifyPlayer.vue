@@ -126,6 +126,7 @@ const props = defineProps({
   autoPlay:        { type: Boolean, default: false },
   defaultListOpen: { type: Boolean, default: true  },
   startPosition:   { type: Number,  default: 0     }, // ms — resume from this position
+  startTrackUri:   { type: String,  default: ''    }, // track URI to resume playlist at
 });
 
 const API    = import.meta.env.VITE_API_URL;
@@ -324,10 +325,11 @@ const startPlayback = async (shouldPlay = true) => {
     return;
   }
   const resumeMs = props.startPosition || 0;
+  const offset   = props.startTrackUri ? { uri: props.startTrackUri } : { position: 0 };
   await spotifyFetch('PUT', `/me/player/play?device_id=${deviceId}`,
     isTrack
       ? { uris: [uri], position_ms: resumeMs }
-      : { context_uri: uri, offset: { position: 0 }, position_ms: resumeMs }
+      : { context_uri: uri, offset, position_ms: resumeMs }
   );
   // Always play in order — turn shuffle off after starting so Spotify's
   // remembered shuffle state doesn't affect the queue
@@ -667,8 +669,8 @@ onUnmounted(() => {
   player = null;
 });
 
-// Expose position so parent (MiniPlayer) can save it before unmounting
-defineExpose({ position });
+// Expose position + currentTrackUri so MiniPlayer can persist playlist position
+defineExpose({ position, currentTrackUri });
 </script>
 
 <style scoped>

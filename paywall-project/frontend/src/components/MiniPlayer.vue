@@ -22,6 +22,7 @@
             :autoPlay="true"
             :defaultListOpen="true"
             :startPosition="nowPlaying.position || 0"
+            :startTrackUri="nowPlaying.trackUri || ''"
           />
         </div>
 
@@ -219,8 +220,14 @@ watchEffect(() => {
   if (nowPlaying.value?.type === 'spotify' && spotifyPlayerRef.value) {
     positionSaver = setInterval(() => {
       const pos = spotifyPlayerRef.value?.position?.value;
+      const uri = spotifyPlayerRef.value?.currentTrackUri?.value;
       if (pos > 0 && nowPlaying.value) {
-        nowPlaying.value = { ...nowPlaying.value, position: pos, resumeOnLoad: true };
+        nowPlaying.value = {
+          ...nowPlaying.value,
+          position:     pos,
+          resumeOnLoad: true,
+          ...(uri ? { trackUri: uri } : {}),
+        };
       }
     }, 5000);
   }
