@@ -2,14 +2,50 @@ import axios from "axios";
 import jwt from "jsonwebtoken";
 import User from "../models/userModel.js";
 
-const SCOPES = "user-read-private user-read-email user-modify-playback-state";
+const SCOPES = [
+  "user-read-private",
+  "user-read-email",
+  "user-modify-playback-state",
+  "user-read-playback-state",
+  "streaming",
+].join(" ");
+
+// ─── SHARED HELPER: refresh access token ──────────────────────────────────────
+const refreshAccessToken = async (userId, refreshToken) => {
+  const credentials = Buffer.from(
+    `${process.env.SPOTIFY_CLIENT_ID}:${process.env.SPOTIFY_CLIENT_SECRET}`
+  ).toString("base64");
+
+  const res = await axios.post(
+    "https://accounts.spotify.com/api/token",
+    new URLSearchParams({ grant_type: "refresh_token", refresh_token: refreshToken }),
+    { headers: { Authorization: `Basic ${credentials}`, "Content-Type": "application/x-www-form-urlencoded" } }
+  );
+
+  const { access_token, expires_in } = res.data;
+  await User.findByIdAndUpdate(userId, {
+    spotifyAccessToken: access_token,
+    spotifyTokenExpiry: new Date(Date.now() + expires_in * 1000),
+  });
+  return access_token;
+};
+
+// ─── SHARED HELPER: get valid access token (refresh if expired) ───────────────
+const getValidToken = async (userId) => {
+  const user = await User.findById(userId).select(
+    "+spotifyAccessToken +spotifyRefreshToken spotifyTokenExpiry spotifyIsPremium spotifyId"
+  );
+  if (!user?.spotifyId) return { error: 404, message: "Spotify not connected" };
+  if (!user.spotifyIsPremium) return { error: 403, message: "Spotify Premium required" };
+
+  let accessToken = user.spotifyAccessToken;
+  if (!user.spotifyTokenExpiry || user.spotifyTokenExpiry < new Date()) {
+    accessToken = await refreshAccessToken(userId, user.spotifyRefreshToken);
+  }
+  return { accessToken };
+};
 
 // ─── SPOTIFY LOGIN ────────────────────────────────────────────────────────────
-// GET /api/spotify/login?token=JWT
-// Validates the JWT from the query string (needed because this is a browser
-// redirect, not an XHR request so auth headers can't be sent), then redirects
-// to Spotify's authorization page with the user's ID encoded in `state`.
-
 export const spotifyLogin = (req, res) => {
   const { token } = req.query;
   if (!token) return res.status(401).json({ message: "Not authenticated" });
@@ -35,11 +71,6 @@ export const spotifyLogin = (req, res) => {
 };
 
 // ─── SPOTIFY CALLBACK ─────────────────────────────────────────────────────────
-// GET /api/spotify/callback
-// Spotify redirects here after the user grants (or denies) access.
-// Exchanges the code for tokens, fetches the profile to check premium,
-// saves everything to the User document, then redirects back to the frontend.
-
 export const spotifyCallback = async (req, res) => {
   const { code, state: userId, error } = req.query;
 
@@ -59,12 +90,7 @@ export const spotifyCallback = async (req, res) => {
         code,
         redirect_uri: process.env.SPOTIFY_REDIRECT_URI,
       }),
-      {
-        headers: {
-          Authorization:  `Basic ${credentials}`,
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-      }
+      { headers: { Authorization: `Basic ${credentials}`, "Content-Type": "application/x-www-form-urlencoded" } }
     );
 
     const { access_token, refresh_token, expires_in } = tokenRes.data;
@@ -78,16 +104,14 @@ export const spotifyCallback = async (req, res) => {
 
     await User.findByIdAndUpdate(userId, {
       spotifyId,
-      spotifyDisplayName: display_name || null,
-      spotifyIsPremium:   isPremium,
+      spotifyDisplayName:  display_name || null,
+      spotifyIsPremium:    isPremium,
       spotifyAccessToken:  access_token,
       spotifyRefreshToken: refresh_token,
       spotifyTokenExpiry:  new Date(Date.now() + expires_in * 1000),
     });
 
-    res.redirect(
-      `${process.env.FRONTEND_URL}/profile?spotify=connected&premium=${isPremium}`
-    );
+    res.redirect(`${process.env.FRONTEND_URL}/profile?spotify=connected&premium=${isPremium}`);
   } catch (err) {
     console.error("❌ Spotify OAuth error:", err.response?.data || err.message);
     res.redirect(`${process.env.FRONTEND_URL}/profile?spotify=error`);
@@ -95,8 +119,6 @@ export const spotifyCallback = async (req, res) => {
 };
 
 // ─── SPOTIFY STATUS ───────────────────────────────────────────────────────────
-// GET /api/spotify/status  (protected)
-
 export const spotifyStatus = async (req, res) => {
   try {
     const user = await User.findById(req.user.id).select(
@@ -108,79 +130,46 @@ export const spotifyStatus = async (req, res) => {
       connected:    !!user.spotifyId,
       displayName:  user.spotifyDisplayName || null,
       isPremium:    user.spotifyIsPremium || false,
-      tokenExpired: user.spotifyTokenExpiry
-        ? user.spotifyTokenExpiry < new Date()
-        : true,
+      tokenExpired: user.spotifyTokenExpiry ? user.spotifyTokenExpiry < new Date() : true,
     });
-  } catch (err) {
+  } catch {
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+// ─── SPOTIFY GET TOKEN ────────────────────────────────────────────────────────
+// GET /api/spotify/token  (protected)
+// Returns a fresh access token for the Web Playback SDK.
+// Only available to Premium users with a linked account.
+
+export const spotifyGetToken = async (req, res) => {
+  try {
+    const result = await getValidToken(req.user.id);
+    if (result.error) return res.status(result.error).json({ message: result.message });
+    res.json({ accessToken: result.accessToken });
+  } catch {
     res.status(500).json({ message: "Server error" });
   }
 };
 
 // ─── SPOTIFY SHUFFLE OFF ──────────────────────────────────────────────────────
-// POST /api/spotify/shuffle-off  (protected)
-// Turns shuffle off on the user's active Spotify device.
-// Refreshes the access token first if it has expired.
-// Always returns 204 — errors (e.g. no active device) are silently ignored.
-
 export const spotifyShuffleOff = async (req, res) => {
   try {
-    const user = await User.findById(req.user.id).select(
-      "+spotifyAccessToken +spotifyRefreshToken spotifyTokenExpiry spotifyIsPremium"
-    );
+    const result = await getValidToken(req.user.id);
+    if (result.error) return res.status(204).end();
 
-    // No linked Spotify account — nothing to do
-    if (!user?.spotifyAccessToken) return res.status(204).end();
-
-    // Only Premium accounts can control playback
-    if (!user.spotifyIsPremium) return res.status(204).end();
-
-    let accessToken = user.spotifyAccessToken;
-
-    // Refresh the access token if it has expired
-    if (!user.spotifyTokenExpiry || user.spotifyTokenExpiry < new Date()) {
-      const credentials = Buffer.from(
-        `${process.env.SPOTIFY_CLIENT_ID}:${process.env.SPOTIFY_CLIENT_SECRET}`
-      ).toString("base64");
-
-      const refreshRes = await axios.post(
-        "https://accounts.spotify.com/api/token",
-        new URLSearchParams({
-          grant_type:    "refresh_token",
-          refresh_token: user.spotifyRefreshToken,
-        }),
-        {
-          headers: {
-            Authorization:  `Basic ${credentials}`,
-            "Content-Type": "application/x-www-form-urlencoded",
-          },
-        }
-      );
-
-      accessToken = refreshRes.data.access_token;
-      await User.findByIdAndUpdate(req.user.id, {
-        spotifyAccessToken: accessToken,
-        spotifyTokenExpiry: new Date(Date.now() + refreshRes.data.expires_in * 1000),
-      });
-    }
-
-    // Tell Spotify to turn shuffle off on the active device
     await axios.put(
       "https://api.spotify.com/v1/me/player/shuffle?state=false",
       {},
-      { headers: { Authorization: `Bearer ${accessToken}` } }
+      { headers: { Authorization: `Bearer ${result.accessToken}` } }
     );
-
     res.status(204).end();
   } catch {
-    // 404 = no active device, other errors are also non-fatal
     res.status(204).end();
   }
 };
 
 // ─── SPOTIFY DISCONNECT ───────────────────────────────────────────────────────
-// DELETE /api/spotify/disconnect  (protected)
-
 export const spotifyDisconnect = async (req, res) => {
   try {
     await User.findByIdAndUpdate(req.user.id, {
@@ -194,7 +183,7 @@ export const spotifyDisconnect = async (req, res) => {
       spotifyIsPremium: false,
     });
     res.json({ message: "Spotify disconnected" });
-  } catch (err) {
+  } catch {
     res.status(500).json({ message: "Server error" });
   }
 };

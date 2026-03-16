@@ -34,13 +34,13 @@
     </div>
 
     <!-- ── Spotify ─────────────────────────────────────────────────────────── -->
-    <div v-else-if="embedType === 'spotify'" class="embed-wrap">
-      <iframe :key="`sp-${resetKey}`" :src="spotifyEmbedUrl" frameborder="0"
-        allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
-        loading="lazy"
-        :class="['embed-iframe', isPlaylist ? 'embed-iframe--playlist' : 'embed-iframe--audio']" />
-      <div v-if="guardActive" class="embed-guard" @click="activateEmbed" title="Click to play" />
-    </div>
+    <!-- SpotifyPlayer handles Premium detection internally;
+         falls back to iframe embed for free/unlinked users -->
+    <SpotifyPlayer
+      v-else-if="embedType === 'spotify'"
+      :mediaUrl="mediaUrl"
+      :isPlaylist="isPlaylist"
+    />
 
     <!-- ── Apple Music ────────────────────────────────────────────────────── -->
     <div v-else-if="embedType === 'applemusic'" class="embed-wrap">
@@ -62,6 +62,7 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue';
+import SpotifyPlayer from './SpotifyPlayer.vue';
 
 const props = defineProps({
   mediaUrl:  { type: String, default: '' },
@@ -124,16 +125,6 @@ const activateEmbed = () => {
   guardActive.value = false;
   registry().set(embedId, stopThisEmbed);
 
-  // Turn Spotify shuffle off when a Spotify embed is activated
-  if (props.embedType === 'spotify') {
-    const token = localStorage.getItem('jwtToken');
-    if (token) {
-      fetch(import.meta.env.VITE_API_URL + '/api/spotify/shuffle-off', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-      }).catch(() => {});
-    }
-  }
 };
 
 // Called when the guard over a single YouTube video is clicked
@@ -195,10 +186,6 @@ const twitchEmbedUrl = computed(() => {
   if (channelMatch) return `https://player.twitch.tv/?channel=${channelMatch[1]}&parent=${window.location.hostname}`;
   return '';
 });
-
-const spotifyEmbedUrl = computed(() =>
-  props.mediaUrl.replace('open.spotify.com/', 'open.spotify.com/embed/')
-);
 
 const appleMusicEmbedUrl = computed(() =>
   props.mediaUrl.replace('music.apple.com', 'embed.music.apple.com')
