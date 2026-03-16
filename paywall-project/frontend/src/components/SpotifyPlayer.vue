@@ -82,7 +82,7 @@
 
       <!-- ── Reconnect nudge (missing playlist scope) ────────────────────── -->
       <div v-if="needsReconnect" class="sp-reconnect-banner">
-        ⚠ <a href="/profile">Reconnect Spotify</a> to enable playlist queue.
+        ⚠ <a href="/profile">Reconnect Spotify</a> to load this playlist's queue (one-time fix).
       </div>
 
       <!-- ── Scrollable playlist track list ───────────────────────────────── -->
@@ -313,7 +313,8 @@ const fetchPlaylistTracks = async () => {
     return true;
   };
 
-  // 1️⃣ Direct call with SDK token — works for any public playlist, no scopes needed
+  // 1️⃣ Direct call with SDK token — works for public playlists with any valid token;
+  //    works for private playlists only if the token has playlist-read-private scope.
   if (token) {
     try {
       const res = await fetch(
@@ -323,21 +324,26 @@ const fetchPlaylistTracks = async () => {
       if (res.ok) {
         const data = await res.json();
         if (applyTracks(parseTracks(data))) return;
-      }
+      } else if (res.status !== 403) return; // unexpected error, give up
     } catch { /* fall through */ }
   }
 
-  // 2️⃣ Backend proxy fallback (uses client credentials — also scope-free for public playlists)
+  // 2️⃣ Backend proxy fallback (uses client credentials — works for public playlists)
   try {
     const jwt = localStorage.getItem('jwtToken');
-    if (!jwt) return;
-    const res = await fetch(`${API}/api/spotify/playlist/${m[1]}/tracks`, {
-      headers: { Authorization: `Bearer ${jwt}` },
-    });
-    if (res.ok) applyTracks(parseTracks(await res.json()));
+    if (jwt) {
+      const res = await fetch(`${API}/api/spotify/playlist/${m[1]}/tracks`, {
+        headers: { Authorization: `Bearer ${jwt}` },
+      });
+      if (res.ok) { applyTracks(parseTracks(await res.json())); return; }
+    }
   } catch (err) {
     console.error('[Spotify] fetchPlaylistTracks failed:', err);
   }
+
+  // Both paths returned 403 — playlist is private and token lacks playlist-read-private scope.
+  // User needs to reconnect Spotify to re-authorize with the full scope set.
+  needsReconnect.value = true;
 };
 
 // ── Play a specific track from the queue list ─────────────────────────────────
