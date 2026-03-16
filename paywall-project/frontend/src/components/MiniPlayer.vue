@@ -18,7 +18,7 @@
           <SpotifyPlayer
             :mediaUrl="nowPlaying.url"
             :isPlaylist="nowPlaying.isPlaylist || false"
-            :autoPlay="true"
+            :autoPlay="false"
           />
         </div>
 
@@ -266,6 +266,9 @@ const previewLabel = computed(() => {
   border: 1px solid #2a2a2a;
   box-shadow: 0 10px 40px rgba(0,0,0,0.7);
   overflow: hidden;
+  max-height: calc(100vh - 100px);
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .mp-header {
@@ -289,14 +292,14 @@ const previewLabel = computed(() => {
 
 /* ── Spotify SDK wrapper ── */
 .mp-spotify-wrap { overflow: hidden; }
-.mp-spotify-wrap :deep(.sp-wrap)       { margin-top: 0; }
-.mp-spotify-wrap :deep(.sp-card)       { border: none; border-radius: 0; padding: 14px; gap: 12px; }
-.mp-spotify-wrap :deep(.sp-tracklist)  { display: none; }
-.mp-spotify-wrap :deep(.sp-brand)      { display: none; }
-.mp-spotify-wrap :deep(.sp-vol-track)  { width: 58px; min-width: 40px; }
-.mp-spotify-wrap :deep(.sp-vol-pct)    { display: none; }
-.mp-spotify-wrap :deep(.sp-art)        { width: 56px; height: 56px; }
-.mp-spotify-wrap :deep(.sp-iframe)     { border-radius: 0; }
+.mp-spotify-wrap :deep(.sp-wrap)          { margin-top: 0; }
+.mp-spotify-wrap :deep(.sp-card)          { border: none; border-radius: 0; padding: 14px; gap: 12px; }
+.mp-spotify-wrap :deep(.sp-tracklist)     { max-height: 180px; }
+.mp-spotify-wrap :deep(.sp-brand)         { display: none; }
+.mp-spotify-wrap :deep(.sp-vol-track)     { width: 58px; min-width: 40px; }
+.mp-spotify-wrap :deep(.sp-vol-pct)       { display: none; }
+.mp-spotify-wrap :deep(.sp-art)           { width: 56px; height: 56px; }
+.mp-spotify-wrap :deep(.sp-iframe)        { border-radius: 0; }
 
 /* ── Preview ── */
 .mp-preview {

@@ -111,10 +111,15 @@ import { ref, computed, onMounted, onUnmounted } from 'vue';
 const props = defineProps({
   mediaUrl:   { type: String,  default: '' },
   isPlaylist: { type: Boolean, default: false },
-  autoPlay:   { type: Boolean, default: false }, // false = load paused (page embeds), true = play immediately (mini player)
+  autoPlay:   { type: Boolean, default: false },
 });
 
 const API = import.meta.env.VITE_API_URL;
+
+// ── Module-level token cache — persists across mounts/route changes ────────────
+// This prevents re-fetching the token every time the component mounts and
+// ensures getOAuthToken always hands Spotify a fresh token when it asks.
+let _tokenCache = null; // { token, expiresAt }
 
 // ── State ──────────────────────────────────────────────────────────────────────
 const state          = ref('loading');
@@ -168,16 +173,28 @@ const spotifyFetch = (method, path, body) =>
   });
 
 // ── Token ──────────────────────────────────────────────────────────────────────
-// Returns { token } on success, { needsConnect: true } if not linked/premium, { unavailable: true } on other errors
+// Returns { token } on success, { needsConnect: true } if not linked/premium,
+// { unavailable: true } on other errors.
+// Uses a module-level cache so rapid remounts and SDK token-refresh callbacks
+// don't hammer the backend on every call.
 const fetchToken = async () => {
   const jwt = localStorage.getItem('jwtToken');
   if (!jwt) return { needsConnect: true };
+
+  // Return cached token if still valid (60 s safety buffer)
+  if (_tokenCache && Date.now() < _tokenCache.expiresAt - 60_000) {
+    return { token: _tokenCache.token };
+  }
+
   const res = await fetch(`${API}/api/spotify/token`, {
     headers: { Authorization: `Bearer ${jwt}` },
   });
   if (res.status === 403 || res.status === 404) return { needsConnect: true };
   if (!res.ok) return { unavailable: true };
-  return { token: (await res.json()).accessToken };
+  const data = await res.json();
+  // Spotify access tokens last 3600 s — cache for 50 min to be safe
+  _tokenCache = { token: data.accessToken, expiresAt: Date.now() + 50 * 60 * 1000 };
+  return { token: data.accessToken };
 };
 
 // ── SDK loader ─────────────────────────────────────────────────────────────────
@@ -221,10 +238,18 @@ const waitForDevice = async (maxWaitMs = 8000) => {
   return false;
 };
 
-// ── Start playback context (waits for device to register, then plays) ─────────
-const startPlayback = async () => {
+// ── Start playback context ─────────────────────────────────────────────────────
+// shouldPlay = true  → transfer device + begin playing the media URL context
+// shouldPlay = false → transfer device only; user clicks play to start
+const startPlayback = async (shouldPlay = true) => {
   const found = await waitForDevice();
   if (!found) { state.value = 'needs-connect'; return; }
+
+  if (!shouldPlay) {
+    // Just make our device the active one without starting audio
+    await spotifyFetch('PUT', '/me/player', { device_ids: [deviceId], play: false });
+    return;
+  }
 
   const uri     = getSpotifyUri(props.mediaUrl);
   const isTrack = uri?.startsWith('spotify:track:');
@@ -282,7 +307,14 @@ const startTicker = () => {
 const stopTicker = () => { clearInterval(ticker); ticker = null; };
 
 // ── Controls ───────────────────────────────────────────────────────────────────
-const togglePlay = () => player?.togglePlay();
+const togglePlay = async () => {
+  // If no track is loaded yet (device transferred but not playing), start the context
+  if (paused.value && !currentTrackUri.value) {
+    await startPlayback(true);
+  } else {
+    player?.togglePlay();
+  }
+};
 const nextTrack  = () => player?.nextTrack();
 const prevTrack  = () => player?.previousTrack();
 
@@ -361,10 +393,10 @@ onMounted(async () => {
     return;
   }
 
-  // Global fallback: if SDK never connects, fall back to iframe embed after 8s
+  // Global fallback: if SDK never connects, fall back to iframe embed after 15s
   connectTimeout = setTimeout(() => {
     if (state.value !== 'ready') state.value = 'unavailable';
-  }, 8000);
+  }, 15000);
 
   try {
     statusMsg.value = 'Fetching credentials…';
@@ -381,17 +413,19 @@ onMounted(async () => {
 
     player = new window.Spotify.Player({
       name: 'Site Player',
-      getOAuthToken: (cb) => cb(token),
+      // Always use fetchToken so the SDK never gets a stale/expired token
+      getOAuthToken: async (cb) => {
+        const result = await fetchToken();
+        if (result.token) { token = result.token; cb(result.token); }
+      },
       volume: volume.value / 100,
     });
 
     player.addListener('ready', async ({ device_id }) => {
       deviceId = device_id;
-      // Show the player UI immediately — don't wait for player_state_changed
       clearTimeout(connectTimeout);
       state.value = 'ready';
-      // Start playback in the background; player_state_changed will update track info
-      startPlayback().catch(() => {});
+      startPlayback(props.autoPlay).catch(() => {});
     });
 
     player.addListener('not_ready', () => {
@@ -420,13 +454,7 @@ onMounted(async () => {
         };
       }
 
-      if (isFirst) {
-        if (props.isPlaylist) fetchPlaylistTracks();
-        if (!props.autoPlay && !s.paused) {
-          spotifyFetch('PUT', `/me/player/pause?device_id=${deviceId}`).catch(() => {});
-          return;
-        }
-      }
+      if (isFirst && props.isPlaylist) fetchPlaylistTracks();
 
       if (!s.paused) startTicker();
       else           stopTicker();
