@@ -1,31 +1,28 @@
 <template>
   <div class="mp-root" v-if="nowPlaying">
 
-    <!-- ── Expanded panel ──────────────────────────────────────────────── -->
+    <!-- ── Expanded panel (v-if so the YT div exists in DOM when visible) ── -->
     <transition name="mp-slide">
-      <div v-show="expanded" class="mp-panel">
+      <div v-if="expanded" class="mp-panel">
 
         <!-- Header -->
         <div class="mp-header">
           <span class="mp-label">♫ Now Playing</span>
           <div class="mp-header-btns">
-            <button class="mp-hbtn" @click="expanded = false" title="Minimize">—</button>
+            <button class="mp-hbtn" @click="collapse" title="Minimize">—</button>
             <button class="mp-hbtn mp-hbtn--close" @click="handleClose" title="Stop & close">✕</button>
           </div>
         </div>
 
-        <!-- Player content -->
+        <!-- Player -->
         <div class="mp-body">
           <SpotifyPlayer
             v-if="nowPlaying.type === 'spotify'"
             :mediaUrl="nowPlaying.url"
             :isPlaylist="nowPlaying.isPlaylist"
           />
-          <div
-            v-else-if="nowPlaying.type === 'youtube'"
-            :id="mpYtId"
-            class="mp-yt"
-          ></div>
+          <!-- YouTube: IFrame API injects into this div once it exists in DOM -->
+          <div v-else-if="nowPlaying.type === 'youtube'" :id="mpYtId" class="mp-yt"></div>
           <iframe
             v-else-if="nowPlaying.type === 'soundcloud'"
             ref="mpScFrame"
@@ -34,7 +31,6 @@
             class="mp-sc"
             allow="autoplay"
           />
-          <!-- Twitch / Apple Music / fallback -->
           <iframe
             v-else
             :src="mpFallbackUrl"
@@ -44,14 +40,25 @@
           />
         </div>
 
+        <!-- YouTube playlist shuffle bar -->
+        <div v-if="nowPlaying.type === 'youtube' && nowPlaying.isPlaylist" class="mp-yt-bar">
+          <button
+            class="mp-shuffle-btn"
+            :class="{ 'mp-shuffle-btn--on': mpYtShuffle }"
+            @click="toggleMpShuffle"
+          >
+            🔀 {{ mpYtShuffle ? 'Shuffle: On' : 'Shuffle: Off' }}
+          </button>
+        </div>
+
       </div>
     </transition>
 
-    <!-- ── Bubble button ───────────────────────────────────────────────── -->
+    <!-- ── Bubble ── -->
     <button
       class="mp-bubble"
       :class="{ 'mp-bubble--on': expanded }"
-      @click="expanded = !expanded"
+      @click="toggleExpanded"
       :title="expanded ? 'Minimize player' : 'Open player'"
     >
       <span class="mp-ring"></span>
@@ -68,9 +75,10 @@ import SpotifyPlayer from './SpotifyPlayer.vue';
 
 const { nowPlaying, close } = useNowPlaying();
 
-const expanded  = ref(false);
-const mpYtId    = 'mp-yt-' + Math.random().toString(36).slice(2, 7);
-const mpScFrame = ref(null);
+const expanded     = ref(false);
+const mpYtShuffle  = ref(false);
+const mpYtId       = 'mp-yt-' + Math.random().toString(36).slice(2, 7);
+const mpScFrame    = ref(null);
 
 let mpYtPlayer = null;
 let mpScWidget = null;
@@ -82,12 +90,18 @@ const reg = () => {
 };
 
 const stopMiniPlayer = () => {
-  if (mpYtPlayer) mpYtPlayer.pauseVideo?.();
+  // Save current YT position before stopping so expand resumes from same point
+  if (mpYtPlayer) {
+    const pos = Math.floor((mpYtPlayer.getCurrentTime?.() || 0) * 1000);
+    const idx = mpYtPlayer.getPlaylistIndex?.() ?? 0;
+    if (nowPlaying.value) nowPlaying.value = { ...nowPlaying.value, position: pos, playlistIndex: idx };
+    mpYtPlayer.pauseVideo?.();
+  }
   if (mpScWidget) mpScWidget.pause?.();
   close();
 };
 
-// ── YouTube IFrame API loader (shared global queue) ───────────────────────────
+// ── YouTube API loader ────────────────────────────────────────────────────────
 const loadYouTubeAPI = () => {
   if (window.YT?.Player) return Promise.resolve(window.YT);
   return new Promise((resolve) => {
@@ -108,7 +122,7 @@ const loadYouTubeAPI = () => {
   });
 };
 
-// ── SoundCloud Widget API loader ──────────────────────────────────────────────
+// ── SoundCloud API loader ─────────────────────────────────────────────────────
 const loadSCAPI = () => {
   if (window.SC?.Widget) return Promise.resolve(window.SC);
   return new Promise((resolve) => {
@@ -119,7 +133,7 @@ const loadSCAPI = () => {
   });
 };
 
-// ── Init YouTube player in mini panel ────────────────────────────────────────
+// ── Init YouTube player (called AFTER the div exists in DOM) ──────────────────
 const initYtPlayer = async (np) => {
   if (mpYtPlayer) { mpYtPlayer.destroy(); mpYtPlayer = null; }
   const YT = await loadYouTubeAPI();
@@ -133,17 +147,20 @@ const initYtPlayer = async (np) => {
   if (np.isPlaylist && listMatch) {
     Object.assign(playerVars, {
       listType: 'playlist',
-      list: listMatch[1],
-      index: np.playlistIndex || 0,
+      list:     listMatch[1],
+      index:    np.playlistIndex || 0,
     });
   }
 
   mpYtPlayer = new YT.Player(mpYtId, {
     width: '100%',
-    height: '170',
+    height: '180',
     videoId: np.isPlaylist ? undefined : videoId,
     playerVars,
     events: {
+      onReady: () => {
+        if (mpYtShuffle.value) mpYtPlayer.setShuffle(true);
+      },
       onStateChange: (e) => {
         if (e.data === window.YT.PlayerState.PLAYING) {
           reg().set('mp-player', stopMiniPlayer);
@@ -153,7 +170,7 @@ const initYtPlayer = async (np) => {
   });
 };
 
-// ── Init SoundCloud widget in mini panel ─────────────────────────────────────
+// ── Init SoundCloud widget (called AFTER the iframe exists in DOM) ────────────
 const initScWidget = async (np) => {
   if (!mpScFrame.value) return;
   const SC = await loadSCAPI();
@@ -168,11 +185,65 @@ const initScWidget = async (np) => {
   });
 };
 
-// ── Cleanup active players ────────────────────────────────────────────────────
+// ── Cleanup ───────────────────────────────────────────────────────────────────
 const cleanupPlayers = () => {
   if (mpYtPlayer) { mpYtPlayer.destroy(); mpYtPlayer = null; }
   mpScWidget = null;
 };
+
+// ── Collapse: save position, destroy player, hide panel ──────────────────────
+const collapse = () => {
+  if (mpYtPlayer) {
+    const pos = Math.floor((mpYtPlayer.getCurrentTime?.() || 0) * 1000);
+    const idx = mpYtPlayer.getPlaylistIndex?.() ?? 0;
+    if (nowPlaying.value) nowPlaying.value = { ...nowPlaying.value, position: pos, playlistIndex: idx };
+    mpYtPlayer.destroy();
+    mpYtPlayer = null;
+  }
+  if (mpScWidget) {
+    mpScWidget.getPosition?.((ms) => {
+      if (nowPlaying.value && ms > 0) nowPlaying.value = { ...nowPlaying.value, position: ms };
+    });
+    mpScWidget.pause?.();
+    mpScWidget = null;
+  }
+  expanded.value = false;
+};
+
+// ── Expand: show panel, init player once DOM is ready ────────────────────────
+const expand = async () => {
+  expanded.value = true;
+  await nextTick(); // wait for v-if to render the div/iframe into DOM
+  const np = nowPlaying.value;
+  if (!np) return;
+  if (np.type === 'youtube')     await initYtPlayer(np);
+  else if (np.type === 'soundcloud') await initScWidget(np);
+  else if (np.type !== 'spotify')    reg().set('mp-player', stopMiniPlayer);
+};
+
+// Bubble click
+const toggleExpanded = () => {
+  if (expanded.value) collapse();
+  else expand();
+};
+
+// ── YouTube shuffle toggle ────────────────────────────────────────────────────
+const toggleMpShuffle = () => {
+  mpYtShuffle.value = !mpYtShuffle.value;
+  mpYtPlayer?.setShuffle?.(mpYtShuffle.value);
+};
+
+// ── Watch nowPlaying: cleanup when URL/type changes, reset shuffle ────────────
+watch(nowPlaying, (np, old) => {
+  if (old && (old.type !== np?.type || old.url !== np?.url)) {
+    cleanupPlayers();
+    mpYtShuffle.value = false;
+  }
+  if (!np) {
+    expanded.value = false;
+  }
+  // Don't auto-expand — user clicks bubble to open
+});
 
 // ── Computed embed URLs ───────────────────────────────────────────────────────
 const mpScUrl = computed(() => {
@@ -195,43 +266,9 @@ const mpFallbackUrl = computed(() => {
   return url;
 });
 
-// ── Watch nowPlaying — init appropriate player ────────────────────────────────
-watch(nowPlaying, async (np, old) => {
-  // Type or URL changed — destroy the old player
-  if (old && (old.type !== np?.type || old.url !== np?.url)) {
-    cleanupPlayers();
-  }
-
-  if (!np) {
-    expanded.value = false;
-    return;
-  }
-
-  expanded.value = true;
-  await nextTick();
-
-  if (np.type === 'youtube') {
-    await initYtPlayer(np);
-  } else if (np.type === 'soundcloud') {
-    await initScWidget(np);
-  } else if (np.type !== 'spotify') {
-    // Twitch / Apple / fallback iframe — just register in registry so exclusive-play works
-    reg().set('mp-player', stopMiniPlayer);
-  }
-});
-
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
-onMounted(async () => {
+onMounted(() => {
   reg().set('mp-player', stopMiniPlayer);
-
-  // Handle case where nowPlaying was already set before this component mounted
-  const np = nowPlaying.value;
-  if (np) {
-    expanded.value = true;
-    await nextTick();
-    if (np.type === 'youtube') await initYtPlayer(np);
-    else if (np.type === 'soundcloud') await initScWidget(np);
-  }
 });
 
 onUnmounted(() => {
@@ -239,7 +276,7 @@ onUnmounted(() => {
   cleanupPlayers();
 });
 
-// ── Close handler ─────────────────────────────────────────────────────────────
+// ── Close ─────────────────────────────────────────────────────────────────────
 const handleClose = () => {
   cleanupPlayers();
   close();
@@ -247,7 +284,6 @@ const handleClose = () => {
 </script>
 
 <style scoped>
-/* ── Root — fixed bottom-left, above page content ── */
 .mp-root {
   position: fixed;
   bottom: 20px;
@@ -282,11 +318,9 @@ const handleClose = () => {
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.7);
 }
 .mp-bubble--on {
-  border-color: #1db954;
-  box-shadow: 0 0 0 3px rgba(29, 185, 84, 0.25), 0 4px 20px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 0 0 3px rgba(29, 185, 84, 0.3), 0 4px 20px rgba(0, 0, 0, 0.6);
 }
 
-/* Pulsing green ring */
 .mp-ring {
   position: absolute;
   inset: -7px;
@@ -301,7 +335,7 @@ const handleClose = () => {
   100% { transform: scale(0.88); opacity: 0; }
 }
 
-/* ── Expanded panel ── */
+/* ── Panel ── */
 .mp-panel {
   width: 320px;
   background: #121212;
@@ -319,19 +353,13 @@ const handleClose = () => {
   background: #1a1a1a;
   border-bottom: 1px solid #2a2a2a;
 }
-
 .mp-label {
   color: #fff;
   font-weight: 700;
   font-size: 0.82rem;
   letter-spacing: 0.03em;
 }
-
-.mp-header-btns {
-  display: flex;
-  gap: 6px;
-}
-
+.mp-header-btns { display: flex; gap: 6px; }
 .mp-hbtn {
   background: #2a2a2a;
   border: none;
@@ -347,56 +375,54 @@ const handleClose = () => {
 .mp-hbtn:hover { background: #3a3a3a; color: #fff; }
 .mp-hbtn--close:hover { background: #e11d48; color: #fff; }
 
-/* ── Player body ── */
-.mp-body {
-  overflow-y: auto;
-  max-height: 440px;
+/* ── Body ── */
+.mp-body { overflow-y: auto; max-height: 440px; }
+
+.mp-yt     { width: 100%; height: 180px; display: block; background: #000; }
+.mp-sc     { width: 100%; height: 166px; border: none; display: block; }
+.mp-fallback { width: 100%; height: 300px; border: none; display: block; }
+
+/* ── YouTube controls bar ── */
+.mp-yt-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #1a1a1a;
+  border-top: 1px solid #2a2a2a;
 }
 
-/* YouTube div — IFrame API injects its own iframe here */
-.mp-yt {
-  width: 100%;
-  height: 170px;
-  display: block;
-  background: #000;
+.mp-shuffle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 14px;
+  border-radius: 20px;
+  border: 2px solid #444;
+  background: transparent;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  color: #aaa;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  user-select: none;
 }
+.mp-shuffle-btn:hover { border-color: #666; color: #fff; }
+.mp-shuffle-btn--on   { background: #1db954; border-color: #1db954; color: #000; }
+.mp-shuffle-btn--on:hover { background: #1ed760; border-color: #1ed760; }
 
-/* SoundCloud embed */
-.mp-sc {
-  width: 100%;
-  height: 166px;
-  border: none;
-  display: block;
-}
-
-/* Twitch / Apple / fallback */
-.mp-fallback {
-  width: 100%;
-  height: 300px;
-  border: none;
-  display: block;
-}
-
-/* ── Slide-up transition ── */
-.mp-slide-enter-active,
-.mp-slide-leave-active {
+/* ── Slide transition ── */
+.mp-slide-enter-active, .mp-slide-leave-active {
   transition: opacity 0.22s ease, transform 0.22s ease;
 }
-.mp-slide-enter-from,
-.mp-slide-leave-to {
+.mp-slide-enter-from, .mp-slide-leave-to {
   opacity: 0;
   transform: translateY(12px);
 }
 
-/* ── Mobile: shift bubble so it doesn't overlap chat widget ── */
+/* ── Mobile ── */
 @media (max-width: 600px) {
-  .mp-root {
-    bottom: 14px;
-    left: 14px;
-  }
-  .mp-panel {
-    width: calc(100vw - 28px);
-    max-width: 320px;
-  }
+  .mp-root { bottom: 14px; left: 14px; }
+  .mp-panel { width: calc(100vw - 28px); max-width: 320px; }
 }
 </style>

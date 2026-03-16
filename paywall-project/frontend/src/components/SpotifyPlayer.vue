@@ -169,8 +169,10 @@ const loadSDK = () => new Promise((resolve) => {
 });
 
 // ── Start playback ─────────────────────────────────────────────────────────────
-// Passing device_id as a query param implicitly transfers playback to this
-// device — avoids a separate PUT /me/player call that 404s on fresh sessions.
+// device_id in query param implicitly transfers playback — avoids the separate
+// PUT /me/player call that 404s on fresh SDK sessions.
+// We do NOT auto-pause here; player_state_changed fires once the playlist/track
+// is resolved, which populates track info before we show the UI.
 const startPlayback = async () => {
   const uri = getSpotifyUri(props.mediaUrl);
   if (uri) {
@@ -179,16 +181,13 @@ const startPlayback = async () => {
       'PUT',
       `/me/player/play?device_id=${deviceId}`,
       isTrack
-        ? { uris: [uri], position_ms: 0 }
+        ? { uris: [uri] }
         : { context_uri: uri, offset: { position: 0 }, position_ms: 0 }
     );
   } else {
-    // No extractable URI — just transfer device without starting playback
     await spotifyFetch('PUT', '/me/player', { device_ids: [deviceId], play: false });
   }
   await spotifyFetch('PUT', `/me/player/shuffle?state=false&device_id=${deviceId}`);
-  await new Promise(r => setTimeout(r, 400));
-  await spotifyFetch('PUT', `/me/player/pause?device_id=${deviceId}`);
 };
 
 // ── Ticker ─────────────────────────────────────────────────────────────────────
@@ -306,10 +305,11 @@ onMounted(async () => {
 
     player.addListener('ready', async ({ device_id }) => {
       deviceId = device_id;
-      statusMsg.value = 'Starting playback…';
+      statusMsg.value = 'Loading…';
       try {
         await startPlayback();
-        state.value = 'ready';
+        // Don't set state='ready' yet — wait for player_state_changed to fire
+        // with actual track data so the UI is never shown blank.
       } catch {
         state.value = 'unavailable';
       }
@@ -321,6 +321,8 @@ onMounted(async () => {
 
     player.addListener('player_state_changed', (s) => {
       if (!s) return;
+      // First state update — switch from 'connecting' to 'ready'
+      if (state.value !== 'ready') state.value = 'ready';
       paused.value    = s.paused;
       position.value  = s.position;
       duration.value  = s.duration;
@@ -358,7 +360,7 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.sp-wrap { width: 100%; margin-top: 12px; }
+.sp-wrap { width: 100%; margin-top: 12px; box-sizing: border-box; overflow: hidden; }
 
 .sp-iframe           { width: 100%; border-radius: 10px; display: block; }
 .sp-iframe--audio    { height: 166px; }
@@ -374,6 +376,9 @@ onUnmounted(() => {
   flex-direction: column;
   gap: 20px;
   color: #fff;
+  box-sizing: border-box;
+  min-width: 0;
+  overflow: hidden;
 }
 
 /* ── Loading ───────────────────────────────────────────────────────────────── */
@@ -487,6 +492,8 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-wrap: wrap;
+  min-width: 0;
 }
 
 .sp-btn {
@@ -535,8 +542,10 @@ onUnmounted(() => {
 .sp-volume-wrap {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   margin-left: auto;
+  min-width: 0;
+  flex-shrink: 1;
 }
 
 .sp-vol-icon {
@@ -549,12 +558,14 @@ onUnmounted(() => {
 /* Custom draggable volume track */
 .sp-vol-track {
   position: relative;
-  width: 100px;
+  width: clamp(50px, 80px, 100px);
+  min-width: 50px;
+  max-width: 100px;
   height: 5px;
   background: #333;
   border-radius: 3px;
   cursor: pointer;
-  flex-shrink: 0;
+  flex-shrink: 1;
 }
 .sp-vol-fill {
   height: 100%;
