@@ -122,7 +122,8 @@ const props = defineProps({
   mediaUrl:        { type: String,  default: '' },
   isPlaylist:      { type: Boolean, default: false },
   autoPlay:        { type: Boolean, default: false },
-  defaultListOpen: { type: Boolean, default: true  }, // false = tracklist starts collapsed
+  defaultListOpen: { type: Boolean, default: true  },
+  startPosition:   { type: Number,  default: 0     }, // ms — resume from this position
 });
 
 const API = import.meta.env.VITE_API_URL;
@@ -270,10 +271,11 @@ const startPlayback = async (shouldPlay = true) => {
     await spotifyFetch('PUT', '/me/player', { device_ids: [deviceId], play: false });
     return;
   }
+  const resumeMs = props.startPosition || 0;
   await spotifyFetch('PUT', `/me/player/play?device_id=${deviceId}`,
     isTrack
-      ? { uris: [uri], position_ms: 0 }
-      : { context_uri: uri, offset: { position: 0 }, position_ms: 0 }
+      ? { uris: [uri], position_ms: resumeMs }
+      : { context_uri: uri, offset: { position: 0 }, position_ms: resumeMs }
   );
   // Always play in order — turn shuffle off after starting so Spotify's
   // remembered shuffle state doesn't affect the queue
@@ -289,20 +291,28 @@ const fetchPlaylistTracks = async () => {
   if (!m || !token) return;
   try {
     const res = await fetch(
-      `https://api.spotify.com/v1/playlists/${m[1]}/tracks?limit=50&fields=items(track(name,uri,duration_ms,artists(name)))`,
+      `https://api.spotify.com/v1/playlists/${m[1]}/tracks?limit=50&fields=items(track(name,uri,duration_ms,artists(name),album(images)))`,
       { headers: { Authorization: `Bearer ${token}` } }
     );
     if (res.status === 403) { needsReconnect.value = true; return; }
     if (!res.ok) return;
     const data = await res.json();
-    playlistTracks.value = (data.items || [])
+    const tracks = (data.items || [])
       .filter(item => item?.track?.uri)
       .map(item => ({
         name:     item.track.name,
         uri:      item.track.uri,
         artist:   item.track.artists?.map(a => a.name).join(', ') || '',
         duration: item.track.duration_ms,
+        art:      item.track.album?.images?.[0]?.url || '',
       }));
+    playlistTracks.value = tracks;
+
+    // Pre-populate track display with first track so info shows before play
+    if (tracks.length && !currentTrackUri.value) {
+      const first = tracks[0];
+      track.value = { name: first.name, artist: first.artist, album: '', art: first.art };
+    }
   } catch { /* non-fatal */ }
 };
 

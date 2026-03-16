@@ -21,6 +21,7 @@
             :isPlaylist="nowPlaying.isPlaylist || false"
             :autoPlay="false"
             :defaultListOpen="true"
+            :startPosition="nowPlaying.position || 0"
           />
         </div>
 
@@ -77,7 +78,7 @@
                 >
                   <span class="mp-queue-num">{{ i }}</span>
                   <span class="mp-queue-name">
-                    {{ i - 1 === ytPlaylistIndex && ytCurrentTitle ? ytCurrentTitle : `Track ${i}` }}
+                    {{ ytTitles[i - 1] || `Track ${i}` }}
                     <span v-if="i - 1 === ytPlaylistIndex" class="mp-queue-playing">▶</span>
                   </span>
                 </div>
@@ -120,6 +121,8 @@ const ytPlaylistIndex   = ref(0);
 const ytPlaylistLength  = ref(0);
 const ytCurrentTitle    = ref('');
 const ytQueueOpen       = ref(false);
+const ytVideoIds        = ref([]);   // video IDs from infoDelivery.playlist
+const ytTitles          = ref({});   // index → title, populated via oEmbed
 const spotifyPlayerRef  = ref(null);
 
 const isSpotify   = computed(() => nowPlaying.value?.type === 'spotify');
@@ -135,6 +138,8 @@ watch(nowPlaying, (np, old) => {
     ytPlaylistLength.value = 0;
     ytCurrentTitle.value  = '';
     ytQueueOpen.value     = false;
+    ytVideoIds.value      = [];
+    ytTitles.value        = {};
   } else if (old && (old.url !== np.url || old.type !== np.type)) {
     playerReady.value      = false;
     ytTime.value           = 0;
@@ -142,6 +147,8 @@ watch(nowPlaying, (np, old) => {
     ytPlaylistLength.value = 0;
     ytCurrentTitle.value   = '';
     ytQueueOpen.value      = false;
+    ytVideoIds.value       = [];
+    ytTitles.value         = {};
   }
 });
 
@@ -170,17 +177,33 @@ const onIframeLoad = () => {
   }
 };
 
+const fetchYtTitles = async (videoIds) => {
+  const results = {};
+  await Promise.all(videoIds.slice(0, 50).map(async (id, idx) => {
+    try {
+      const res = await fetch(`https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${id}&format=json`);
+      if (res.ok) { const d = await res.json(); results[idx] = d.title; }
+    } catch { /* ignore */ }
+  }));
+  ytTitles.value = { ...ytTitles.value, ...results };
+};
+
 const onMessage = (e) => {
   if (!iframeEl.value || e.source !== iframeEl.value.contentWindow) return;
   try {
     const d = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
     if (d.event === 'infoDelivery' && d.info) {
-      if (d.info.currentTime   != null) ytTime.value           = d.info.currentTime;
-      if (d.info.playlistIndex != null) ytPlaylistIndex.value  = d.info.playlistIndex;
+      if (d.info.currentTime   != null) ytTime.value          = d.info.currentTime;
+      if (d.info.playlistIndex != null) ytPlaylistIndex.value = d.info.playlistIndex;
+      if (d.info.videoData?.title) {
+        ytCurrentTitle.value = d.info.videoData.title;
+        ytTitles.value = { ...ytTitles.value, [ytPlaylistIndex.value]: d.info.videoData.title };
+      }
       if (Array.isArray(d.info.playlist) && d.info.playlist.length > ytPlaylistLength.value) {
         ytPlaylistLength.value = d.info.playlist.length;
+        ytVideoIds.value = d.info.playlist;
+        fetchYtTitles(d.info.playlist);
       }
-      if (d.info.videoData?.title) ytCurrentTitle.value = d.info.videoData.title;
     }
   } catch { /* ignore */ }
 };
@@ -221,7 +244,8 @@ const embedUrl = computed(() => {
     const videoIdMatch = url.match(/youtu\.be\/([^?&/]+)|[?&]v=([^&]+)/);
     const videoId      = videoIdMatch?.[1] || videoIdMatch?.[2] || null;
     if (listMatch && (isPlaylist || !videoId)) {
-      return `https://www.youtube.com/embed/videoseries?list=${listMatch[1]}&autoplay=1&index=${playlistIndex}&enablejsapi=1`;
+      const start = startSecs > 0 ? `&start=${startSecs}` : '';
+      return `https://www.youtube.com/embed/videoseries?list=${listMatch[1]}&autoplay=1&index=${playlistIndex}&enablejsapi=1${start}`;
     }
     if (videoId) {
       return `https://www.youtube.com/embed/${videoId}?autoplay=1&start=${startSecs}&enablejsapi=1`;

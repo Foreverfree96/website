@@ -59,11 +59,13 @@ const props = defineProps({
 
 const { nowPlaying, popOut, lastPosition, popIn } = useNowPlaying();
 
-const active    = ref(false);
-const embedKey  = ref(0);
-const iframeEl  = ref(null);
-const ytTime    = ref(0);   // tracked via postMessage
-const startFrom = ref(0);   // seconds — used in YT embed URL to restore position
+const active          = ref(false);
+const embedKey        = ref(0);
+const iframeEl        = ref(null);
+const ytTime          = ref(0);   // tracked via postMessage
+const ytIndex         = ref(0);   // playlist index tracked via postMessage
+const startFrom       = ref(0);   // seconds — used in YT embed URL to restore position
+const startIndex      = ref(0);   // playlist index to restore after pop-back-in
 
 const isPoppedOut = computed(() => nowPlaying.value?.url === props.mediaUrl);
 
@@ -86,8 +88,11 @@ const embedUrl = computed(() => {
     const videoIdMatch = url.match(/youtu\.be\/([^?&/]+)|[?&]v=([^&]+)|youtube\.com\/shorts\/([^?&/]+)/);
     const videoId      = videoIdMatch?.[1] || videoIdMatch?.[2] || videoIdMatch?.[3] || null;
     const start        = startFrom.value > 0 ? `&start=${startFrom.value}` : '';
-    if (listMatch && (isPlaylist.value || !videoId))
-      return `https://www.youtube.com/embed/videoseries?list=${listMatch[1]}&enablejsapi=1`;
+    if (listMatch && (isPlaylist.value || !videoId)) {
+      const idx   = startIndex.value > 0 ? `&index=${startIndex.value}` : '';
+      const start = startFrom.value  > 0 ? `&start=${startFrom.value}`  : '';
+      return `https://www.youtube.com/embed/videoseries?list=${listMatch[1]}&enablejsapi=1${idx}${start}`;
+    }
     if (videoId && listMatch)
       return `https://www.youtube.com/embed/${videoId}?list=${listMatch[1]}&enablejsapi=1${start}`;
     if (videoId)
@@ -129,8 +134,9 @@ const onMessage = (e) => {
   if (!iframeEl.value || e.source !== iframeEl.value.contentWindow) return;
   try {
     const d = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
-    if (d.event === 'infoDelivery' && d.info?.currentTime != null) {
-      ytTime.value = d.info.currentTime;
+    if (d.event === 'infoDelivery' && d.info) {
+      if (d.info.currentTime   != null) ytTime.value  = d.info.currentTime;
+      if (d.info.playlistIndex != null) ytIndex.value = d.info.playlistIndex;
     }
   } catch { /* ignore parse errors */ }
 };
@@ -144,13 +150,11 @@ watch(isPoppedOut, (isPopped, wasPopped) => {
 
   if (props.embedType === 'youtube') {
     const secs = Math.floor((lastPosition.value.position || 0) / 1000);
-    if (secs > 0) {
-      startFrom.value = secs;
-      embedKey.value++;
-    }
+    startFrom.value  = secs > 0 ? secs : 0;
+    startIndex.value = lastPosition.value.playlistIndex || 0;
+    embedKey.value++;
     active.value = true;
   } else {
-    // Spotify, SoundCloud, Twitch, Apple Music — just re-activate the embed
     embedKey.value++;
     active.value = true;
   }
@@ -178,8 +182,9 @@ const activate = () => { active.value = true; };
 // ── Pop out ───────────────────────────────────────────────────────────────────
 const popOutEmbed = () => {
   if (isPoppedOut.value) return;
-  const posMs = props.embedType === 'youtube' ? Math.floor(ytTime.value * 1000) : 0;
-  popOut({ url: props.mediaUrl, type: props.embedType, isPlaylist: isPlaylist.value, position: posMs });
+  const posMs  = props.embedType === 'youtube' ? Math.floor(ytTime.value * 1000) : 0;
+  const idxVal = props.embedType === 'youtube' ? ytIndex.value : 0;
+  popOut({ url: props.mediaUrl, type: props.embedType, isPlaylist: isPlaylist.value, position: posMs, playlistIndex: idxVal });
   active.value = false;
   embedKey.value++;
 };
