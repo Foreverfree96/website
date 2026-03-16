@@ -285,21 +285,16 @@ const startPlayback = async (shouldPlay = true) => {
   await spotifyFetch('PUT', `/me/player/shuffle?state=false&device_id=${deviceId}`).catch(() => {});
 };
 
-// ── Fetch playlist tracks via backend proxy ────────────────────────────────────
-// Routes through the backend so we always use the server-stored token with the
-// full scope set, avoiding 403s from tokens missing playlist scopes.
+// ── Fetch all playlist tracks ──────────────────────────────────────────────────
+// For PUBLIC playlists, any valid Spotify token works — no playlist scope needed.
+// We use the SDK token directly (already in memory, definitely valid).
+// Falls back to the backend proxy if the direct call fails.
 const fetchPlaylistTracks = async () => {
   const m = props.mediaUrl.match(/open\.spotify\.com\/playlist\/([a-zA-Z0-9]+)/);
   if (!m) return;
-  const jwt = localStorage.getItem('jwtToken');
-  if (!jwt) return;
-  try {
-    const res = await fetch(`${API}/api/spotify/playlist/${m[1]}/tracks`, {
-      headers: { Authorization: `Bearer ${jwt}` },
-    });
-    if (!res.ok) return;
-    const data = await res.json();
-    const tracks = (data.items || [])
+
+  const parseTracks = (data) =>
+    (data.items || [])
       .filter(item => item?.track?.uri)
       .map(item => ({
         name:     item.track.name     || '',
@@ -308,15 +303,40 @@ const fetchPlaylistTracks = async () => {
         duration: item.track.duration_ms || 0,
         art:      item.track.album?.images?.[0]?.url || '',
       }));
-    playlistTracks.value = tracks;
 
-    // Pre-populate track display with first track so info shows before play
-    if (tracks.length && !currentTrackUri.value) {
-      const first = tracks[0];
-      track.value = { name: first.name, artist: first.artist, album: '', art: first.art };
+  const applyTracks = (tracks) => {
+    if (!tracks.length) return false;
+    playlistTracks.value = tracks;
+    if (!currentTrackUri.value) {
+      track.value = { name: tracks[0].name, artist: tracks[0].artist, album: '', art: tracks[0].art };
     }
+    return true;
+  };
+
+  // 1️⃣ Direct call with SDK token — works for any public playlist, no scopes needed
+  if (token) {
+    try {
+      const res = await fetch(
+        `https://api.spotify.com/v1/playlists/${m[1]}/tracks?limit=100`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (res.ok) {
+        const data = await res.json();
+        if (applyTracks(parseTracks(data))) return;
+      }
+    } catch { /* fall through */ }
+  }
+
+  // 2️⃣ Backend proxy fallback (uses client credentials — also scope-free for public playlists)
+  try {
+    const jwt = localStorage.getItem('jwtToken');
+    if (!jwt) return;
+    const res = await fetch(`${API}/api/spotify/playlist/${m[1]}/tracks`, {
+      headers: { Authorization: `Bearer ${jwt}` },
+    });
+    if (res.ok) applyTracks(parseTracks(await res.json()));
   } catch (err) {
-    console.error('[Spotify] fetchPlaylistTracks exception:', err);
+    console.error('[Spotify] fetchPlaylistTracks failed:', err);
   }
 };
 
@@ -502,10 +522,9 @@ onMounted(async () => {
         };
       }
 
-      // Build queue from SDK track_window — works instantly with zero API calls.
-      // previous_tracks + current + next_tracks gives us nearby context.
-      // If the full playlist fetch succeeded, don't overwrite it.
-      if (props.isPlaylist && s.track_window) {
+      // SDK track_window safety net — only used if the full playlist fetch hasn't
+      // returned yet (e.g. slow network). Replaced once the real fetch completes.
+      if (props.isPlaylist && s.track_window && playlistTracks.value.length === 0) {
         const sdkTracks = [
           ...(s.track_window.previous_tracks || []),
           ...(t ? [t] : []),
@@ -517,10 +536,7 @@ onMounted(async () => {
           duration: tr.duration_ms || 0,
           art:      tr.album?.images?.[0]?.url || '',
         }));
-        // Only use SDK tracks if we don't yet have the full playlist list
-        if (playlistTracks.value.length === 0 && sdkTracks.length > 0) {
-          playlistTracks.value = sdkTracks;
-        }
+        if (sdkTracks.length) playlistTracks.value = sdkTracks;
       }
 
       if (!s.paused) startTicker();
