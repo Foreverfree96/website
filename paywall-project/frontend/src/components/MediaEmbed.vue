@@ -83,11 +83,11 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import SpotifyPlayer from './SpotifyPlayer.vue';
 import { useNowPlaying } from '../composables/useNowPlaying.js';
 
-const { nowPlaying, popOut } = useNowPlaying();
+const { nowPlaying, popOut, lastPosition } = useNowPlaying();
 
 // True when this embed's URL is currently playing in the mini player
 const isPoppedOut = computed(() => nowPlaying.value?.url === props.mediaUrl);
@@ -199,6 +199,39 @@ const popOutEmbed = () => {
     if (props.embedType !== 'spotify') resetKey.value++;
   }
 };
+
+// ── Resume in-post player from mini player's last position ───────────────────
+// Called when isPoppedOut transitions true → false (mini player closed).
+const resumeFromMini = () => {
+  const lp = lastPosition.value;
+  if (!lp.url || lp.url !== props.mediaUrl) return;
+  const posSecs = (lp.position || 0) / 1000;
+
+  if (props.embedType === 'youtube' && isPlaylist.value && ytPlayer) {
+    const curIdx = ytPlayer.getPlaylistIndex?.() ?? 0;
+    if (lp.playlistIndex !== undefined && lp.playlistIndex !== curIdx) {
+      // Jump to the track the mini player was on, then seek within it
+      ytPlayer.playVideoAt(lp.playlistIndex);
+      setTimeout(() => { ytPlayer.seekTo(posSecs, true); ytPlayer.pauseVideo?.(); }, 900);
+    } else {
+      ytPlayer.seekTo(posSecs, true);
+      ytPlayer.pauseVideo?.();
+    }
+    guardActive.value = true;
+  } else if (props.embedType === 'youtube' && !isPlaylist.value && ytSinglePlayer) {
+    ytSinglePlayer.seekTo(posSecs, true);
+    ytSinglePlayer.pauseVideo?.();
+    guardActive.value = true;
+  } else if (props.embedType === 'soundcloud' && scWidget) {
+    scWidget.seekTo(lp.position || 0);
+    // leave paused — guard is already re-enabled from popOutEmbed
+  }
+};
+
+// Watch for mini player closing so in-post player can sync to final position
+watch(isPoppedOut, (isPopped, wasPopped) => {
+  if (wasPopped && !isPopped) resumeFromMini();
+});
 
 // ── YouTube shuffle ────────────────────────────────────────────────────────────
 const ytShuffle = ref(false);

@@ -187,7 +187,8 @@ const startPlayback = async () => {
   } else {
     await spotifyFetch('PUT', '/me/player', { device_ids: [deviceId], play: false });
   }
-  await spotifyFetch('PUT', `/me/player/shuffle?state=false&device_id=${deviceId}`);
+  // Shuffle state is synced via player_state_changed — no need to force it here
+  // (the immediate call 404s while Spotify is still registering the device)
 };
 
 // ── Ticker ─────────────────────────────────────────────────────────────────────
