@@ -145,8 +145,8 @@ const _savedShuffle = localStorage.getItem('sp_shuffle') === 'true';
 const TRACK_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
 
 const _playlistCacheKey = (url) => {
-  const m = url.match(/open\.spotify\.com\/playlist\/([a-zA-Z0-9]+)/);
-  return m ? `sp_tracks_${m[1]}` : null;
+  const m = url.match(/open\.spotify\.com\/(playlist|album)\/([a-zA-Z0-9]+)/);
+  return m ? `sp_tracks_${m[2]}` : null;
 };
 
 const loadCachedTracks = (url) => {
@@ -335,66 +335,89 @@ const startPlayback = async (shouldPlay = true) => {
   await spotifyFetch('PUT', `/me/player/shuffle?state=false&device_id=${deviceId}`).catch(() => {});
 };
 
-// ── Fetch all playlist tracks ──────────────────────────────────────────────────
-// For PUBLIC playlists, any valid Spotify token works — no playlist scope needed.
-// We use the SDK token directly (already in memory, definitely valid).
-// Falls back to the backend proxy if the direct call fails.
+// ── Fetch all playlist / album tracks ─────────────────────────────────────────
 const fetchPlaylistTracks = async () => {
-  const m = props.mediaUrl.match(/open\.spotify\.com\/playlist\/([a-zA-Z0-9]+)/);
-  if (!m) return;
+  const playlistMatch = props.mediaUrl.match(/open\.spotify\.com\/playlist\/([a-zA-Z0-9]+)/);
+  const albumMatch    = props.mediaUrl.match(/open\.spotify\.com\/album\/([a-zA-Z0-9]+)/);
+  if (!playlistMatch && !albumMatch) return;
 
-  const parseTracks = (data) =>
-    (data.items || [])
-      .filter(item => item?.track?.uri)
-      .map(item => ({
-        name:     item.track.name     || '',
-        uri:      item.track.uri,
-        artist:   item.track.artists?.map(a => a.name).join(', ') || '',
-        duration: item.track.duration_ms || 0,
-        art:      item.track.album?.images?.[0]?.url || '',
-      }));
+  const isAlbum = !!albumMatch;
+  const id      = (playlistMatch ?? albumMatch)[1];
 
   const applyTracks = (tracks) => {
     if (!tracks.length) return false;
     playlistTracks.value = tracks;
     fullTracksFetched = true;
     saveCachedTracks(props.mediaUrl, tracks);
-    if (!currentTrackUri.value) {
+    if (!currentTrackUri.value)
       track.value = { name: tracks[0].name, artist: tracks[0].artist, album: '', art: tracks[0].art };
-    }
     return true;
   };
 
-  // 1️⃣ Direct call with SDK token — works for public playlists with any valid token;
-  //    works for private playlists only if the token has playlist-read-private scope.
+  const parsePlaylist = (data) =>
+    (data.items || [])
+      .filter(item => item?.track?.uri)
+      .map(item => ({
+        name:     item.track.name || '',
+        uri:      item.track.uri,
+        artist:   item.track.artists?.map(a => a.name).join(', ') || '',
+        duration: item.track.duration_ms || 0,
+        art:      item.track.album?.images?.[0]?.url || '',
+      }));
+
+  const parseAlbum = (data, art) =>
+    (data.items || [])
+      .filter(item => item?.uri)
+      .map(item => ({
+        name:     item.name || '',
+        uri:      item.uri,
+        artist:   item.artists?.map(a => a.name).join(', ') || '',
+        duration: item.duration_ms || 0,
+        art,
+      }));
+
+  // 1️⃣ Direct Spotify API call with SDK token
   if (token) {
     try {
-      const res = await fetch(
-        `https://api.spotify.com/v1/playlists/${m[1]}/tracks?limit=100`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      let albumArt = '';
+      if (isAlbum) {
+        // Fetch album metadata for cover art
+        const ar = await fetch(`https://api.spotify.com/v1/albums/${id}`,
+          { headers: { Authorization: `Bearer ${token}` } }).catch(() => null);
+        if (ar?.ok) albumArt = (await ar.json()).images?.[0]?.url || '';
+      }
+
+      const endpoint = isAlbum
+        ? `https://api.spotify.com/v1/albums/${id}/tracks?limit=50`
+        : `https://api.spotify.com/v1/playlists/${id}/tracks?limit=100`;
+
+      const res = await fetch(endpoint, { headers: { Authorization: `Bearer ${token}` } });
       if (res.ok) {
         const data = await res.json();
-        if (applyTracks(parseTracks(data))) return;
-      } else if (res.status !== 403) return; // unexpected error, give up
+        if (applyTracks(isAlbum ? parseAlbum(data, albumArt) : parsePlaylist(data))) return;
+      }
+      // Don't return on error — always try backend proxy next
     } catch { /* fall through */ }
   }
 
-  // 2️⃣ Backend proxy fallback (uses client credentials — works for public playlists)
+  // Albums are always public — no backend proxy needed (no scope issues)
+  if (isAlbum) return;
+
+  // 2️⃣ Backend proxy fallback for playlists
   try {
     const jwt = localStorage.getItem('jwtToken');
     if (jwt) {
-      const res = await fetch(`${API}/api/spotify/playlist/${m[1]}/tracks`, {
+      const res = await fetch(`${API}/api/spotify/playlist/${id}/tracks`, {
         headers: { Authorization: `Bearer ${jwt}` },
       });
-      if (res.ok) { applyTracks(parseTracks(await res.json())); return; }
+      if (res.ok) { applyTracks(parsePlaylist(await res.json())); return; }
+      console.error('[Spotify] Backend playlist fetch failed:', res.status);
     }
   } catch (err) {
-    console.error('[Spotify] fetchPlaylistTracks failed:', err);
+    console.error('[Spotify] fetchPlaylistTracks backend error:', err);
   }
 
-  // Both paths returned 403 — playlist is private and token lacks playlist-read-private scope.
-  // User needs to reconnect Spotify to re-authorize with the full scope set.
+  // Both paths failed — token likely missing playlist-read-private scope
   needsReconnect.value = true;
 };
 
