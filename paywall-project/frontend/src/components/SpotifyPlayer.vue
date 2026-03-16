@@ -134,10 +134,11 @@ const playlistTracks = ref([]);
 const progressBar = ref(null);
 const volTrack    = ref(null);
 
-let player   = null;
-let deviceId = null;
-let ticker   = null;
-let token    = null;
+let player         = null;
+let deviceId       = null;
+let ticker         = null;
+let token          = null;
+let connectTimeout = null;
 let prevVol  = 70;
 let firstStateReceived = false;
 
@@ -380,7 +381,10 @@ onMounted(async () => {
       firstStateReceived = true;
 
       // Show player UI once we have real track data
-      if (state.value !== 'ready') state.value = 'ready';
+      if (state.value !== 'ready') {
+        clearTimeout(connectTimeout);
+        state.value = 'ready';
+      }
 
       paused.value    = s.paused;
       position.value  = s.position;
@@ -417,12 +421,18 @@ onMounted(async () => {
     player.addListener('account_error',         () => { state.value = 'unavailable'; });
 
     await player.connect();
+
+    // Fallback: if player_state_changed never fires within 15s, show connect message
+    connectTimeout = setTimeout(() => {
+      if (state.value !== 'ready') state.value = 'needs-connect';
+    }, 15000);
   } catch {
     state.value = 'unavailable';
   }
 });
 
 onUnmounted(() => {
+  clearTimeout(connectTimeout);
   stopTicker();
   player?.disconnect();
   player = null;
