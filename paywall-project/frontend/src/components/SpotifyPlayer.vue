@@ -86,7 +86,7 @@
       </div>
 
       <!-- ── Scrollable playlist track list ───────────────────────────────── -->
-      <div v-if="isPlaylist && playlistTracks.length" class="sp-tracklist">
+      <div v-if="isPlaylist && playlistTracks.length" class="sp-tracklist" ref="tracklistEl">
         <div class="sp-tracklist-header" @click="listOpen = !listOpen">
           <span>Queue ({{ playlistTracks.length }})</span>
           <span class="sp-tracklist-arrow">{{ listOpen ? '▲' : '▼' }}</span>
@@ -116,7 +116,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
 
 const props = defineProps({
   mediaUrl:        { type: String,  default: '' },
@@ -148,8 +148,9 @@ const playlistTracks  = ref([]);
 const listOpen        = ref(props.defaultListOpen); // tracklist collapsed/expanded
 const needsReconnect  = ref(false); // true when old token is missing playlist scopes
 
-const progressBar = ref(null);
-const volTrack    = ref(null);
+const progressBar  = ref(null);
+const volTrack     = ref(null);
+const tracklistEl  = ref(null);
 
 let player         = null;
 let deviceId       = null;
@@ -168,6 +169,14 @@ const displayVolume = computed(() => muted.value ? 0 : volume.value);
 const embedUrl      = computed(() =>
   props.mediaUrl.replace('open.spotify.com/', 'open.spotify.com/embed/')
 );
+
+// ── Auto-scroll active track into view when song changes ───────────────────────
+watch(currentTrackUri, async () => {
+  if (!tracklistEl.value) return;
+  await nextTick();
+  const active = tracklistEl.value.querySelector('.sp-track-row--active');
+  if (active) active.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+});
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 const fmtMs = (ms) => {
