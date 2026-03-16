@@ -26,6 +26,25 @@ import { ref } from "vue";
 import axios from "axios";
 import { io as socketIo } from "socket.io-client";
 
+// ── Ping sound via Web Audio API (no audio file needed) ───────────────────────
+const playPing = () => {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc  = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(880, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(440, ctx.currentTime + 0.15);
+    gain.gain.setValueAtTime(0.25, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.6);
+    osc.onended = () => ctx.close();
+  } catch { /* browser audio blocked */ }
+};
+
 // Base URL for all notification REST endpoints
 const API_URL = import.meta.env.VITE_API_URL + "/api/notifications";
 
@@ -196,11 +215,13 @@ export function useNotifications() {
     socket.on("notification", (notif) => {
       notifications.value.unshift(notif); // Prepend so newest is first
       unreadCount.value += 1;
+      playPing();
     });
 
     // New direct message pushed from the server
     socket.on("dm", (data) => {
       dmUnreadCount.value += 1;
+      playPing();
       // Invoke all registered DM listeners (e.g. MessagesPage live-appends the message)
       dmHandlers.forEach(h => h(data));
     });
