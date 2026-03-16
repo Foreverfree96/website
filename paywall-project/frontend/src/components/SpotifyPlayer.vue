@@ -9,6 +9,16 @@
         :class="['sp-iframe', isPlaylist ? 'sp-iframe--playlist' : 'sp-iframe--audio']" />
     </template>
 
+    <!-- ── Needs Spotify connect ────────────────────────────────────────────── -->
+    <div v-else-if="state === 'needs-connect'" class="sp-card sp-needs-connect">
+      <span class="sp-nc-icon">🎵</span>
+      <div class="sp-nc-text">
+        <strong>Spotify Premium required</strong>
+        <span>Connect your Spotify account on your profile to use the player.</span>
+      </div>
+      <a href="/profile" class="sp-nc-btn">Go to Profile</a>
+    </div>
+
     <!-- ── Loading ──────────────────────────────────────────────────────────── -->
     <div v-else-if="state !== 'ready'" class="sp-card sp-loading">
       <div class="sp-spinner"></div>
@@ -200,7 +210,7 @@ const waitForDevice = async (maxWaitMs = 10000) => {
 // ── Start playback context (waits for device to register, then plays) ─────────
 const startPlayback = async () => {
   const found = await waitForDevice();
-  if (!found) return; // device never appeared — give up silently
+  if (!found) { state.value = 'needs-connect'; return; }
 
   const uri     = getSpotifyUri(props.mediaUrl);
   const isTrack = uri?.startsWith('spotify:track:');
@@ -440,6 +450,24 @@ onUnmounted(() => {
   min-width: 0;
   overflow: hidden;
 }
+
+/* ── Needs connect ── */
+.sp-needs-connect {
+  align-items: center; text-align: center;
+  flex-direction: column; gap: 14px; padding: 28px 20px;
+}
+.sp-nc-icon { font-size: 2.2rem; }
+.sp-nc-text { display: flex; flex-direction: column; gap: 6px; }
+.sp-nc-text strong { color: #fff; font-size: 0.95rem; }
+.sp-nc-text span   { color: #888; font-size: 0.82rem; line-height: 1.4; }
+.sp-nc-btn {
+  display: inline-block; padding: 8px 22px;
+  background: #1db954; color: #000;
+  font-size: 0.82rem; font-weight: 700;
+  border-radius: 20px; text-decoration: none;
+  transition: background 0.15s;
+}
+.sp-nc-btn:hover { background: #1ed760; }
 
 /* ── Loading ── */
 .sp-loading {
