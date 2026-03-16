@@ -82,7 +82,7 @@
 
       <!-- ── Reconnect nudge (missing playlist scope) ────────────────────── -->
       <div v-if="needsReconnect" class="sp-reconnect-banner">
-        ⚠ Queue unavailable — go to <a href="/profile">Profile → Disconnect → Reconnect Spotify</a> (one-time fix).
+        ⚠ Queue unavailable — <a :href="spotifyReconnectUrl">Reconnect Spotify</a> to fix (one-time).
       </div>
 
       <!-- ── Scrollable playlist track list ───────────────────────────────── -->
@@ -162,13 +162,17 @@ let prevVol  = 70;
 let firstStateReceived = false;
 
 // ── Computed ───────────────────────────────────────────────────────────────────
-const progressPct   = computed(() =>
+const progressPct        = computed(() =>
   duration.value > 0 ? Math.min(100, (position.value / duration.value) * 100) : 0
 );
-const displayVolume = computed(() => muted.value ? 0 : volume.value);
-const embedUrl      = computed(() =>
+const displayVolume      = computed(() => muted.value ? 0 : volume.value);
+const embedUrl           = computed(() =>
   props.mediaUrl.replace('open.spotify.com/', 'open.spotify.com/embed/')
 );
+const spotifyReconnectUrl = computed(() => {
+  const jwt = localStorage.getItem('jwtToken');
+  return `${API}/api/spotify/login?token=${jwt}`;
+});
 
 // ── Auto-scroll active track into view when song changes ───────────────────────
 watch(currentTrackUri, async () => {
