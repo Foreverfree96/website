@@ -269,6 +269,10 @@ const startPlayback = async (shouldPlay = true) => {
       ? { uris: [uri], position_ms: 0 }
       : { context_uri: uri, offset: { position: 0 }, position_ms: 0 }
   );
+  // Always play in order — turn shuffle off after starting so Spotify's
+  // remembered shuffle state doesn't affect the queue
+  shuffleOn.value = false;
+  await spotifyFetch('PUT', `/me/player/shuffle?state=false&device_id=${deviceId}`).catch(() => {});
 };
 
 // ── Fetch playlist tracks via backend proxy (avoids browser-scope issues) ─────
