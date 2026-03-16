@@ -136,7 +136,8 @@ const router = useRouter();
 // ── Module-level token cache — persists across mounts/route changes ────────────
 // This prevents re-fetching the token every time the component mounts and
 // ensures getOAuthToken always hands Spotify a fresh token when it asks.
-let _tokenCache = null; // { token, expiresAt }
+let _tokenCache         = null; // { token, expiresAt }
+let _reconnectAttempted = false; // true after user has gone through OAuth reconnect this session
 
 // ── Persisted prefs (volume + shuffle survive page reloads) ───────────────────
 const _savedVol     = parseFloat(localStorage.getItem('sp_volume')  ?? '70');
@@ -351,8 +352,10 @@ const fetchPlaylistTracks = async () => {
     playlistTracks.value = tracks;
     fullTracksFetched = true;
     saveCachedTracks(props.mediaUrl, tracks);
-    if (!currentTrackUri.value)
-      track.value = { name: tracks[0].name, artist: tracks[0].artist, album: '', art: tracks[0].art };
+    if (!currentTrackUri.value) {
+      const t = (props.startTrackUri && tracks.find(t => t.uri === props.startTrackUri)) || tracks[0];
+      if (t) track.value = { name: t.name, artist: t.artist, album: '', art: t.art };
+    }
     return true;
   };
 
@@ -426,8 +429,10 @@ const fetchPlaylistTracks = async () => {
     console.error('[Spotify] fetchPlaylistTracks backend error:', err);
   }
 
-  // Both paths failed — token likely missing playlist-read-private scope
-  needsReconnect.value = true;
+  // Both paths failed — token likely missing playlist-read-private scope.
+  // Only show the reconnect banner if the user hasn't already tried reconnecting
+  // this session (avoids an infinite reconnect loop when the scope is still missing).
+  if (!_reconnectAttempted) needsReconnect.value = true;
 };
 
 // ── Play a specific track from the queue list ─────────────────────────────────
@@ -557,7 +562,10 @@ onMounted(async () => {
 
   try {
     // If returning from Spotify OAuth, force a fresh token so the new scopes are picked up
-    if (route.query.spotify === 'connected') _tokenCache = null;
+    if (route.query.spotify === 'connected') {
+      _tokenCache = null;
+      _reconnectAttempted = true; // stop the reconnect banner from looping
+    }
 
     statusMsg.value = 'Fetching credentials…';
     const tokenResult = await fetchToken();
@@ -572,11 +580,9 @@ onMounted(async () => {
       if (cached?.length) {
         playlistTracks.value = cached;
         fullTracksFetched = true;
-        // Pre-populate track info from the saved URI so the UI shows something before SDK connects
-        if (props.startTrackUri) {
-          const t = cached.find(t => t.uri === props.startTrackUri) || cached[0];
-          if (t) track.value = { name: t.name, artist: t.artist, album: '', art: t.art };
-        }
+        // Always pre-populate track info so the UI isn't blank before SDK connects
+        const t = (props.startTrackUri && cached.find(t => t.uri === props.startTrackUri)) || cached[0];
+        if (t) track.value = { name: t.name, artist: t.artist, album: '', art: t.art };
       }
       fetchPlaylistTracks(); // background — doesn't block SDK init
     }
