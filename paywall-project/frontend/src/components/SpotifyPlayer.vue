@@ -355,6 +355,12 @@ const startVolScrub = (e) => {
 
 // ── Mount ──────────────────────────────────────────────────────────────────────
 onMounted(async () => {
+  // Web Playback SDK requires HTTPS — skip straight to iframe on HTTP
+  if (location.protocol !== 'https:') {
+    state.value = 'unavailable';
+    return;
+  }
+
   // Global fallback: if SDK never connects, fall back to iframe embed after 8s
   connectTimeout = setTimeout(() => {
     if (state.value !== 'ready') state.value = 'unavailable';
