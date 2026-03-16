@@ -26,13 +26,15 @@
         </div>
 
         <!-- Embed player -->
-        <div v-if="playerReady" class="mp-body">
+        <div v-if="playerReady" class="mp-body" :class="{ 'mp-body--spotify': nowPlaying.type === 'spotify' }">
           <iframe
+            ref="iframeEl"
             :src="embedUrl"
             frameborder="0"
             class="mp-embed"
             allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
             allowfullscreen
+            @load="onIframeLoad"
           />
         </div>
 
@@ -54,13 +56,15 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useNowPlaying } from '../composables/useNowPlaying.js';
 
 const { nowPlaying, close } = useNowPlaying();
 
 const expanded    = ref(false);
 const playerReady = ref(false);
+const iframeEl    = ref(null);
+const ytTime      = ref(0);
 
 // Reset when media changes or clears
 watch(nowPlaying, (np, old) => {
@@ -72,7 +76,31 @@ watch(nowPlaying, (np, old) => {
   }
 });
 
+// ── YouTube postMessage position tracking ─────────────────────────────────────
+const onIframeLoad = () => {
+  if (nowPlaying.value?.type === 'youtube') {
+    iframeEl.value?.contentWindow?.postMessage(JSON.stringify({ event: 'listening' }), '*');
+  }
+};
+
+const onMessage = (e) => {
+  if (!iframeEl.value || e.source !== iframeEl.value.contentWindow) return;
+  try {
+    const d = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
+    if (d.event === 'infoDelivery' && d.info?.currentTime != null) {
+      ytTime.value = d.info.currentTime;
+    }
+  } catch { /* ignore */ }
+};
+
+onMounted(() => window.addEventListener('message', onMessage));
+onUnmounted(() => window.removeEventListener('message', onMessage));
+
 const handleClose = () => {
+  // Save YouTube position to lastPosition before closing
+  if (nowPlaying.value?.type === 'youtube' && ytTime.value > 0) {
+    nowPlaying.value = { ...nowPlaying.value, position: Math.floor(ytTime.value * 1000) };
+  }
   playerReady.value = false;
   expanded.value    = false;
   close();
@@ -90,10 +118,10 @@ const embedUrl = computed(() => {
     const videoIdMatch = url.match(/youtu\.be\/([^?&/]+)|[?&]v=([^&]+)/);
     const videoId      = videoIdMatch?.[1] || videoIdMatch?.[2] || null;
     if (listMatch && (isPlaylist || !videoId)) {
-      return `https://www.youtube.com/embed/videoseries?list=${listMatch[1]}&autoplay=1&index=${playlistIndex}`;
+      return `https://www.youtube.com/embed/videoseries?list=${listMatch[1]}&autoplay=1&index=${playlistIndex}&enablejsapi=1`;
     }
     if (videoId) {
-      return `https://www.youtube.com/embed/${videoId}?autoplay=1&start=${startSecs}`;
+      return `https://www.youtube.com/embed/${videoId}?autoplay=1&start=${startSecs}&enablejsapi=1`;
     }
     return '';
   }
@@ -252,6 +280,7 @@ const previewLabel = computed(() => {
 /* ── Embed ── */
 .mp-body { line-height: 0; }
 .mp-embed { width: 100%; height: 300px; border: none; display: block; }
+.mp-body--spotify .mp-embed { height: 420px; }
 
 /* ── Slide transition ── */
 .mp-slide-enter-active, .mp-slide-leave-active { transition: opacity 0.22s ease, transform 0.22s ease; }

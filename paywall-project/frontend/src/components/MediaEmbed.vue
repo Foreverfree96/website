@@ -6,45 +6,49 @@
       <span>♫ Playing in mini player</span>
     </div>
 
-    <!-- Actual embed -->
-    <div v-else class="embed-wrap">
+    <template v-else>
+      <!-- Actual embed -->
+      <div class="embed-wrap">
+        <iframe
+          v-if="embedUrl"
+          ref="iframeEl"
+          :key="embedKey"
+          :src="active ? embedUrl : ''"
+          frameborder="0"
+          class="embed-iframe"
+          :class="iframeClass"
+          allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
+          allowfullscreen
+          @load="onIframeLoad"
+        />
 
-      <!-- Iframe (all platforms) -->
-      <iframe
-        v-if="embedUrl"
-        :key="embedKey"
-        :src="active ? embedUrl : ''"
-        frameborder="0"
-        class="embed-iframe"
-        :class="iframeClass"
-        allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
-        allowfullscreen
-      />
+        <a v-else :href="mediaUrl" target="_blank" rel="noopener noreferrer" class="link-card">
+          <span class="link-card__icon">{{ platformIcon }}</span>
+          <span class="link-card__text">{{ platformLabel }}<br /><small>{{ mediaUrl }}</small></span>
+        </a>
 
-      <!-- Link card fallback -->
-      <a v-else :href="mediaUrl" target="_blank" rel="noopener noreferrer" class="link-card">
-        <span class="link-card__icon">{{ platformIcon }}</span>
-        <span class="link-card__text">{{ platformLabel }}<br /><small>{{ mediaUrl }}</small></span>
-      </a>
-
-      <!-- Click-to-activate guard (prevents autoplay until user clicks) -->
-      <div v-if="embedUrl && !active" class="embed-guard" @click="activate">
-        <div class="embed-guard-inner">
-          <img v-if="ytThumb" :src="ytThumb" class="embed-guard-thumb" />
-          <div class="embed-guard-play">▶</div>
+        <!-- Click-to-play guard -->
+        <div v-if="embedUrl && !active" class="embed-guard" @click="activate">
+          <div class="embed-guard-inner">
+            <img v-if="ytThumb" :src="ytThumb" class="embed-guard-thumb" />
+            <div class="embed-guard-play">▶</div>
+          </div>
         </div>
       </div>
 
-      <!-- Pop-out button -->
-      <button v-if="active && embedUrl" class="embed-popout-btn" @click.stop="popOutEmbed" title="Pop out to mini player">↗ Mini</button>
-
-    </div>
+      <!-- Pop-out button OUTSIDE the video, always visible -->
+      <div v-if="active && embedUrl" class="embed-controls-bar">
+        <button class="embed-popout-pill" @click.stop="popOutEmbed" title="Pop out to mini player">
+          ↗ Play in Mini Player
+        </button>
+      </div>
+    </template>
 
   </div>
 </template>
 
 <script setup>
-import { ref, computed } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useNowPlaying } from '../composables/useNowPlaying.js';
 
 const props = defineProps({
@@ -52,10 +56,13 @@ const props = defineProps({
   embedType: { type: String, default: '' },
 });
 
-const { nowPlaying, popOut } = useNowPlaying();
+const { nowPlaying, popOut, lastPosition } = useNowPlaying();
 
-const active   = ref(false);
-const embedKey = ref(0);
+const active    = ref(false);
+const embedKey  = ref(0);
+const iframeEl  = ref(null);
+const ytTime    = ref(0);   // tracked via postMessage
+const startFrom = ref(0);   // seconds — used in YT embed URL to restore position
 
 const isPoppedOut = computed(() => nowPlaying.value?.url === props.mediaUrl);
 
@@ -68,7 +75,7 @@ const isPlaylist = computed(() => {
   return false;
 });
 
-// ── Embed URL per platform ────────────────────────────────────────────────────
+// ── Embed URL ────────────────────────────────────────────────────────────────
 const embedUrl = computed(() => {
   const { mediaUrl: url, embedType: type } = props;
   if (!url) return '';
@@ -77,12 +84,13 @@ const embedUrl = computed(() => {
     const listMatch    = url.match(/[?&]list=([^&]+)/);
     const videoIdMatch = url.match(/youtu\.be\/([^?&/]+)|[?&]v=([^&]+)|youtube\.com\/shorts\/([^?&/]+)/);
     const videoId      = videoIdMatch?.[1] || videoIdMatch?.[2] || videoIdMatch?.[3] || null;
+    const start        = startFrom.value > 0 ? `&start=${startFrom.value}` : '';
     if (listMatch && (isPlaylist.value || !videoId))
-      return `https://www.youtube.com/embed/videoseries?list=${listMatch[1]}&autoplay=1`;
+      return `https://www.youtube.com/embed/videoseries?list=${listMatch[1]}&autoplay=1&enablejsapi=1`;
     if (videoId && listMatch)
-      return `https://www.youtube.com/embed/${videoId}?list=${listMatch[1]}&autoplay=1`;
+      return `https://www.youtube.com/embed/${videoId}?list=${listMatch[1]}&autoplay=1&enablejsapi=1${start}`;
     if (videoId)
-      return `https://www.youtube.com/embed/${videoId}?autoplay=1`;
+      return `https://www.youtube.com/embed/${videoId}?autoplay=1&enablejsapi=1${start}`;
     return '';
   }
 
@@ -104,14 +112,44 @@ const embedUrl = computed(() => {
     return '';
   }
 
-  if (type === 'applemusic') {
-    return url.replace('music.apple.com', 'embed.music.apple.com');
-  }
+  if (type === 'applemusic') return props.mediaUrl.replace('music.apple.com', 'embed.music.apple.com');
 
   return '';
 });
 
-// ── YouTube thumbnail for the guard ──────────────────────────────────────────
+// ── YouTube postMessage position tracking ────────────────────────────────────
+const onIframeLoad = () => {
+  if (props.embedType === 'youtube') {
+    iframeEl.value?.contentWindow?.postMessage(JSON.stringify({ event: 'listening' }), '*');
+  }
+};
+
+const onMessage = (e) => {
+  if (!iframeEl.value || e.source !== iframeEl.value.contentWindow) return;
+  try {
+    const d = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
+    if (d.event === 'infoDelivery' && d.info?.currentTime != null) {
+      ytTime.value = d.info.currentTime;
+    }
+  } catch { /* ignore parse errors */ }
+};
+
+onMounted(() => window.addEventListener('message', onMessage));
+onUnmounted(() => window.removeEventListener('message', onMessage));
+
+// When mini player closes, restore position in post embed
+watch(isPoppedOut, (isPopped, wasPopped) => {
+  if (wasPopped && !isPopped && props.embedType === 'youtube') {
+    const secs = Math.floor((lastPosition.value.position || 0) / 1000);
+    if (secs > 0) {
+      startFrom.value = secs;
+      embedKey.value++;
+      active.value = true;
+    }
+  }
+});
+
+// ── YouTube thumbnail ─────────────────────────────────────────────────────────
 const ytThumb = computed(() => {
   if (props.embedType !== 'youtube') return null;
   const m = props.mediaUrl.match(/youtu\.be\/([^?&/]+)|[?&]v=([^&]+)/);
@@ -122,32 +160,26 @@ const ytThumb = computed(() => {
 // ── Iframe height class ───────────────────────────────────────────────────────
 const iframeClass = computed(() => {
   const { embedType: type } = props;
-  if (type === 'spotify') return isPlaylist.value ? 'embed-iframe--playlist' : 'embed-iframe--audio';
+  if (type === 'spotify')    return isPlaylist.value ? 'embed-iframe--playlist' : 'embed-iframe--audio';
   if (type === 'soundcloud') return isPlaylist.value ? 'embed-iframe--playlist' : 'embed-iframe--audio';
-  return ''; // default height (360px video)
+  return '';
 });
 
-// ── Activate (user clicks guard) ──────────────────────────────────────────────
+// ── Activate ──────────────────────────────────────────────────────────────────
 const activate = () => { active.value = true; };
 
-// ── Pop out to mini player ────────────────────────────────────────────────────
+// ── Pop out ───────────────────────────────────────────────────────────────────
 const popOutEmbed = () => {
   if (isPoppedOut.value) return;
-  popOut({ url: props.mediaUrl, type: props.embedType, isPlaylist: isPlaylist.value, position: 0 });
-  // Stop the iframe by remounting with empty src
+  const posMs = props.embedType === 'youtube' ? Math.floor(ytTime.value * 1000) : 0;
+  popOut({ url: props.mediaUrl, type: props.embedType, isPlaylist: isPlaylist.value, position: posMs });
   active.value = false;
   embedKey.value++;
 };
 
-// ── Platform fallback ─────────────────────────────────────────────────────────
-const platformIcon = computed(() => {
-  const icons = { instagram: '📷', tiktok: '🎵', facebook: '📘', twitter: '🐦' };
-  return icons[props.embedType] || '🔗';
-});
-const platformLabel = computed(() => {
-  const labels = { instagram: 'View on Instagram', tiktok: 'View on TikTok', facebook: 'View on Facebook', twitter: 'View on Twitter/X' };
-  return labels[props.embedType] || 'Open Link';
-});
+// ── Link card ─────────────────────────────────────────────────────────────────
+const platformIcon  = computed(() => ({ instagram: '📷', tiktok: '🎵', facebook: '📘', twitter: '🐦' })[props.embedType] || '🔗');
+const platformLabel = computed(() => ({ instagram: 'View on Instagram', tiktok: 'View on TikTok', facebook: 'View on Facebook', twitter: 'View on Twitter/X' })[props.embedType] || 'Open Link');
 </script>
 
 <style scoped>
@@ -155,7 +187,6 @@ const platformLabel = computed(() => {
 
 .embed-wrap { position: relative; width: 100%; }
 
-/* Default video height */
 .embed-iframe {
   width: 100%;
   height: 460px;
@@ -208,24 +239,29 @@ const platformLabel = computed(() => {
 }
 .embed-guard:hover .embed-guard-play { background: #1db954; transform: scale(1.1); }
 
-/* Pop-out button */
-.embed-popout-btn {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  z-index: 3;
-  background: rgba(0,0,0,0.72);
-  color: #fff;
-  border: none;
-  border-radius: 6px;
-  padding: 5px 10px;
-  font-size: 0.8rem;
+/* Controls bar — OUTSIDE the video, always visible */
+.embed-controls-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.embed-popout-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 16px;
+  border-radius: 20px;
+  border: 2px solid #1db954;
+  background: transparent;
+  color: #1db954;
+  font-size: 0.82rem;
   font-weight: 700;
   cursor: pointer;
-  backdrop-filter: blur(4px);
-  transition: background 0.15s, transform 0.15s;
+  transition: background 0.15s, color 0.15s;
 }
-.embed-popout-btn:hover { background: rgba(0,0,0,0.92); transform: scale(1.05); }
+.embed-popout-pill:hover { background: #1db954; color: #000; }
 
 /* Popped-out state */
 .embed-popped-static {
