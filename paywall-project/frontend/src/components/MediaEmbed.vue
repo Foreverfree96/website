@@ -197,10 +197,11 @@ watch(isPoppedOut, (isPopped, wasPopped) => {
     embedKey.value++;
     active.value = true;
   } else if (props.embedType === 'spotify') {
-    // Resume at the track + position that was playing in the mini player
+    // Resume at the track + position that was playing in the mini player.
+    // Only auto-play if it was actually playing when popped back (respect paused state).
     spStartPosition.value = lastPosition.value.position || 0;
     spStartTrackUri.value = lastPosition.value.trackUri || '';
-    autoplayOnPopIn.value = true;
+    autoplayOnPopIn.value = !lastPosition.value.paused;
     embedKey.value++;
     active.value = true;
   } else {

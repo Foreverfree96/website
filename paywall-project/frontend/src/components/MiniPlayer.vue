@@ -464,7 +464,6 @@ const previewLabel = computed(() => {
 .mp-spotify-wrap :deep(.sp-card)          { border: none; border-radius: 0; padding: 14px; gap: 12px; }
 .mp-spotify-wrap :deep(.sp-tracklist)     { max-height: 200px; }
 .mp-spotify-wrap :deep(.sp-brand)         { display: none; }
-.mp-spotify-wrap :deep(.sp-vol-track)     { width: 58px; min-width: 40px; }
 .mp-spotify-wrap :deep(.sp-vol-pct)       { display: none; }
 .mp-spotify-wrap :deep(.sp-art)           { width: 56px; height: 56px; }
 .mp-spotify-wrap :deep(.sp-iframe)        { border-radius: 0; }

@@ -54,7 +54,7 @@
         </div>
       </div>
 
-      <!-- Controls -->
+      <!-- Playback controls -->
       <div class="sp-controls">
         <button class="sp-btn sp-btn--shuffle" :class="{ 'sp-btn--shuffle-on': shuffleOn }"
           @click="toggleShuffle" title="Shuffle">🔀</button>
@@ -63,17 +63,19 @@
           {{ paused ? '▶' : '⏸' }}
         </button>
         <button class="sp-btn sp-btn--skip" @click="nextTrack" title="Next">⏭</button>
-        <div class="sp-volume-wrap">
-          <button class="sp-btn sp-vol-icon" @click="toggleMute" :title="muted ? 'Unmute' : 'Mute'">
-            {{ muted || displayVolume === 0 ? '🔇' : displayVolume < 50 ? '🔉' : '🔊' }}
-          </button>
-          <div class="sp-vol-track" ref="volTrack"
-            @mousedown="startVolScrub" @touchstart.passive="startVolScrub">
-            <div class="sp-vol-fill" :style="{ width: displayVolume + '%' }"></div>
-            <div class="sp-vol-thumb" :style="{ left: displayVolume + '%' }"></div>
-          </div>
-          <span class="sp-vol-pct">{{ displayVolume }}%</span>
+      </div>
+
+      <!-- Volume row -->
+      <div class="sp-vol-row">
+        <button class="sp-btn sp-vol-icon" @click="toggleMute" :title="muted ? 'Unmute' : 'Mute'">
+          {{ muted || displayVolume === 0 ? '🔇' : displayVolume < 50 ? '🔉' : '🔊' }}
+        </button>
+        <div class="sp-vol-track" ref="volTrack"
+          @mousedown="startVolScrub" @touchstart.passive="startVolScrub">
+          <div class="sp-vol-fill" :style="{ width: displayVolume + '%' }"></div>
+          <div class="sp-vol-thumb" :style="{ left: displayVolume + '%' }"></div>
         </div>
+        <span class="sp-vol-pct">{{ displayVolume }}%</span>
       </div>
 
       <!-- ── Reconnect nudge (missing playlist scope) ────────────────────── -->
@@ -113,8 +115,8 @@
         </div>
       </div>
 
-      <div class="sp-brand">
-        Powered by Spotify
+      <div class="sp-footer">
+        <span class="sp-brand">Powered by Spotify</span>
         <button class="sp-disconnect-btn" @click="disconnectSpotify" title="Disconnect Spotify account">Disconnect</button>
       </div>
     </div>
@@ -653,6 +655,8 @@ onMounted(async () => {
     const savedPos = loadSavedPosition(props.mediaUrl);
     _resumePosition.value = props.startPosition || savedPos?.positionMs || 0;
     _resumeTrackUri.value = props.startTrackUri  || savedPos?.trackUri  || '';
+    // Pre-seed progress bar so it shows the correct position immediately (before SDK fires)
+    if (_resumePosition.value > 0) position.value = _resumePosition.value;
 
     // Kick off token fetch and SDK load in parallel — they're independent
     statusMsg.value = 'Connecting…';
@@ -685,11 +689,14 @@ onMounted(async () => {
         playlistTracks.value = cached;
         fullTracksFetched = true;
         // Always pre-populate track info so the UI isn't blank before SDK connects
-        const t = (props.startTrackUri && cached.find(t => t.uri === props.startTrackUri)) || cached[0];
+        const resumeUri = _resumeTrackUri.value || props.startTrackUri;
+        const t = (resumeUri && cached.find(t => t.uri === resumeUri)) || cached[0];
         if (t) {
           track.value = { name: t.name, artist: t.artist, album: '', art: t.art };
           // Seed currentTrackUri immediately so position saver persists it before SDK fires
           if (!currentTrackUri.value) currentTrackUri.value = t.uri;
+          // Pre-seed duration so the progress bar shows correctly before SDK fires
+          if (t.duration > 0) duration.value = t.duration;
         }
       }
       fetchPlaylistTracks(); // background — doesn't block SDK init
@@ -910,7 +917,7 @@ defineExpose({ position, currentTrackUri, paused });
 .sp-times { display: flex; justify-content: space-between; font-size: 0.72rem; color: #555; margin-top: 6px; }
 
 /* ── Controls ── */
-.sp-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
+.sp-controls { display: flex; align-items: center; justify-content: center; gap: 8px; }
 .sp-btn {
   background: none; border: none; color: #aaa; cursor: pointer;
   border-radius: 50%; transition: color 0.15s, background 0.15s, transform 0.15s;
@@ -920,17 +927,17 @@ defineExpose({ position, currentTrackUri, paused });
 .sp-btn--skip { font-size: 1.3rem; padding: 7px; width: 40px; height: 40px; }
 .sp-btn--play { width: 50px; height: 50px; font-size: 1.2rem; background: #1db954; color: #000; }
 .sp-btn--play:hover { background: #1ed760; color: #000; transform: scale(1.06); }
-.sp-btn--shuffle { font-size: 1rem; padding: 7px; width: 36px; height: 36px; opacity: 0.45; }
-.sp-btn--shuffle:hover { opacity: 1; }
-.sp-btn--shuffle-on   { opacity: 1; color: #1db954; }
-.sp-btn--shuffle-on:hover { color: #1ed760; }
+.sp-btn--shuffle { font-size: 1rem; padding: 7px; width: 36px; height: 36px; opacity: 0.7; }
+.sp-btn--shuffle:hover { opacity: 1; background: #2a2a2a; }
+.sp-btn--shuffle-on { opacity: 1; color: #1db954; background: rgba(29,185,84,0.12); }
+.sp-btn--shuffle-on:hover { color: #1ed760; background: rgba(29,185,84,0.2); }
 
-/* ── Volume ── */
-.sp-volume-wrap { display: flex; align-items: center; gap: 6px; margin-left: auto; min-width: 0; flex-shrink: 1; }
+/* ── Volume row ── */
+.sp-vol-row { display: flex; align-items: center; gap: 8px; }
 .sp-vol-icon { font-size: 1.1rem; padding: 5px; width: 34px; height: 34px; flex-shrink: 0; }
 .sp-vol-track {
-  position: relative; width: clamp(50px, 80px, 100px); min-width: 50px;
-  height: 5px; background: #333; border-radius: 3px; cursor: pointer; flex-shrink: 1;
+  position: relative; flex: 1;
+  height: 5px; background: #333; border-radius: 3px; cursor: pointer;
 }
 .sp-vol-fill  { height: 100%; background: #1db954; border-radius: 3px; pointer-events: none; }
 .sp-vol-thumb {
@@ -940,7 +947,7 @@ defineExpose({ position, currentTrackUri, paused });
 }
 .sp-vol-track:hover .sp-vol-fill  { background: #1ed760; }
 .sp-vol-track:hover .sp-vol-thumb { transform: translate(-50%, -50%) scale(1.2); }
-.sp-vol-pct { font-size: 0.75rem; color: #888; min-width: 30px; text-align: right; font-variant-numeric: tabular-nums; }
+.sp-vol-pct { font-size: 0.75rem; color: #888; min-width: 30px; text-align: right; font-variant-numeric: tabular-nums; flex-shrink: 0; }
 
 /* ── Reconnect banner ── */
 .sp-reconnect-banner {
@@ -1034,11 +1041,12 @@ defineExpose({ position, currentTrackUri, paused });
 }
 .sp-track-row-dur { font-size: 0.72rem; color: #555; flex-shrink: 0; font-variant-numeric: tabular-nums; }
 
-/* ── Branding ── */
-.sp-brand {
-  font-size: 0.68rem; color: #333; margin-top: -8px;
-  display: flex; align-items: center; justify-content: flex-end; gap: 10px;
+/* ── Footer (branding + disconnect) ── */
+.sp-footer {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-top: -8px;
 }
+.sp-brand { font-size: 0.68rem; color: #333; }
 .sp-disconnect-btn {
   background: none; border: none; color: #444; font-size: 0.68rem;
   cursor: pointer; padding: 0; text-decoration: underline; text-underline-offset: 2px;
