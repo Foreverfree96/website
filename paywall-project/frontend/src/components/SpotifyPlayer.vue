@@ -343,7 +343,7 @@ const waitForDevice = async (maxWaitMs = 8000) => {
         if ((data.devices || []).some(d => d.id === deviceId)) return true;
       }
     } catch { /* keep polling */ }
-    await new Promise(r => setTimeout(r, 600));
+    await new Promise(r => setTimeout(r, 300));
   }
   return false;
 };
@@ -629,8 +629,10 @@ onMounted(async () => {
     _resumePosition.value = props.startPosition || savedPos?.positionMs || 0;
     _resumeTrackUri.value = props.startTrackUri  || savedPos?.trackUri  || '';
 
-    statusMsg.value = 'Fetching credentials…';
-    const tokenResult = await fetchToken();
+    // Kick off token fetch and SDK load in parallel — they're independent
+    statusMsg.value = 'Connecting…';
+    const [tokenResult] = await Promise.all([fetchToken(), loadSDK()]);
+
     if (tokenResult.needsConnect) {
       clearTimeout(connectTimeout);
       // First time — auto-redirect to Spotify OAuth so user authorizes once
@@ -668,10 +670,6 @@ onMounted(async () => {
       fetchPlaylistTracks(); // background — doesn't block SDK init
     }
 
-    statusMsg.value = 'Loading Spotify SDK…';
-    await loadSDK();
-
-    statusMsg.value = 'Connecting player…';
     state.value = 'connecting';
 
     player = new window.Spotify.Player({
