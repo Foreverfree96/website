@@ -289,23 +289,24 @@ export const getPlaylistTracks = async (req, res) => {
     if (!result.error) {
       const auth = { Authorization: `Bearer ${result.accessToken}` };
 
-      // 1. GET /v1/playlists/{id} — works for PUBLIC playlists without playlist-read-private
+      // 1. GET /v1/playlists/{id}/tracks — requires playlist-read-private, returns up to 100 tracks
+      try {
+        const r = await axios.get(`https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=100`, { headers: auth });
+        const items = parseItems(r.data);
+        if (items.length) return res.json(cacheAndReturn(items));
+      } catch (err) {
+        if (err.response?.status !== 403) console.error("❌ Spotify GET /tracks failed:", err.response?.status, err.response?.data?.error?.message);
+        if (err.response?.status !== 403) throw err;
+        // 403 = token lacks playlist-read-private scope, fall through to parent object
+      }
+
+      // 2. GET /v1/playlists/{id} — parent object, fewer inline tracks, but no scope for public playlists
       try {
         const r = await axios.get(`https://api.spotify.com/v1/playlists/${playlistId}`, { headers: auth });
         const items = parseItems(r.data.tracks || {});
         if (items.length) return res.json(cacheAndReturn(items));
       } catch (err) {
         if (err.response?.status !== 403) console.error("❌ Spotify GET playlist failed:", err.response?.status);
-      }
-
-      // 2. GET /v1/playlists/{id}/tracks — requires playlist-read-private
-      try {
-        const r = await axios.get(`https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=100`, { headers: auth });
-        const items = parseItems(r.data);
-        if (items.length) return res.json(cacheAndReturn(items));
-      } catch (err) {
-        console.error("❌ Spotify GET /tracks failed:", err.response?.status, err.response?.data?.error?.message);
-        if (err.response?.status !== 403) throw err;
       }
     }
 
