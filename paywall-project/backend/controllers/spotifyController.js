@@ -269,9 +269,11 @@ const getCachedPlaylist = (id) => {
 export const getPlaylistTracks = async (req, res) => {
   const playlistId = req.params.id;
 
-  // Return cached result if available
+  // Return cached result if available and looks complete (>= 20 tracks)
+  // Discard small caches that may be leftover from the old SDK-merge approach
   const cached = getCachedPlaylist(playlistId);
-  if (cached) return res.json(cached);
+  if (cached && (cached.items?.length ?? 0) >= 20) return res.json(cached);
+  if (cached) _playlistCache.delete(playlistId); // stale partial — re-fetch
 
   // Helper: normalise to { items: [...] } shape and cache
   const cacheAndReturn = (items) => {
@@ -283,16 +285,30 @@ export const getPlaylistTracks = async (req, res) => {
   const parseItems = (data) =>
     (data.items || []).filter(item => item?.track?.uri);
 
+  // Paginate through ALL tracks — Spotify returns max 100 per page
+  const fetchAllPages = async (firstUrl, headers) => {
+    let nextUrl  = firstUrl;
+    let allItems = [];
+    while (nextUrl) {
+      const r = await axios.get(nextUrl, { headers });
+      allItems = allItems.concat(parseItems(r.data));
+      nextUrl  = r.data.next || null;
+    }
+    return allItems;
+  };
+
   try {
     const result = await getValidToken(req.user.id, false);
 
     if (!result.error) {
       const auth = { Authorization: `Bearer ${result.accessToken}` };
 
-      // 1. GET /v1/playlists/{id}/tracks — requires playlist-read-private, returns up to 100 tracks
+      // 1. GET /v1/playlists/{id}/tracks — requires playlist-read-private, paginates all tracks
       try {
-        const r = await axios.get(`https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=100`, { headers: auth });
-        const items = parseItems(r.data);
+        const items = await fetchAllPages(
+          `https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=100`,
+          auth
+        );
         if (items.length) return res.json(cacheAndReturn(items));
       } catch (err) {
         if (err.response?.status !== 403) console.error("❌ Spotify GET /tracks failed:", err.response?.status, err.response?.data?.error?.message);
@@ -300,7 +316,7 @@ export const getPlaylistTracks = async (req, res) => {
         // 403 = token lacks playlist-read-private scope, fall through to parent object
       }
 
-      // 2. GET /v1/playlists/{id} — parent object, fewer inline tracks, but no scope for public playlists
+      // 2. GET /v1/playlists/{id} — parent object, no scope needed for public playlists
       try {
         const r = await axios.get(`https://api.spotify.com/v1/playlists/${playlistId}`, { headers: auth });
         const items = parseItems(r.data.tracks || {});
@@ -310,7 +326,7 @@ export const getPlaylistTracks = async (req, res) => {
       }
     }
 
-    // 3. Client credentials (public playlists only — Spotify may restrict this)
+    // 3. Client credentials (public playlists only)
     try {
       const appToken = await getClientCredToken();
       const r = await axios.get(`https://api.spotify.com/v1/playlists/${playlistId}`, {

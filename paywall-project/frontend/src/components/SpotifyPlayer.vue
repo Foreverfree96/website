@@ -162,6 +162,8 @@ const loadCachedTracks = (url) => {
     if (!raw) return null;
     const { tracks, savedAt } = JSON.parse(raw);
     if (Date.now() - savedAt > TRACK_CACHE_TTL) { localStorage.removeItem(key); return null; }
+    // Discard tiny caches from old SDK-merge saves — force a fresh API fetch
+    if (tracks.length < 20) { localStorage.removeItem(key); return null; }
     return tracks;
   } catch { return null; }
 };
@@ -616,8 +618,11 @@ onMounted(async () => {
     // If returning from Spotify OAuth, force a fresh token so the new scopes are picked up
     if (route.query.spotify === 'connected') {
       _tokenCache = null;
-      _reconnectAttempted = true; // stop the reconnect banner from looping
+      _reconnectAttempted = true;
+      sessionStorage.setItem('sp_oauth_done', '1'); // persist across remounts
     }
+    // Also honour the sessionStorage flag set by a previous mount this session
+    if (sessionStorage.getItem('sp_oauth_done')) _reconnectAttempted = true;
 
     // Seed resume position: props take priority (MiniPlayer pop-out), then localStorage (page refresh)
     const savedPos = loadSavedPosition(props.mediaUrl);
