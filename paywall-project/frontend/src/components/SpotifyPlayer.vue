@@ -806,7 +806,11 @@ onMounted(async () => {
     });
 
     player.addListener('initialization_error', () => { clearTimeout(connectTimeout); state.value = 'unavailable'; });
-    player.addListener('authentication_error',  () => { clearTimeout(connectTimeout); state.value = 'unavailable'; });
+    // Only fall back on auth errors during init — once ready, let getOAuthToken handle token refreshes
+    // so a mid-session token re-check doesn't kick the player back to the iframe
+    player.addListener('authentication_error', () => {
+      if (state.value !== 'ready') { clearTimeout(connectTimeout); state.value = 'unavailable'; }
+    });
     // account_error fires when premium is absent OR token is stale — only act
     // on it once so it doesn't keep resetting a player that was already ready.
     player.addListener('account_error', () => {
