@@ -747,7 +747,12 @@ onMounted(async () => {
 
     if (tokenResult.needsConnect) {
       clearTimeout(connectTimeout);
-      // Show connect button — never auto-redirect (would fire on every feed page load)
+      // Auto-redirect to Spotify OAuth if user is logged in but Spotify isn't connected/authorized
+      const jwt = localStorage.getItem('jwtToken');
+      if (jwt) {
+        window.location.href = spotifyConnectUrl.value;
+        return;
+      }
       state.value = 'needs-connect';
       return;
     }
@@ -981,7 +986,12 @@ const doConnect = async (shouldAutoPlay = true) => {
   // account_error fires when premium is absent OR token is stale — only act
   // on it once so it doesn't keep resetting a player that was already ready.
   player.addListener('account_error', () => {
-    if (state.value !== 'ready') { clearTimeout(connectTimeout); state.value = 'needs-connect'; }
+    if (state.value !== 'ready') {
+      clearTimeout(connectTimeout);
+      const jwt = localStorage.getItem('jwtToken');
+      if (jwt) { window.location.href = spotifyConnectUrl.value; return; }
+      state.value = 'needs-connect';
+    }
   });
 
   await player.connect();
