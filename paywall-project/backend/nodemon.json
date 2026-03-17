@@ -1,0 +1,6 @@
+{
+  "watch": [".", "../shared"],
+  "ext": "js,json,env",
+  "ignore": ["node_modules", "uploads"],
+  "delay": 300
+}
