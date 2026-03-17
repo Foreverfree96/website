@@ -978,7 +978,9 @@ const doConnect = async (shouldAutoPlay = true) => {
     // Guard: only merge if the player context matches THIS playlist — Spotify fires
     // transitional state events with the previous playlist's tracks during a switch.
     const expectedUri = getSpotifyUri(props.mediaUrl);
-    const contextMatch = !s.context?.uri || !expectedUri || s.context.uri === expectedUri;
+    // Require explicit context match when we know the expected URI — null-context
+    // events must NOT be allowed to merge tracks from a different playlist.
+    const contextMatch = expectedUri ? (s.context?.uri === expectedUri) : true;
     if (props.isPlaylist && s.track_window && !fullTracksFetched && contextMatch) {
       const windowTracks = [
         ...(s.track_window.previous_tracks || []),
