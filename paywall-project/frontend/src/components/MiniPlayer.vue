@@ -337,6 +337,8 @@ const savePositionAndClose = () => {
       paused,
       ...(uri ? { trackUri: uri } : {}),
     };
+    // Hand off the live Spotify player so the post embed reuses the device
+    spotifyPlayerRef.value?.setHandOffMode?.();
   }
   playerReady.value = false;
   expanded.value    = false;

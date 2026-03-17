@@ -10,9 +10,9 @@
     <template v-else>
       <!-- Actual embed -->
       <div class="embed-wrap">
-        <!-- Spotify: SDK player — only mounted after user clicks to activate -->
+        <!-- Spotify: SDK player — shows preview card until user clicks Play -->
         <SpotifyPlayer
-          v-if="embedType === 'spotify' && active"
+          v-if="embedType === 'spotify'"
           ref="spotifyPlayerRef"
           :key="embedKey"
           :mediaUrl="mediaUrl"
@@ -21,6 +21,8 @@
           :defaultListOpen="false"
           :startPosition="spStartPosition"
           :startTrackUri="spStartTrackUri"
+          :lazyConnect="true"
+          @will-connect="onSpotifyWillConnect"
         />
 
         <!-- All other platforms: iframe -->
@@ -42,18 +44,17 @@
           <span class="link-card__text">{{ platformLabel }}<br /><small>{{ mediaUrl }}</small></span>
         </a>
 
-        <!-- Click-to-play guard — shown for all embed types before activation -->
-        <div v-if="embedUrl && !active" class="embed-guard" :class="{ 'embed-guard--spotify': embedType === 'spotify' }" @click="activate">
+        <!-- Click-to-play guard — non-Spotify only (Spotify uses its own preview card) -->
+        <div v-if="embedUrl && embedType !== 'spotify' && !active" class="embed-guard" @click="activate">
           <div class="embed-guard-inner">
             <img v-if="ytThumb" :src="ytThumb" class="embed-guard-thumb" />
-            <div class="embed-guard-play">{{ embedType === 'spotify' ? '🎵' : '▶' }}</div>
-            <div v-if="embedType === 'spotify'" class="embed-guard-label">Play on Spotify</div>
+            <div class="embed-guard-play">▶</div>
           </div>
         </div>
       </div>
 
-      <!-- Controls bar — shuffle (YT playlists) + pop-out — only after activation -->
-      <div v-if="active && embedUrl" class="embed-controls-bar">
+      <!-- Controls bar — shuffle (YT playlists) + pop-out -->
+      <div v-if="embedType === 'spotify' || (active && embedUrl)" class="embed-controls-bar">
         <button
           v-if="embedType === 'youtube' && isPlaylist"
           class="embed-shuffle-btn"
@@ -80,7 +81,7 @@ const props = defineProps({
   embedType: { type: String, default: '' },
 });
 
-const { nowPlaying, popOut, lastPosition, popIn } = useNowPlaying();
+const { nowPlaying, popOut, close: closeMiniPlayer, lastPosition, popIn } = useNowPlaying();
 
 const active            = ref(false);
 const embedKey          = ref(0);
@@ -227,8 +228,18 @@ const iframeClass = computed(() => {
   return '';
 });
 
-// ── Activate ──────────────────────────────────────────────────────────────────
+// ── Activate (non-Spotify embeds) ─────────────────────────────────────────────
 const activate = () => { active.value = true; };
+
+// ── Spotify conflict guard ─────────────────────────────────────────────────────
+// Fired by SpotifyPlayer just before it connects the SDK.
+// If MiniPlayer is running a different Spotify URL, close it first so only
+// one SDK player is ever active at a time.
+const onSpotifyWillConnect = () => {
+  if (nowPlaying.value?.type === 'spotify' && nowPlaying.value?.url !== props.mediaUrl) {
+    closeMiniPlayer();
+  }
+};
 
 // ── Pop out ───────────────────────────────────────────────────────────────────
 const popOutEmbed = () => {
@@ -239,8 +250,11 @@ const popOutEmbed = () => {
   if (props.embedType === 'youtube') {
     posMs = Math.floor(ytTime.value * 1000);
   } else if (props.embedType === 'spotify' && spotifyPlayerRef.value) {
-    posMs    = spotifyPlayerRef.value.position?.value      || 0;
+    posMs    = spotifyPlayerRef.value.position?.value       || 0;
     trackUri = spotifyPlayerRef.value.currentTrackUri?.value || '';
+    // Signal SpotifyPlayer not to disconnect on unmount — MiniPlayer's SpotifyPlayer
+    // will reuse the live device so there's no re-authentication gap.
+    spotifyPlayerRef.value.setHandOffMode?.();
   }
   popOut({ url: props.mediaUrl, type: props.embedType, isPlaylist: isPlaylist.value, position: posMs, playlistIndex: idxVal, resumeOnLoad: true, trackUri });
   active.value = false;
@@ -255,7 +269,7 @@ const platformLabel = computed(() => ({ instagram: 'View on Instagram', tiktok: 
 <style scoped>
 .media-embed { width: 100%; margin-top: 12px; }
 
-.embed-wrap { position: relative; width: 100%; min-height: 80px; }
+.embed-wrap { position: relative; width: 100%; }
 
 .embed-iframe {
   width: 100%;
@@ -308,26 +322,6 @@ const platformLabel = computed(() => ({ instagram: 'View on Instagram', tiktok: 
   transition: transform 0.15s, background 0.15s;
 }
 .embed-guard:hover .embed-guard-play { background: #1db954; transform: scale(1.1); }
-
-/* Spotify variant — green tinted background, no thumbnail */
-.embed-guard--spotify {
-  background: #121212;
-  min-height: 80px;
-  position: relative;
-}
-.embed-guard--spotify .embed-guard-inner { flex-direction: column; gap: 10px; }
-.embed-guard--spotify .embed-guard-play {
-  background: #1db954;
-  color: #000;
-  font-size: 1.4rem;
-}
-.embed-guard--spotify:hover .embed-guard-play { background: #1ed760; }
-.embed-guard-label {
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: #1db954;
-  letter-spacing: 0.02em;
-}
 
 /* Controls bar — OUTSIDE the video, always visible */
 .embed-controls-bar {
