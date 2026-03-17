@@ -394,33 +394,44 @@ const waitForDevice = async (maxWaitMs = 8000) => {
 };
 
 // ── Start playback context ─────────────────────────────────────────────────────
-// shouldPlay = false → do nothing; device is registered, user clicks play to load URL at pos 0
-// shouldPlay = true  → wait for device then play the specific media URL from position 0
 const startPlayback = async (shouldPlay = true) => {
-  // When not auto-playing, skip the transfer entirely so the device doesn't
-  // pull in whatever was last playing on Spotify — clicking play will always
-  // load the specific URL from position 0.
   if (!shouldPlay) return;
 
   const found = await waitForDevice();
   if (!found) { state.value = 'needs-connect'; return; }
 
-  const uri     = getSpotifyUri(props.mediaUrl);
-  const isTrack = uri?.startsWith('spotify:track:');
+  const uri = getSpotifyUri(props.mediaUrl);
+  if (!uri) return;
 
-  if (!uri) {
+  // Step 1: explicitly transfer playback to our device before issuing the play
+  // command. Without this Spotify may fall back to the previous active device/context.
+  try {
     await spotifyFetch('PUT', '/me/player', { device_ids: [deviceId], play: false });
-    return;
-  }
+    await new Promise(r => setTimeout(r, 300));
+  } catch { /* non-critical */ }
+
+  const isTrack  = uri.startsWith('spotify:track:');
   const resumeMs = _resumePosition.value || 0;
   const offset   = _resumeTrackUri.value ? { uri: _resumeTrackUri.value } : { position: 0 };
-  await spotifyFetch('PUT', `/me/player/play?device_id=${deviceId}`,
-    isTrack
-      ? { uris: [uri], position_ms: resumeMs }
-      : { context_uri: uri, offset, position_ms: resumeMs }
-  );
-  // Always play in order — turn shuffle off after starting so Spotify's
-  // remembered shuffle state doesn't affect the queue
+  const body     = isTrack
+    ? { uris: [uri], position_ms: resumeMs }
+    : { context_uri: uri, offset, position_ms: resumeMs };
+
+  // Step 2: send the play command, retrying on 404/503 (device not ready yet)
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const res = await spotifyFetch('PUT', `/me/player/play?device_id=${deviceId}`, body);
+      if (res.ok || res.status === 204) break;
+      if ((res.status === 404 || res.status === 503) && attempt < 2) {
+        await new Promise(r => setTimeout(r, 600 * (attempt + 1)));
+        continue;
+      }
+      break;
+    } catch {
+      if (attempt < 2) await new Promise(r => setTimeout(r, 600 * (attempt + 1)));
+    }
+  }
+
   shuffleOn.value = false;
   await spotifyFetch('PUT', `/me/player/shuffle?state=false&device_id=${deviceId}`).catch(() => {});
 };
