@@ -582,7 +582,11 @@ onMounted(async () => {
         fullTracksFetched = true;
         // Always pre-populate track info so the UI isn't blank before SDK connects
         const t = (props.startTrackUri && cached.find(t => t.uri === props.startTrackUri)) || cached[0];
-        if (t) track.value = { name: t.name, artist: t.artist, album: '', art: t.art };
+        if (t) {
+          track.value = { name: t.name, artist: t.artist, album: '', art: t.art };
+          // Seed currentTrackUri immediately so position saver persists it before SDK fires
+          if (!currentTrackUri.value) currentTrackUri.value = t.uri;
+        }
       }
       fetchPlaylistTracks(); // background — doesn't block SDK init
     }
@@ -640,10 +644,10 @@ onMounted(async () => {
         };
       }
 
-      // SDK track_window fallback — keeps the queue live until the full API fetch
-      // succeeds. Updates on every state change so navigation feels responsive.
+      // SDK track_window fallback — merges newly visible tracks into the list
+      // so the queue grows as the user listens instead of staying at 3.
       if (props.isPlaylist && s.track_window && !fullTracksFetched) {
-        const sdkTracks = [
+        const windowTracks = [
           ...(s.track_window.previous_tracks || []),
           ...(t ? [t] : []),
           ...(s.track_window.next_tracks || []),
@@ -654,7 +658,32 @@ onMounted(async () => {
           duration: tr.duration_ms || 0,
           art:      tr.album?.images?.[0]?.url || '',
         }));
-        if (sdkTracks.length) playlistTracks.value = sdkTracks;
+
+        if (windowTracks.length) {
+          // Merge: keep existing tracks, insert new ones relative to current track
+          const existing    = playlistTracks.value;
+          const existingMap = new Map(existing.map(tr => [tr.uri, tr]));
+          windowTracks.forEach(tr => existingMap.set(tr.uri, tr));
+
+          // Rebuild ordered list: existing order first, then any new entries
+          const merged = Array.from(existingMap.values());
+          // Move current track to correct relative position if list is small
+          if (existing.length < 5 || !existing.length) {
+            playlistTracks.value = merged;
+          } else {
+            // Insert only new tracks near the current position to preserve order
+            const curIdx = existing.findIndex(tr => tr.uri === (t?.uri));
+            const newEntries = windowTracks.filter(tr => !existing.some(e => e.uri === tr.uri));
+            if (newEntries.length) {
+              const insertAt = curIdx >= 0 ? curIdx : existing.length;
+              const updated  = [...existing];
+              updated.splice(insertAt, 0, ...newEntries);
+              playlistTracks.value = updated;
+            }
+          }
+          // Update cache so next page load has more tracks
+          saveCachedTracks(props.mediaUrl, playlistTracks.value);
+        }
       }
 
       if (!s.paused) startTicker();
@@ -690,8 +719,8 @@ onUnmounted(() => {
   player = null;
 });
 
-// Expose position + currentTrackUri so MiniPlayer can persist playlist position
-defineExpose({ position, currentTrackUri });
+// Expose state so MiniPlayer can persist position, track, and paused state
+defineExpose({ position, currentTrackUri, paused });
 </script>
 
 <style scoped>

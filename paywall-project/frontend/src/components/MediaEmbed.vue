@@ -67,6 +67,8 @@ const ytIndex           = ref(0);   // playlist index tracked via postMessage
 const startFrom         = ref(0);   // seconds — used in YT embed URL to restore position
 const startIndex        = ref(0);   // playlist index to restore after pop-back-in
 const autoplayOnPopIn   = ref(false); // add autoplay=1 when popping back in from mini player
+const resumeTrackId     = ref('');    // spotify track ID to embed when popping back in
+const resumeTrackSecs   = ref(0);     // seconds to seek to on pop-back-in
 
 const isPoppedOut = computed(() => nowPlaying.value?.url === props.mediaUrl);
 
@@ -103,6 +105,11 @@ const embedUrl = computed(() => {
   }
 
   if (type === 'spotify') {
+    // When popping back in, embed the specific track that was playing at the saved position
+    if (resumeTrackId.value) {
+      const t = resumeTrackSecs.value > 0 ? `&t=${resumeTrackSecs.value}` : '';
+      return `https://open.spotify.com/embed/track/${resumeTrackId.value}?utm_source=generator${t}`;
+    }
     const m = url.match(/open\.spotify\.com\/(track|playlist|album|artist)\/([a-zA-Z0-9]+)/);
     if (!m) return '';
     return `https://open.spotify.com/embed/${m[1]}/${m[2]}?utm_source=generator`;
@@ -129,7 +136,9 @@ const embedUrl = computed(() => {
 const onIframeLoad = () => {
   if (props.embedType === 'youtube') {
     iframeEl.value?.contentWindow?.postMessage(JSON.stringify({ event: 'listening' }), '*');
-    autoplayOnPopIn.value = false; // reset after iframe is loaded so it doesn't persist
+    autoplayOnPopIn.value = false; // reset after iframe loads so it doesn't persist
+    resumeTrackId.value   = '';
+    resumeTrackSecs.value = 0;
   }
 };
 
@@ -158,7 +167,18 @@ watch(isPoppedOut, (isPopped, wasPopped) => {
     autoplayOnPopIn.value = true; // resume playback in the post embed
     embedKey.value++;
     active.value = true;
+  } else if (props.embedType === 'spotify') {
+    // Resume at the specific track + position that was playing in the mini player
+    const uri  = lastPosition.value.trackUri || '';
+    const secs = Math.floor((lastPosition.value.position || 0) / 1000);
+    const trackId = uri.replace('spotify:track:', '');
+    resumeTrackId.value   = trackId || '';
+    resumeTrackSecs.value = secs;
+    embedKey.value++;
+    active.value = true;
   } else {
+    resumeTrackId.value   = '';
+    resumeTrackSecs.value = 0;
     embedKey.value++;
     active.value = true;
   }

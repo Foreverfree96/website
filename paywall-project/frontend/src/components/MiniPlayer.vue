@@ -228,13 +228,15 @@ watchEffect(() => {
   clearInterval(positionSaver);
   if (nowPlaying.value?.type === 'spotify' && spotifyPlayerRef.value) {
     positionSaver = setInterval(() => {
-      const pos = spotifyPlayerRef.value?.position?.value;
-      const uri = spotifyPlayerRef.value?.currentTrackUri?.value;
-      if (pos > 0 && nowPlaying.value) {
+      const pos    = spotifyPlayerRef.value?.position?.value;
+      const uri    = spotifyPlayerRef.value?.currentTrackUri?.value;
+      const paused = spotifyPlayerRef.value?.paused?.value ?? true;
+      if (nowPlaying.value) {
         nowPlaying.value = {
           ...nowPlaying.value,
-          position:     pos,
-          resumeOnLoad: true,
+          ...(pos > 0 ? { position: pos } : {}),
+          resumeOnLoad: !paused, // only auto-resume if was playing
+          paused,
           ...(uri ? { trackUri: uri } : {}),
         };
       }
@@ -271,9 +273,16 @@ const savePositionAndClose = () => {
     };
   }
   if (nowPlaying.value?.type === 'spotify') {
-    const pos = spotifyPlayerRef.value?.position?.value;
-    const uri = spotifyPlayerRef.value?.currentTrackUri?.value;
-    if (pos > 0) nowPlaying.value = { ...nowPlaying.value, position: pos, ...(uri ? { trackUri: uri } : {}) };
+    const pos    = spotifyPlayerRef.value?.position?.value;
+    const uri    = spotifyPlayerRef.value?.currentTrackUri?.value;
+    const paused = spotifyPlayerRef.value?.paused?.value ?? true;
+    nowPlaying.value = {
+      ...nowPlaying.value,
+      ...(pos > 0 ? { position: pos } : {}),
+      resumeOnLoad: !paused,
+      paused,
+      ...(uri ? { trackUri: uri } : {}),
+    };
   }
   playerReady.value = false;
   expanded.value    = false;

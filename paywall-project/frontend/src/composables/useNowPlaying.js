@@ -12,7 +12,7 @@ const nowPlaying   = ref(_saved || null);
 // shape: { url, type, isPlaylist, position, playlistIndex }
 
 // Saved when mini player closes so in-post player can resume from same spot
-const lastPosition = ref({ url: null, position: 0, playlistIndex: 0 });
+const lastPosition = ref({ url: null, position: 0, playlistIndex: 0, trackUri: '' });
 
 // Set to true by MediaEmbed "pop back in" button; MiniPlayer watches this,
 // saves current position, then calls close() so the post embed can resume.
@@ -38,6 +38,8 @@ export function useNowPlaying() {
         url:           nowPlaying.value.url,
         position:      nowPlaying.value.position      || 0,
         playlistIndex: nowPlaying.value.playlistIndex || 0,
+        trackUri:      nowPlaying.value.trackUri      || '',
+        paused:        nowPlaying.value.paused        || false,
       };
     }
     nowPlaying.value = null;
