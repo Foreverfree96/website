@@ -775,8 +775,9 @@ onMounted(async () => {
       fetchPlaylistTracks(); // background — doesn't block SDK init
     }
 
-    // If lazyConnect: show preview card now, SDK connection deferred until user clicks Play
-    if (props.lazyConnect) {
+    // If lazyConnect and not auto-playing: show preview card, defer SDK until user clicks Play.
+    // Skip lazy mode when autoPlay=true (pop-in resume) so it connects and plays immediately.
+    if (props.lazyConnect && !_shouldAutoPlay) {
       clearTimeout(connectTimeout); // no connection in progress — don't timeout
       fetchMetadata(); // populate name/creator/art for the inactive card (background)
       state.value = 'inactive';
