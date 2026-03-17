@@ -255,7 +255,9 @@ export const spotifyShuffleOff = async (req, res) => {
 // ─── SERVER-SIDE PLAYLIST CACHE ───────────────────────────────────────────────
 // Once any user with the right scope fetches a playlist successfully, the result
 // is cached here for 1 hour so everyone else benefits without needing the scope.
-const _playlistCache = new Map(); // playlistId → { data, cachedAt }
+const _playlistCache    = new Map(); // playlistId → { data, cachedAt }
+const _inflight         = new Map(); // playlistId → Promise — deduplicates concurrent requests
+const _rateLimitedUntil = new Map(); // playlistId → timestamp — backoff after 429
 const PLAYLIST_CACHE_TTL = 60 * 60 * 1000; // 1 hour
 
 const getCachedPlaylist = (id) => {
@@ -270,10 +272,26 @@ export const getPlaylistTracks = async (req, res) => {
   const playlistId = req.params.id;
 
   // Return cached result if available and looks complete (>= 20 tracks)
-  // Discard small caches that may be leftover from the old SDK-merge approach
   const cached = getCachedPlaylist(playlistId);
   if (cached && (cached.items?.length ?? 0) >= 20) return res.json(cached);
   if (cached) _playlistCache.delete(playlistId); // stale partial — re-fetch
+
+  // Respect Spotify 429 backoff — don't hammer after a rate-limit response
+  const rlUntil = _rateLimitedUntil.get(playlistId);
+  if (rlUntil && Date.now() < rlUntil) {
+    return res.status(429).json({ message: 'Rate limited — try again shortly' });
+  }
+
+  // Deduplicate concurrent requests for the same playlist.
+  // If a fetch is already in flight, wait for it instead of firing another.
+  if (_inflight.has(playlistId)) {
+    try {
+      const data = await _inflight.get(playlistId);
+      return res.json(data);
+    } catch {
+      return res.status(500).json({ message: 'Failed to fetch tracks' });
+    }
+  }
 
   // Helper: normalise to { items: [...] } shape and cache
   const cacheAndReturn = (items) => {
@@ -297,7 +315,9 @@ export const getPlaylistTracks = async (req, res) => {
     return allItems;
   };
 
-  try {
+  // Wrap the actual fetch in a promise stored in _inflight so concurrent
+  // requests can await the same work instead of each calling Spotify.
+  const fetchPromise = (async () => {
     const result = await getValidToken(req.user.id, false);
 
     if (!result.error) {
@@ -309,10 +329,18 @@ export const getPlaylistTracks = async (req, res) => {
           `https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=100`,
           auth
         );
-        if (items.length) return res.json(cacheAndReturn(items));
+        if (items.length) return cacheAndReturn(items);
       } catch (err) {
-        if (err.response?.status !== 403) console.error("❌ Spotify GET /tracks failed:", err.response?.status, err.response?.data?.error?.message);
-        if (err.response?.status !== 403) throw err;
+        if (err.response?.status === 429) {
+          const retryAfter = parseInt(err.response.headers?.['retry-after'] || '60', 10);
+          _rateLimitedUntil.set(playlistId, Date.now() + retryAfter * 1000);
+          console.error(`❌ Spotify GET /tracks failed: 429 — backing off ${retryAfter}s`);
+          throw err;
+        }
+        if (err.response?.status !== 403) {
+          console.error("❌ Spotify GET /tracks failed:", err.response?.status, err.response?.data?.error?.message);
+          throw err;
+        }
         // 403 = token lacks playlist-read-private scope, fall through to parent object
       }
 
@@ -320,8 +348,12 @@ export const getPlaylistTracks = async (req, res) => {
       try {
         const r = await axios.get(`https://api.spotify.com/v1/playlists/${playlistId}`, { headers: auth });
         const items = parseItems(r.data.tracks || {});
-        if (items.length) return res.json(cacheAndReturn(items));
+        if (items.length) return cacheAndReturn(items);
       } catch (err) {
+        if (err.response?.status === 429) {
+          const retryAfter = parseInt(err.response.headers?.['retry-after'] || '60', 10);
+          _rateLimitedUntil.set(playlistId, Date.now() + retryAfter * 1000);
+        }
         if (err.response?.status !== 403) console.error("❌ Spotify GET playlist failed:", err.response?.status);
       }
     }
@@ -333,13 +365,28 @@ export const getPlaylistTracks = async (req, res) => {
         headers: { Authorization: `Bearer ${appToken}` },
       });
       const items = parseItems(r.data.tracks || {});
-      if (items.length) return res.json(cacheAndReturn(items));
+      if (items.length) return cacheAndReturn(items);
     } catch (err) {
-      console.error("❌ Spotify client-cred playlist fetch failed:", err.response?.status);
+      if (err.response?.status === 429) {
+        const retryAfter = parseInt(err.response.headers?.['retry-after'] || '60', 10);
+        _rateLimitedUntil.set(playlistId, Date.now() + retryAfter * 1000);
+        console.error(`❌ Spotify client-cred playlist fetch failed: 429 — backing off ${retryAfter}s`);
+      } else {
+        console.error("❌ Spotify client-cred playlist fetch failed:", err.response?.status);
+      }
     }
 
+    return null; // no tracks found
+  })();
+
+  _inflight.set(playlistId, fetchPromise);
+  try {
+    const data = await fetchPromise;
+    _inflight.delete(playlistId);
+    if (data) return res.json(data);
     res.status(403).json({ message: 'Reconnect Spotify to load playlist tracks (playlist-read-private scope required)' });
   } catch (err) {
+    _inflight.delete(playlistId);
     const status = err.response?.status || 500;
     res.status(status).json({ message: err.response?.data?.error?.message || 'Failed to fetch tracks' });
   }

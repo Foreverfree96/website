@@ -180,6 +180,12 @@ const router = useRouter();
 let _tokenCache         = null; // { token, expiresAt }
 let _reconnectAttempted = false; // true after user has gone through OAuth reconnect this session
 
+// ── Module-level playlist fetch deduplication ─────────────────────────────────
+// If multiple SpotifyPlayer instances on the same page (feed) call fetchPlaylistTracks
+// for the same URL simultaneously, only the first fires the backend request.
+// All others wait for its result and reuse it — preventing 429s from Spotify.
+const _fetchingPlaylists = new Map(); // playlistKey → Promise
+
 // ── Persisted prefs (volume + shuffle survive page reloads) ───────────────────
 const _savedVol     = parseFloat(localStorage.getItem('sp_volume')  ?? '70');
 const _savedShuffle = localStorage.getItem('sp_shuffle') === 'true';
@@ -440,19 +446,31 @@ const fetchPlaylistTracks = async () => {
 
   const isAlbum = !!albumMatch;
   const id      = (playlistMatch ?? albumMatch)[1];
+  const cacheKey = `${isAlbum ? 'album' : 'playlist'}:${id}`;
 
+  // Apply fetched tracks to this component instance's state
   const applyTracks = (tracks) => {
-    if (!tracks.length) return false;
+    if (!tracks?.length) return false;
     playlistTracks.value = tracks;
     fullTracksFetched = true;
     saveCachedTracks(props.mediaUrl, tracks);
-    localStorage.setItem('sp_playlist_ok', '1'); // mark: user has scope, suppress future banners
+    localStorage.setItem('sp_playlist_ok', '1');
     if (!currentTrackUri.value) {
       const t = (props.startTrackUri && tracks.find(t => t.uri === props.startTrackUri)) || tracks[0];
       if (t) track.value = { name: t.name, artist: t.artist, album: '', art: t.art };
     }
     return true;
   };
+
+  // If another instance is already fetching this same playlist, wait for it and reuse the result.
+  // This prevents N SpotifyPlayer instances on a feed from all calling Spotify/backend at once.
+  if (_fetchingPlaylists.has(cacheKey)) {
+    try {
+      const tracks = await _fetchingPlaylists.get(cacheKey);
+      applyTracks(tracks);
+    } catch { /* ignore — the first instance will have logged the error */ }
+    return;
+  }
 
   const parsePlaylist = (data) =>
     (data.items || [])
@@ -476,65 +494,74 @@ const fetchPlaylistTracks = async () => {
         art,
       }));
 
-  // 1️⃣ Direct Spotify API calls
-  if (token) {
-    try {
-      if (isAlbum) {
-        // Fetch album metadata + tracks in parallel
-        const [arRes, trRes] = await Promise.all([
-          fetch(`https://api.spotify.com/v1/albums/${id}`, { headers: { Authorization: `Bearer ${token}` } }).catch(() => null),
-          fetch(`https://api.spotify.com/v1/albums/${id}/tracks?limit=50`, { headers: { Authorization: `Bearer ${token}` } }),
-        ]);
-        const albumArt = arRes?.ok ? (await arRes.json()).images?.[0]?.url || '' : '';
-        if (trRes.ok) {
-          if (applyTracks(parseAlbum(await trRes.json(), albumArt))) return;
-        }
-      } else {
-        // 1a. GET /v1/playlists/{id}/tracks — paginate through ALL tracks (needs playlist-read-private)
-        const auth = { Authorization: `Bearer ${token}` };
-        let nextUrl = `https://api.spotify.com/v1/playlists/${id}/tracks?limit=100`;
-        let allItems = [];
-        let paginationOk = true;
-        while (nextUrl) {
-          const r = await fetch(nextUrl, { headers: auth });
-          if (!r.ok) { paginationOk = r.status !== 403; nextUrl = null; break; }
-          const page = await r.json();
-          allItems = allItems.concat(page.items || []);
-          nextUrl = page.next || null;
-        }
-        if (allItems.length && applyTracks(parsePlaylist({ items: allItems }))) return;
-        if (!paginationOk) {
-          // 403 → missing scope, fall through to parent object
-          const pRes = await fetch(`https://api.spotify.com/v1/playlists/${id}`, { headers: auth });
-          if (pRes.ok) {
-            const pData = await pRes.json();
-            if (pData.tracks && applyTracks(parsePlaylist(pData.tracks))) return;
+  // doFetch: performs the actual API calls and returns a tracks array (or null)
+  const doFetch = async () => {
+    // 1️⃣ Direct Spotify API calls (uses the in-instance token)
+    if (token) {
+      try {
+        if (isAlbum) {
+          const [arRes, trRes] = await Promise.all([
+            fetch(`https://api.spotify.com/v1/albums/${id}`, { headers: { Authorization: `Bearer ${token}` } }).catch(() => null),
+            fetch(`https://api.spotify.com/v1/albums/${id}/tracks?limit=50`, { headers: { Authorization: `Bearer ${token}` } }),
+          ]);
+          const albumArt = arRes?.ok ? (await arRes.json()).images?.[0]?.url || '' : '';
+          if (trRes.ok) {
+            const tracks = parseAlbum(await trRes.json(), albumArt);
+            if (tracks.length) return tracks;
+          }
+        } else {
+          const auth = { Authorization: `Bearer ${token}` };
+          let nextUrl = `https://api.spotify.com/v1/playlists/${id}/tracks?limit=100`;
+          let allItems = [];
+          let paginationOk = true;
+          while (nextUrl) {
+            const r = await fetch(nextUrl, { headers: auth });
+            if (!r.ok) { paginationOk = r.status !== 403; nextUrl = null; break; }
+            const page = await r.json();
+            allItems = allItems.concat(page.items || []);
+            nextUrl = page.next || null;
+          }
+          if (allItems.length) return parsePlaylist({ items: allItems });
+          if (!paginationOk) {
+            const pRes = await fetch(`https://api.spotify.com/v1/playlists/${id}`, { headers: auth });
+            if (pRes.ok) {
+              const pData = await pRes.json();
+              const tracks = parsePlaylist(pData.tracks || {});
+              if (tracks.length) return tracks;
+            }
           }
         }
-      }
-    } catch { /* fall through */ }
-  }
+      } catch { /* fall through */ }
+    }
 
-  // Albums are always public — no backend proxy needed (no scope issues)
-  if (isAlbum) return;
+    if (isAlbum) return null; // albums need no backend proxy
 
-  // 2️⃣ Backend proxy fallback for playlists
-  try {
+    // 2️⃣ Backend proxy fallback for playlists
     const jwt = localStorage.getItem('jwtToken');
     if (jwt) {
       const res = await fetch(`${API}/api/spotify/playlist/${id}/tracks`, {
         headers: { Authorization: `Bearer ${jwt}` },
       });
-      if (res.ok) { applyTracks(parsePlaylist(await res.json())); return; }
+      if (res.ok) return parsePlaylist(await res.json());
       console.error('[Spotify] Backend playlist fetch failed:', res.status);
     }
-  } catch (err) {
-    console.error('[Spotify] fetchPlaylistTracks backend error:', err);
-  }
+    return null;
+  };
 
-  // All paths failed — show reconnect banner only if we've never had a successful fetch
-  // (sp_playlist_ok is set when applyTracks succeeds, so banner won't reappear after reconnect)
-  if (!_reconnectAttempted && !localStorage.getItem('sp_playlist_ok')) needsReconnect.value = true;
+  // Register in-flight promise so concurrent instances share this fetch
+  const promise = doFetch();
+  _fetchingPlaylists.set(cacheKey, promise);
+  try {
+    const tracks = await promise;
+    _fetchingPlaylists.delete(cacheKey);
+    if (!applyTracks(tracks)) {
+      if (!_reconnectAttempted && !localStorage.getItem('sp_playlist_ok')) needsReconnect.value = true;
+    }
+  } catch (err) {
+    _fetchingPlaylists.delete(cacheKey);
+    console.error('[Spotify] fetchPlaylistTracks error:', err);
+    if (!_reconnectAttempted && !localStorage.getItem('sp_playlist_ok')) needsReconnect.value = true;
+  }
 };
 
 // ── Fetch playlist / album / track metadata for the inactive preview card ─────
