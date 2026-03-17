@@ -25,7 +25,7 @@
                     <div v-if="activeConvo" class="cw-header-actions">
                         <!-- Normal mode: Report / Recover / Clear Chat / Block -->
                         <template v-if="!reportMode && !recoverMode">
-                            <button class="cw-report" @click="enterReportMode">🚩 Report</button>
+                            <button class="cw-report" @click="enterReportMode" :disabled="isConvoReported" :title="isConvoReported ? 'Already reported' : ''">🚩 {{ isConvoReported ? 'Reported' : 'Report' }}</button>
                             <button class="cw-recover" @click="enterRecoverMode">📥 Recover</button>
                             <button class="cw-clear" @click="openClearConfirm">🗑 Clear</button>
                             <button class="cw-block" @click="openBlockConfirm">🚫 Block</button>
@@ -296,7 +296,7 @@ import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import axios from 'axios';
 import { useAuth } from '../composables/useAuth.js';
-import { useNotifications } from '../composables/useNotifications.js';
+import { useNotifications, playBump } from '../composables/useNotifications.js';
 import AppModal from './AppModal.vue';
 
 // ─── API BASE URLS ────────────────────────────────────────────────────────────
@@ -436,6 +436,13 @@ const recoverLoading = ref(false);
 /** True when recover is blocked because the chat was fully wiped (second clear). */
 const recoverBlocked = ref(false);
 
+// ─── REPORT DUPLICATE GUARD ──────────────────────────────────────────────────
+
+const _reportedKey    = (id) => `reported_convo_${id}`;
+const _isReported     = (id) => !!localStorage.getItem(_reportedKey(id));
+const _markReported   = (id) => localStorage.setItem(_reportedKey(id), '1');
+const isConvoReported = computed(() => !!activeConvo.value && _isReported(activeConvo.value._id));
+
 // ─── REPORT MODE FUNCTIONS ───────────────────────────────────────────────────
 
 /**
@@ -445,6 +452,7 @@ const recoverBlocked = ref(false);
  * included in the report even after the main message list has been wiped.
  */
 const enterReportMode = async () => {
+    if (activeConvo.value && _isReported(activeConvo.value._id)) return;
     reportMode.value = true;
     reportSelected.value = new Set();
     reportReason.value = '';
@@ -636,6 +644,7 @@ const submitReport = async () => {
             reason: reportReason.value.trim(),
             messages: snapshots,
         });
+        _markReported(activeConvo.value._id);
         cancelReportMode();
         // Brief success feedback
         reportError.value = '';
@@ -801,6 +810,7 @@ const sendMsg = async () => {
     try {
         const res = await axios.post(`${API}/${activeConvo.value._id}`, { body });
         messages.value.push(res.data);
+        playBump();
         localStorage.removeItem(_clearedKey(activeConvo.value._id));
         // Keep the conversation preview in sync without re-fetching the list
         activeConvo.value.lastMessage = body;
@@ -1482,7 +1492,8 @@ const formatTime = (d) => {
     cursor: pointer;
     transition: background 0.15s;
 }
-.cw-report:hover { background: #6d28d9; }
+.cw-report:hover:not(:disabled) { background: #6d28d9; }
+.cw-report:disabled { opacity: 0.5; cursor: default; background: #7c3aed; }
 
 /* Recover button — green teal to distinguish from the purple report button */
 .cw-recover {
