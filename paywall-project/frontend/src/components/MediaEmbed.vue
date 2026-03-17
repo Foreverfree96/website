@@ -256,7 +256,10 @@ const popOutEmbed = () => {
     // will reuse the live device so there's no re-authentication gap.
     spotifyPlayerRef.value.setHandOffMode?.();
   }
-  popOut({ url: props.mediaUrl, type: props.embedType, isPlaylist: isPlaylist.value, position: posMs, playlistIndex: idxVal, resumeOnLoad: true, trackUri });
+  const wasPlaying = props.embedType === 'spotify'
+    ? !(spotifyPlayerRef.value?.paused?.value ?? true)
+    : true;
+  popOut({ url: props.mediaUrl, type: props.embedType, isPlaylist: isPlaylist.value, position: posMs, playlistIndex: idxVal, resumeOnLoad: wasPlaying, trackUri });
   active.value = false;
   embedKey.value++;
 };
