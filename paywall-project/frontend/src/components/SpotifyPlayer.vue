@@ -858,6 +858,13 @@ const doConnect = async (shouldAutoPlay = true) => {
 
     // Register step-down so a later player can cleanly take over this device
     _myStepDown = () => {
+      // Stop ticker + position saver and persist last known position
+      stopTicker();
+      clearInterval(posSaver); posSaver = null;
+      saveCurrentPosition();
+      // Update resume refs so clicking play again resumes from this point
+      if (currentTrackUri.value) _resumeTrackUri.value = currentTrackUri.value;
+      if (position.value > 0)    _resumePosition.value = position.value;
       player?.removeListener('player_state_changed');
       player?.removeListener('not_ready');
       player?.removeListener('ready');
@@ -865,7 +872,7 @@ const doConnect = async (shouldAutoPlay = true) => {
       player = null;
       deviceId = null;
       firstStateReceived = false;
-      state.value = props.lazyConnect ? 'inactive' : 'needs-connect';
+      state.value = 'inactive'; // always inactive — user is still connected, just needs to re-init
     };
     window._spStepDown = _myStepDown;
   });
@@ -897,7 +904,11 @@ const doConnect = async (shouldAutoPlay = true) => {
 
     // SDK track_window fallback — merges newly visible tracks into the list
     // so the queue grows as the user listens instead of staying at 3.
-    if (props.isPlaylist && s.track_window && !fullTracksFetched) {
+    // Guard: only merge if the player context matches THIS playlist — Spotify fires
+    // transitional state events with the previous playlist's tracks during a switch.
+    const expectedUri = getSpotifyUri(props.mediaUrl);
+    const contextMatch = !s.context?.uri || !expectedUri || s.context.uri === expectedUri;
+    if (props.isPlaylist && s.track_window && !fullTracksFetched && contextMatch) {
       const windowTracks = [
         ...(s.track_window.previous_tracks || []),
         ...(t ? [t] : []),
