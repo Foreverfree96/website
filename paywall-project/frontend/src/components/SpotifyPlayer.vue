@@ -394,21 +394,17 @@ const waitForDevice = async (maxWaitMs = 8000) => {
 };
 
 // ── Start playback context ─────────────────────────────────────────────────────
-const startPlayback = async (shouldPlay = true) => {
+// skipDeviceSetup=true: device is already active (handoff) — skip poll + transfer
+const startPlayback = async (shouldPlay = true, skipDeviceSetup = false) => {
   if (!shouldPlay) return;
-
-  const found = await waitForDevice();
-  if (!found) { state.value = 'needs-connect'; return; }
 
   const uri = getSpotifyUri(props.mediaUrl);
   if (!uri) return;
 
-  // Step 1: explicitly transfer playback to our device before issuing the play
-  // command. Without this Spotify may fall back to the previous active device/context.
-  try {
-    await spotifyFetch('PUT', '/me/player', { device_ids: [deviceId], play: false });
-    await new Promise(r => setTimeout(r, 300));
-  } catch { /* non-critical */ }
+  if (!skipDeviceSetup) {
+    const found = await waitForDevice();
+    if (!found) { state.value = 'needs-connect'; return; }
+  }
 
   const isTrack  = uri.startsWith('spotify:track:');
   const resumeMs = _resumePosition.value || 0;
@@ -804,9 +800,14 @@ const doConnect = async (shouldAutoPlay = true) => {
     window._spHandoff = null;
     clearTimeout(connectTimeout);
     state.value = 'ready';
-    // Re-attach state listener so new component's refs get updated
+    // Re-attach state listener — filter out stale events from the previous
+    // playlist that fire immediately when the listener is added to a reused player.
+    const _expectedCtx = getSpotifyUri(props.mediaUrl);
     player.addListener('player_state_changed', async (s) => {
       if (!s) return;
+      // Ignore events whose context doesn't match this component's playlist yet.
+      // Spotify fires the old context state immediately upon listener re-attach.
+      if (_expectedCtx && s.context?.uri && s.context.uri !== _expectedCtx) return;
       firstStateReceived = true;
       paused.value    = s.paused;
       position.value  = s.position;
@@ -820,8 +821,9 @@ const doConnect = async (shouldAutoPlay = true) => {
       if (!s.paused) { startTicker(); if (!posSaver) posSaver = setInterval(saveCurrentPosition, 5000); }
       else { stopTicker(); clearInterval(posSaver); posSaver = null; saveCurrentPosition(); }
     });
-    // Resume at saved position if needed
-    if (shouldAutoPlay) await startPlayback(true).catch(() => {});
+    // Device is already active — skip waitForDevice and the transfer step,
+    // just send the play command directly for the new context.
+    if (shouldAutoPlay) await startPlayback(true, true).catch(() => {});
     tokenRefresher = setInterval(async () => {
       _tokenCache = null;
       const result = await fetchToken();
