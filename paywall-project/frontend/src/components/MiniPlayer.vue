@@ -21,7 +21,7 @@
             :mediaUrl="nowPlaying.url"
             :isPlaylist="nowPlaying.isPlaylist || false"
             :autoPlay="!!(nowPlaying.resumeOnLoad)"
-            :defaultListOpen="true"
+            :defaultListOpen="false"
             :startPosition="nowPlaying.position || 0"
             :startTrackUri="nowPlaying.trackUri || ''"
           />
