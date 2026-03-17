@@ -870,9 +870,7 @@ const doConnect = async (shouldAutoPlay = true) => {
     startPlayback(shouldAutoPlay).catch(() => {});
 
     // Register step-down so a later player can cleanly take over this device.
-    // We keep the Spotify device ALIVE (no disconnect) so the next component
-    // can reuse it immediately — avoiding the reconnect race that caused the
-    // previous playlist to play instead of the new one.
+    // Disconnect immediately so the new playlist gets a clean fresh connect.
     _myStepDown = () => {
       stopTicker();
       clearInterval(posSaver); posSaver = null;
@@ -882,8 +880,7 @@ const doConnect = async (shouldAutoPlay = true) => {
       player?.removeListener('player_state_changed');
       player?.removeListener('not_ready');
       player?.removeListener('ready');
-      // Hand off the live device — don't disconnect
-      window._spHandoff = { player, deviceId, token };
+      player?.disconnect();
       player = null;
       deviceId = null;
       firstStateReceived = false;
@@ -1024,8 +1021,7 @@ onUnmounted(() => {
     // so it can reuse the already-registered Spotify device without re-authenticating.
     window._spHandoff = { player, deviceId, token };
     _skipDisconnect = false;
-  } else if (!window._spHandoff || window._spHandoff.player !== player) {
-    // Only disconnect if we haven't already handed the player off via step-down
+  } else {
     player?.disconnect();
   }
   player = null;
