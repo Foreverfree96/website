@@ -37,8 +37,15 @@
         </div>
       </div>
 
-      <!-- Pop-out button OUTSIDE the video, always visible -->
+      <!-- Controls bar — shuffle (YT playlists) + pop-out -->
       <div v-if="active && embedUrl" class="embed-controls-bar">
+        <button
+          v-if="embedType === 'youtube' && isPlaylist"
+          class="embed-shuffle-btn"
+          :class="{ 'embed-shuffle-btn--on': ytShuffleOn }"
+          @click.stop="ytShuffleOn = !ytShuffleOn"
+          :title="ytShuffleOn ? 'Shuffle on' : 'Shuffle off'"
+        >🔀</button>
         <button class="embed-popout-pill" @click.stop="popOutEmbed" title="Pop out to mini player">
           ↗ Play in Mini Player
         </button>
@@ -64,6 +71,8 @@ const embedKey          = ref(0);
 const iframeEl          = ref(null);
 const ytTime            = ref(0);   // tracked via postMessage
 const ytIndex           = ref(0);   // playlist index tracked via postMessage
+const ytLength          = ref(0);   // playlist length tracked via postMessage
+const ytShuffleOn       = ref(false);
 const startFrom         = ref(0);   // seconds — used in YT embed URL to restore position
 const startIndex        = ref(0);   // playlist index to restore after pop-back-in
 const autoplayOnPopIn   = ref(false); // add autoplay=1 when popping back in from mini player
@@ -149,6 +158,17 @@ const onMessage = (e) => {
     if (d.event === 'infoDelivery' && d.info) {
       if (d.info.currentTime   != null) ytTime.value  = d.info.currentTime;
       if (d.info.playlistIndex != null) ytIndex.value = d.info.playlistIndex;
+      if (Array.isArray(d.info.playlist) && d.info.playlist.length > ytLength.value)
+        ytLength.value = d.info.playlist.length;
+      // Shuffle: intercept video-ended and jump to random track
+      if (d.info.playerState === 0 && ytShuffleOn.value && ytLength.value > 1) {
+        let next;
+        do { next = Math.floor(Math.random() * ytLength.value); }
+        while (next === ytIndex.value);
+        iframeEl.value?.contentWindow?.postMessage(
+          JSON.stringify({ event: 'command', func: 'playVideoAt', args: [next] }), '*'
+        );
+      }
     }
   } catch { /* ignore parse errors */ }
 };
@@ -283,6 +303,25 @@ const platformLabel = computed(() => ({ instagram: 'View on Instagram', tiktok: 
   gap: 8px;
   margin-top: 8px;
 }
+
+.embed-shuffle-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: none;
+  background: #1a1a1a;
+  color: #aaa;
+  font-size: 1rem;
+  cursor: pointer;
+  opacity: 0.6;
+  transition: background 0.15s, opacity 0.15s, transform 0.1s;
+}
+.embed-shuffle-btn:hover { opacity: 1; background: #2a2a2a; transform: scale(1.08); }
+.embed-shuffle-btn--on { background: #1db954; color: #000; opacity: 1; }
+.embed-shuffle-btn--on:hover { background: #1ed760; }
 
 .embed-popout-pill {
   display: inline-flex;

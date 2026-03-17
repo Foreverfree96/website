@@ -46,7 +46,7 @@
             <iframe
               :key="iframeKey"
               ref="iframeEl"
-              :src="embedUrl"
+              :src="frozenEmbedUrl"
               frameborder="0"
               class="mp-embed"
               allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
@@ -58,7 +58,7 @@
           <!-- YouTube playlist skip controls + queue -->
           <template v-if="playerReady && isYtPlaylist">
             <div class="mp-skip-bar">
-              <button class="mp-skip-btn mp-skip-btn--shuffle" @click="shuffleYt" title="Shuffle">🔀</button>
+              <button class="mp-skip-btn mp-skip-btn--shuffle" :class="{ 'mp-skip-btn--shuffle-on': ytShuffleOn }" @click="toggleYtShuffle" title="Shuffle">🔀</button>
               <button class="mp-skip-btn" @click="skipSong(-1)" title="Previous">⏮</button>
               <span class="mp-skip-label">Track {{ ytPlaylistIndex + 1 }}{{ ytPlaylistLength ? ` / ${ytPlaylistLength}` : '' }}</span>
               <button class="mp-skip-btn" @click="skipSong(1)" title="Next">⏭</button>
@@ -125,9 +125,48 @@ const ytPlaylistIndex   = ref(0);
 const ytPlaylistLength  = ref(0);
 const ytCurrentTitle    = ref('');
 const ytQueueOpen       = ref(false);
+const ytShuffleOn       = ref(false);
 const ytVideoIds        = ref([]);   // video IDs from infoDelivery.playlist
 const ytTitles          = ref({});   // index → title, populated via oEmbed
 const spotifyPlayerRef  = ref(null);
+
+// ── Frozen embed URL ──────────────────────────────────────────────────────────
+// Built once when playerReady becomes true so the iframe src never changes while
+// playing — updating position in nowPlaying would otherwise reload the iframe.
+const frozenEmbedUrl = ref('');
+
+const buildEmbedUrl = (np) => {
+  if (!np) return '';
+  const { url, type, isPlaylist, playlistIndex = 0, position = 0 } = np;
+  const startSecs = Math.floor(position / 1000);
+
+  if (type === 'youtube') {
+    const listMatch    = url.match(/[?&]list=([^&]+)/);
+    const videoIdMatch = url.match(/youtu\.be\/([^?&/]+)|[?&]v=([^&]+)/);
+    const videoId      = videoIdMatch?.[1] || videoIdMatch?.[2] || null;
+    if (listMatch && (isPlaylist || !videoId)) {
+      const start = startSecs > 0 ? `&start=${startSecs}` : '';
+      return `https://www.youtube.com/embed/videoseries?list=${listMatch[1]}&autoplay=1&index=${playlistIndex}&enablejsapi=1${start}`;
+    }
+    if (videoId) return `https://www.youtube.com/embed/${videoId}?autoplay=1&start=${startSecs}&enablejsapi=1`;
+    return '';
+  }
+  if (type === 'soundcloud')
+    return `https://w.soundcloud.com/player/?url=${encodeURIComponent(url)}&auto_play=true&show_artwork=true&visual=true&color=%231db954`;
+  if (type === 'twitch') {
+    const clip = url.match(/twitch\.tv\/\w+\/clip\/([^/?]+)/);
+    const ch   = url.match(/twitch\.tv\/([^/?]+)/);
+    if (clip) return `https://clips.twitch.tv/embed?clip=${clip[1]}&parent=${location.hostname}`;
+    if (ch)   return `https://player.twitch.tv/?channel=${ch[1]}&parent=${location.hostname}&autoplay=true`;
+  }
+  if (type === 'applemusic') return url.replace('music.apple.com', 'embed.music.apple.com');
+  return url;
+};
+
+// Freeze once when playerReady becomes true (immediate handles page-refresh case)
+watch(playerReady, (ready) => {
+  if (ready && nowPlaying.value) frozenEmbedUrl.value = buildEmbedUrl(nowPlaying.value);
+}, { immediate: true });
 
 const isSpotify   = computed(() => nowPlaying.value?.type === 'spotify');
 const isYtPlaylist = computed(() =>
@@ -137,16 +176,18 @@ const isYtPlaylist = computed(() =>
 // Reset when media changes or clears
 watch(nowPlaying, (np, old) => {
   if (!np) {
-    expanded.value        = false;
-    playerReady.value     = false;
+    expanded.value         = false;
+    playerReady.value      = false;
+    frozenEmbedUrl.value   = '';
     ytPlaylistLength.value = 0;
-    ytCurrentTitle.value  = '';
-    ytQueueOpen.value     = false;
-    ytVideoIds.value      = [];
-    ytTitles.value        = {};
+    ytCurrentTitle.value   = '';
+    ytQueueOpen.value      = false;
+    ytVideoIds.value       = [];
+    ytTitles.value         = {};
   } else if (old && (old.url !== np.url || old.type !== np.type)) {
     // Auto-start iframe for non-Spotify when popped out while playing
     playerReady.value      = !!(np.resumeOnLoad && np.type !== 'spotify');
+    frozenEmbedUrl.value   = ''; // will be set by watch(playerReady) when ready fires
     ytTime.value           = 0;
     ytPlaylistIndex.value  = np.playlistIndex || 0;
     ytPlaylistLength.value = 0;
@@ -160,6 +201,14 @@ watch(nowPlaying, (np, old) => {
 // ── YouTube skip via postMessage API ──────────────────────────────────────────
 const skipSong = (dir) => {
   if (!iframeEl.value) return;
+  // Next + shuffle on → jump to a random track (not the current one)
+  if (dir > 0 && ytShuffleOn.value && ytPlaylistLength.value > 1) {
+    let next;
+    do { next = Math.floor(Math.random() * ytPlaylistLength.value); }
+    while (next === ytPlaylistIndex.value);
+    jumpToTrack(next);
+    return;
+  }
   iframeEl.value.contentWindow?.postMessage(
     JSON.stringify({ event: 'command', func: dir > 0 ? 'nextVideo' : 'previousVideo', args: [] }),
     '*'
@@ -175,11 +224,8 @@ const jumpToTrack = (index) => {
   );
 };
 
-// ── Shuffle YouTube playlist ───────────────────────────────────────────────────
-const shuffleYt = () => {
-  if (!ytPlaylistLength.value) return;
-  jumpToTrack(Math.floor(Math.random() * ytPlaylistLength.value));
-};
+// ── Shuffle toggle ─────────────────────────────────────────────────────────────
+const toggleYtShuffle = () => { ytShuffleOn.value = !ytShuffleOn.value; };
 
 // ── YouTube postMessage: position + playlist tracking ─────────────────────────
 const onIframeLoad = () => {
@@ -214,6 +260,13 @@ const onMessage = (e) => {
         ytPlaylistLength.value = d.info.playlist.length;
         ytVideoIds.value = d.info.playlist;
         fetchYtTitles(d.info.playlist);
+      }
+      // Shuffle: when a video ends (playerState 0), jump to random next
+      if (d.info.playerState === 0 && ytShuffleOn.value && ytPlaylistLength.value > 1) {
+        let next;
+        do { next = Math.floor(Math.random() * ytPlaylistLength.value); }
+        while (next === ytPlaylistIndex.value);
+        jumpToTrack(next);
       }
     }
   } catch { /* ignore */ }
@@ -298,44 +351,6 @@ watch(popInRequested, (requested) => {
   savePositionAndClose();
 });
 
-// ── Build embed URL (non-Spotify platforms only) ──────────────────────────────
-const embedUrl = computed(() => {
-  const np = nowPlaying.value;
-  if (!np) return '';
-  const { url, type, isPlaylist, playlistIndex = 0, position = 0 } = np;
-  const startSecs = Math.floor(position / 1000);
-
-  if (type === 'youtube') {
-    const listMatch    = url.match(/[?&]list=([^&]+)/);
-    const videoIdMatch = url.match(/youtu\.be\/([^?&/]+)|[?&]v=([^&]+)/);
-    const videoId      = videoIdMatch?.[1] || videoIdMatch?.[2] || null;
-    if (listMatch && (isPlaylist || !videoId)) {
-      const start = startSecs > 0 ? `&start=${startSecs}` : '';
-      return `https://www.youtube.com/embed/videoseries?list=${listMatch[1]}&autoplay=1&index=${playlistIndex}&enablejsapi=1${start}`;
-    }
-    if (videoId) {
-      return `https://www.youtube.com/embed/${videoId}?autoplay=1&start=${startSecs}&enablejsapi=1`;
-    }
-    return '';
-  }
-
-  if (type === 'soundcloud') {
-    return `https://w.soundcloud.com/player/?url=${encodeURIComponent(url)}&auto_play=true&show_artwork=true&visual=true&color=%231db954`;
-  }
-
-  if (type === 'twitch') {
-    const clip = url.match(/twitch\.tv\/\w+\/clip\/([^/?]+)/);
-    const ch   = url.match(/twitch\.tv\/([^/?]+)/);
-    if (clip) return `https://clips.twitch.tv/embed?clip=${clip[1]}&parent=${location.hostname}`;
-    if (ch)   return `https://player.twitch.tv/?channel=${ch[1]}&parent=${location.hostname}&autoplay=true`;
-  }
-
-  if (type === 'applemusic') {
-    return url.replace('music.apple.com', 'embed.music.apple.com');
-  }
-
-  return url;
-});
 
 // ── Preview helpers ───────────────────────────────────────────────────────────
 const previewThumb = computed(() => {
@@ -507,8 +522,10 @@ const previewLabel = computed(() => {
   transition: background 0.15s, transform 0.1s;
 }
 .mp-skip-btn:hover { background: #1db954; transform: scale(1.1); }
-.mp-skip-btn--shuffle { font-size: 0.9rem; opacity: 0.6; }
+.mp-skip-btn--shuffle { font-size: 0.9rem; opacity: 0.5; }
 .mp-skip-btn--shuffle:hover { opacity: 1; }
+.mp-skip-btn--shuffle-on { background: #1db954 !important; color: #000; opacity: 1; }
+.mp-skip-btn--shuffle-on:hover { background: #1ed760 !important; }
 .mp-skip-label {
   font-size: 0.78rem;
   font-weight: 700;
