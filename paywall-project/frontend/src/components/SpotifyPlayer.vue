@@ -702,8 +702,8 @@ const disconnectSpotify = async () => {
 
 // ── Mount ──────────────────────────────────────────────────────────────────────
 onMounted(async () => {
-  // Web Playback SDK requires HTTPS — skip straight to iframe on HTTP
-  if (location.protocol !== 'https:') {
+  // Web Playback SDK requires a secure context — HTTPS in prod, localhost is fine in dev
+  if (!window.isSecureContext) {
     state.value = 'unavailable';
     return;
   }
