@@ -59,13 +59,14 @@ const props = defineProps({
 
 const { nowPlaying, popOut, lastPosition, popIn } = useNowPlaying();
 
-const active          = ref(false);
-const embedKey        = ref(0);
-const iframeEl        = ref(null);
-const ytTime          = ref(0);   // tracked via postMessage
-const ytIndex         = ref(0);   // playlist index tracked via postMessage
-const startFrom       = ref(0);   // seconds — used in YT embed URL to restore position
-const startIndex      = ref(0);   // playlist index to restore after pop-back-in
+const active            = ref(false);
+const embedKey          = ref(0);
+const iframeEl          = ref(null);
+const ytTime            = ref(0);   // tracked via postMessage
+const ytIndex           = ref(0);   // playlist index tracked via postMessage
+const startFrom         = ref(0);   // seconds — used in YT embed URL to restore position
+const startIndex        = ref(0);   // playlist index to restore after pop-back-in
+const autoplayOnPopIn   = ref(false); // add autoplay=1 when popping back in from mini player
 
 const isPoppedOut = computed(() => nowPlaying.value?.url === props.mediaUrl);
 
@@ -88,15 +89,16 @@ const embedUrl = computed(() => {
     const videoIdMatch = url.match(/youtu\.be\/([^?&/]+)|[?&]v=([^&]+)|youtube\.com\/shorts\/([^?&/]+)/);
     const videoId      = videoIdMatch?.[1] || videoIdMatch?.[2] || videoIdMatch?.[3] || null;
     const start        = startFrom.value > 0 ? `&start=${startFrom.value}` : '';
+    const autoplay = autoplayOnPopIn.value ? '&autoplay=1' : '';
     if (listMatch && (isPlaylist.value || !videoId)) {
       const idx   = startIndex.value > 0 ? `&index=${startIndex.value}` : '';
       const start = startFrom.value  > 0 ? `&start=${startFrom.value}`  : '';
-      return `https://www.youtube.com/embed/videoseries?list=${listMatch[1]}&enablejsapi=1${idx}${start}`;
+      return `https://www.youtube.com/embed/videoseries?list=${listMatch[1]}&enablejsapi=1${autoplay}${idx}${start}`;
     }
     if (videoId && listMatch)
-      return `https://www.youtube.com/embed/${videoId}?list=${listMatch[1]}&enablejsapi=1${start}`;
+      return `https://www.youtube.com/embed/${videoId}?list=${listMatch[1]}&enablejsapi=1${autoplay}${start}`;
     if (videoId)
-      return `https://www.youtube.com/embed/${videoId}?enablejsapi=1${start}`;
+      return `https://www.youtube.com/embed/${videoId}?enablejsapi=1${autoplay}${start}`;
     return '';
   }
 
@@ -127,6 +129,7 @@ const embedUrl = computed(() => {
 const onIframeLoad = () => {
   if (props.embedType === 'youtube') {
     iframeEl.value?.contentWindow?.postMessage(JSON.stringify({ event: 'listening' }), '*');
+    autoplayOnPopIn.value = false; // reset after iframe is loaded so it doesn't persist
   }
 };
 
@@ -150,8 +153,9 @@ watch(isPoppedOut, (isPopped, wasPopped) => {
 
   if (props.embedType === 'youtube') {
     const secs = Math.floor((lastPosition.value.position || 0) / 1000);
-    startFrom.value  = secs > 0 ? secs : 0;
-    startIndex.value = lastPosition.value.playlistIndex || 0;
+    startFrom.value      = secs > 0 ? secs : 0;
+    startIndex.value     = lastPosition.value.playlistIndex || 0;
+    autoplayOnPopIn.value = true; // resume playback in the post embed
     embedKey.value++;
     active.value = true;
   } else {
@@ -184,7 +188,8 @@ const popOutEmbed = () => {
   if (isPoppedOut.value) return;
   const posMs  = props.embedType === 'youtube' ? Math.floor(ytTime.value * 1000) : 0;
   const idxVal = props.embedType === 'youtube' ? ytIndex.value : 0;
-  popOut({ url: props.mediaUrl, type: props.embedType, isPlaylist: isPlaylist.value, position: posMs, playlistIndex: idxVal });
+  // resumeOnLoad: true → mini player will auto-start playback (keeps playing seamlessly)
+  popOut({ url: props.mediaUrl, type: props.embedType, isPlaylist: isPlaylist.value, position: posMs, playlistIndex: idxVal, resumeOnLoad: true });
   active.value = false;
   embedKey.value++;
 };

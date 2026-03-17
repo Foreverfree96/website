@@ -19,7 +19,7 @@
             ref="spotifyPlayerRef"
             :mediaUrl="nowPlaying.url"
             :isPlaylist="nowPlaying.isPlaylist || false"
-            :autoPlay="false"
+            :autoPlay="!!(nowPlaying.resumeOnLoad)"
             :defaultListOpen="true"
             :startPosition="nowPlaying.position || 0"
             :startTrackUri="nowPlaying.trackUri || ''"
@@ -58,6 +58,7 @@
           <!-- YouTube playlist skip controls + queue -->
           <template v-if="playerReady && isYtPlaylist">
             <div class="mp-skip-bar">
+              <button class="mp-skip-btn mp-skip-btn--shuffle" @click="shuffleYt" title="Shuffle">🔀</button>
               <button class="mp-skip-btn" @click="skipSong(-1)" title="Previous">⏮</button>
               <span class="mp-skip-label">Track {{ ytPlaylistIndex + 1 }}{{ ytPlaylistLength ? ` / ${ytPlaylistLength}` : '' }}</span>
               <button class="mp-skip-btn" @click="skipSong(1)" title="Next">⏭</button>
@@ -115,7 +116,8 @@ const { nowPlaying, close, popInRequested } = useNowPlaying();
 
 // Auto-expand and resume if there was something playing before the page refreshed
 const expanded          = ref(!!nowPlaying.value);
-const playerReady       = ref(false);
+// Auto-start iframe if resumeOnLoad is set (popped out while playing, or refreshed mid-play)
+const playerReady       = ref(!!(nowPlaying.value?.resumeOnLoad && nowPlaying.value?.type !== 'spotify'));
 const iframeEl          = ref(null);
 const iframeKey         = ref(0);
 const ytTime            = ref(0);
@@ -143,7 +145,8 @@ watch(nowPlaying, (np, old) => {
     ytVideoIds.value      = [];
     ytTitles.value        = {};
   } else if (old && (old.url !== np.url || old.type !== np.type)) {
-    playerReady.value      = false;
+    // Auto-start iframe for non-Spotify when popped out while playing
+    playerReady.value      = !!(np.resumeOnLoad && np.type !== 'spotify');
     ytTime.value           = 0;
     ytPlaylistIndex.value  = np.playlistIndex || 0;
     ytPlaylistLength.value = 0;
@@ -170,6 +173,12 @@ const jumpToTrack = (index) => {
     JSON.stringify({ event: 'command', func: 'playVideoAt', args: [index] }),
     '*'
   );
+};
+
+// ── Shuffle YouTube playlist ───────────────────────────────────────────────────
+const shuffleYt = () => {
+  if (!ytPlaylistLength.value) return;
+  jumpToTrack(Math.floor(Math.random() * ytPlaylistLength.value));
 };
 
 // ── YouTube postMessage: position + playlist tracking ─────────────────────────
@@ -234,12 +243,37 @@ watchEffect(() => {
 });
 onUnmounted(() => clearInterval(positionSaver));
 
-const savePositionAndClose = () => {
-  if (nowPlaying.value?.type === 'youtube' && ytTime.value > 0) {
-    nowPlaying.value = { ...nowPlaying.value, position: Math.floor(ytTime.value * 1000) };
+// Persist YouTube position every 5 s so page refresh can resume from same spot
+let ytPositionSaver = null;
+watchEffect(() => {
+  clearInterval(ytPositionSaver);
+  if (nowPlaying.value?.type === 'youtube' && playerReady.value) {
+    ytPositionSaver = setInterval(() => {
+      if (ytTime.value > 0 && nowPlaying.value) {
+        nowPlaying.value = {
+          ...nowPlaying.value,
+          position:      Math.floor(ytTime.value * 1000),
+          playlistIndex: ytPlaylistIndex.value || 0,
+          resumeOnLoad:  true,
+        };
+      }
+    }, 5000);
   }
-  if (nowPlaying.value?.type === 'spotify' && spotifyPlayerRef.value?.position > 0) {
-    nowPlaying.value = { ...nowPlaying.value, position: spotifyPlayerRef.value.position };
+});
+onUnmounted(() => clearInterval(ytPositionSaver));
+
+const savePositionAndClose = () => {
+  if (nowPlaying.value?.type === 'youtube') {
+    nowPlaying.value = {
+      ...nowPlaying.value,
+      position:      ytTime.value > 0 ? Math.floor(ytTime.value * 1000) : (nowPlaying.value.position || 0),
+      playlistIndex: ytPlaylistIndex.value || nowPlaying.value.playlistIndex || 0,
+    };
+  }
+  if (nowPlaying.value?.type === 'spotify') {
+    const pos = spotifyPlayerRef.value?.position?.value;
+    const uri = spotifyPlayerRef.value?.currentTrackUri?.value;
+    if (pos > 0) nowPlaying.value = { ...nowPlaying.value, position: pos, ...(uri ? { trackUri: uri } : {}) };
   }
   playerReady.value = false;
   expanded.value    = false;
@@ -464,6 +498,8 @@ const previewLabel = computed(() => {
   transition: background 0.15s, transform 0.1s;
 }
 .mp-skip-btn:hover { background: #1db954; transform: scale(1.1); }
+.mp-skip-btn--shuffle { font-size: 0.9rem; opacity: 0.6; }
+.mp-skip-btn--shuffle:hover { opacity: 1; }
 .mp-skip-label {
   font-size: 0.78rem;
   font-weight: 700;
