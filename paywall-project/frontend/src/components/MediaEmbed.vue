@@ -10,8 +10,22 @@
     <template v-else>
       <!-- Actual embed -->
       <div class="embed-wrap">
+        <!-- Spotify: SDK player -->
+        <SpotifyPlayer
+          v-if="embedType === 'spotify' && active"
+          ref="spotifyPlayerRef"
+          :key="embedKey"
+          :mediaUrl="mediaUrl"
+          :isPlaylist="isPlaylist"
+          :autoPlay="autoplayOnPopIn"
+          :defaultListOpen="false"
+          :startPosition="spStartPosition"
+          :startTrackUri="spStartTrackUri"
+        />
+
+        <!-- All other platforms: iframe -->
         <iframe
-          v-if="embedUrl"
+          v-else-if="embedUrl && embedType !== 'spotify'"
           ref="iframeEl"
           :key="embedKey"
           :src="active ? embedUrl : ''"
@@ -23,13 +37,13 @@
           @load="onIframeLoad"
         />
 
-        <a v-else :href="mediaUrl" target="_blank" rel="noopener noreferrer" class="link-card">
+        <a v-else-if="!embedUrl" :href="mediaUrl" target="_blank" rel="noopener noreferrer" class="link-card">
           <span class="link-card__icon">{{ platformIcon }}</span>
           <span class="link-card__text">{{ platformLabel }}<br /><small>{{ mediaUrl }}</small></span>
         </a>
 
         <!-- Click-to-play guard -->
-        <div v-if="embedUrl && !active" class="embed-guard" @click="activate">
+        <div v-if="(embedUrl || embedType === 'spotify') && !active" class="embed-guard" @click="activate">
           <div class="embed-guard-inner">
             <img v-if="ytThumb" :src="ytThumb" class="embed-guard-thumb" />
             <div class="embed-guard-play">▶</div>
@@ -38,7 +52,7 @@
       </div>
 
       <!-- Controls bar — shuffle (YT playlists) + pop-out -->
-      <div v-if="active && embedUrl" class="embed-controls-bar">
+      <div v-if="active && (embedUrl || embedType === 'spotify')" class="embed-controls-bar">
         <button
           v-if="embedType === 'youtube' && isPlaylist"
           class="embed-shuffle-btn"
@@ -58,6 +72,7 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useNowPlaying } from '../composables/useNowPlaying.js';
+import SpotifyPlayer from './SpotifyPlayer.vue';
 
 const props = defineProps({
   mediaUrl:  { type: String, default: '' },
@@ -75,9 +90,10 @@ const ytLength          = ref(0);   // playlist length tracked via postMessage
 const ytShuffleOn       = ref(false);
 const startFrom         = ref(0);   // seconds — used in YT embed URL to restore position
 const startIndex        = ref(0);   // playlist index to restore after pop-back-in
-const autoplayOnPopIn   = ref(false); // add autoplay=1 when popping back in from mini player
-const resumeTrackId     = ref('');    // spotify track ID to embed when popping back in
-const resumeTrackSecs   = ref(0);     // seconds to seek to on pop-back-in
+const autoplayOnPopIn   = ref(false); // resume playback when popping back in from mini player
+const spotifyPlayerRef  = ref(null);  // ref to SpotifyPlayer in the post
+const spStartPosition   = ref(0);     // ms — resume position when popping back in
+const spStartTrackUri   = ref('');    // track URI — resume track when popping back in
 
 const isPoppedOut = computed(() => nowPlaying.value?.url === props.mediaUrl);
 
@@ -114,11 +130,6 @@ const embedUrl = computed(() => {
   }
 
   if (type === 'spotify') {
-    // When popping back in, embed the specific track that was playing at the saved position
-    if (resumeTrackId.value) {
-      const t = resumeTrackSecs.value > 0 ? `&t=${resumeTrackSecs.value}` : '';
-      return `https://open.spotify.com/embed/track/${resumeTrackId.value}?utm_source=generator${t}`;
-    }
     const m = url.match(/open\.spotify\.com\/(track|playlist|album|artist)\/([a-zA-Z0-9]+)/);
     if (!m) return '';
     return `https://open.spotify.com/embed/${m[1]}/${m[2]}?utm_source=generator`;
@@ -146,8 +157,6 @@ const onIframeLoad = () => {
   if (props.embedType === 'youtube') {
     iframeEl.value?.contentWindow?.postMessage(JSON.stringify({ event: 'listening' }), '*');
     autoplayOnPopIn.value = false; // reset after iframe loads so it doesn't persist
-    resumeTrackId.value   = '';
-    resumeTrackSecs.value = 0;
   }
 };
 
@@ -188,12 +197,10 @@ watch(isPoppedOut, (isPopped, wasPopped) => {
     embedKey.value++;
     active.value = true;
   } else if (props.embedType === 'spotify') {
-    // Resume at the specific track + position that was playing in the mini player
-    const uri  = lastPosition.value.trackUri || '';
-    const secs = Math.floor((lastPosition.value.position || 0) / 1000);
-    const trackId = uri.replace('spotify:track:', '');
-    resumeTrackId.value   = trackId || '';
-    resumeTrackSecs.value = secs;
+    // Resume at the track + position that was playing in the mini player
+    spStartPosition.value = lastPosition.value.position || 0;
+    spStartTrackUri.value = lastPosition.value.trackUri || '';
+    autoplayOnPopIn.value = true;
     embedKey.value++;
     active.value = true;
   } else {
@@ -226,10 +233,16 @@ const activate = () => { active.value = true; };
 // ── Pop out ───────────────────────────────────────────────────────────────────
 const popOutEmbed = () => {
   if (isPoppedOut.value) return;
-  const posMs  = props.embedType === 'youtube' ? Math.floor(ytTime.value * 1000) : 0;
+  let posMs    = 0;
+  let trackUri = '';
   const idxVal = props.embedType === 'youtube' ? ytIndex.value : 0;
-  // resumeOnLoad: true → mini player will auto-start playback (keeps playing seamlessly)
-  popOut({ url: props.mediaUrl, type: props.embedType, isPlaylist: isPlaylist.value, position: posMs, playlistIndex: idxVal, resumeOnLoad: true });
+  if (props.embedType === 'youtube') {
+    posMs = Math.floor(ytTime.value * 1000);
+  } else if (props.embedType === 'spotify' && spotifyPlayerRef.value) {
+    posMs    = spotifyPlayerRef.value.position?.value      || 0;
+    trackUri = spotifyPlayerRef.value.currentTrackUri?.value || '';
+  }
+  popOut({ url: props.mediaUrl, type: props.embedType, isPlaylist: isPlaylist.value, position: posMs, playlistIndex: idxVal, resumeOnLoad: true, trackUri });
   active.value = false;
   embedKey.value++;
 };
