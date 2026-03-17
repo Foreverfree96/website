@@ -10,9 +10,9 @@
     <template v-else>
       <!-- Actual embed -->
       <div class="embed-wrap">
-        <!-- Spotify: SDK player -->
+        <!-- Spotify: SDK player (always rendered — has its own loading/play UI) -->
         <SpotifyPlayer
-          v-if="embedType === 'spotify' && active"
+          v-if="embedType === 'spotify'"
           ref="spotifyPlayerRef"
           :key="embedKey"
           :mediaUrl="mediaUrl"
@@ -42,8 +42,8 @@
           <span class="link-card__text">{{ platformLabel }}<br /><small>{{ mediaUrl }}</small></span>
         </a>
 
-        <!-- Click-to-play guard -->
-        <div v-if="(embedUrl || embedType === 'spotify') && !active" class="embed-guard" @click="activate">
+        <!-- Click-to-play guard (non-Spotify only — SpotifyPlayer has its own UI) -->
+        <div v-if="embedUrl && embedType !== 'spotify' && !active" class="embed-guard" @click="activate">
           <div class="embed-guard-inner">
             <img v-if="ytThumb" :src="ytThumb" class="embed-guard-thumb" />
             <div class="embed-guard-play">▶</div>
@@ -52,7 +52,7 @@
       </div>
 
       <!-- Controls bar — shuffle (YT playlists) + pop-out -->
-      <div v-if="active && (embedUrl || embedType === 'spotify')" class="embed-controls-bar">
+      <div v-if="embedType === 'spotify' || (active && embedUrl)" class="embed-controls-bar">
         <button
           v-if="embedType === 'youtube' && isPlaylist"
           class="embed-shuffle-btn"
@@ -204,8 +204,6 @@ watch(isPoppedOut, (isPopped, wasPopped) => {
     embedKey.value++;
     active.value = true;
   } else {
-    resumeTrackId.value   = '';
-    resumeTrackSecs.value = 0;
     embedKey.value++;
     active.value = true;
   }
