@@ -795,13 +795,13 @@ onMounted(async () => {
 
 // ── Extracted SDK connection — called either from onMounted or connectAndPlay ─
 const doConnect = async (shouldAutoPlay = true) => {
-  // Reuse a handed-off player from the previous mount (e.g. post → mini player pop-out).
-  // The device is already registered with Spotify — skip re-authentication entirely.
-  if (_handoffState) {
-    player   = _handoffState.player;
-    deviceId = _handoffState.deviceId;
-    if (_handoffState.token) token = _handoffState.token;
-    _handoffState = null;
+  // Reuse a live player from a step-down or pop-out — the device is already
+  // registered with Spotify so we just take ownership and start playing.
+  if (window._spHandoff) {
+    player   = window._spHandoff.player;
+    deviceId = window._spHandoff.deviceId;
+    if (window._spHandoff.token) token = window._spHandoff.token;
+    window._spHandoff = null;
     clearTimeout(connectTimeout);
     state.value = 'ready';
     // Re-attach state listener so new component's refs get updated
@@ -867,23 +867,25 @@ const doConnect = async (shouldAutoPlay = true) => {
     }
     startPlayback(shouldAutoPlay).catch(() => {});
 
-    // Register step-down so a later player can cleanly take over this device
+    // Register step-down so a later player can cleanly take over this device.
+    // We keep the Spotify device ALIVE (no disconnect) so the next component
+    // can reuse it immediately — avoiding the reconnect race that caused the
+    // previous playlist to play instead of the new one.
     _myStepDown = () => {
-      // Stop ticker + position saver and persist last known position
       stopTicker();
       clearInterval(posSaver); posSaver = null;
       saveCurrentPosition();
-      // Update resume refs so clicking play again resumes from this point
       if (currentTrackUri.value) _resumeTrackUri.value = currentTrackUri.value;
       if (position.value > 0)    _resumePosition.value = position.value;
       player?.removeListener('player_state_changed');
       player?.removeListener('not_ready');
       player?.removeListener('ready');
-      player?.disconnect();
+      // Hand off the live device — don't disconnect
+      window._spHandoff = { player, deviceId, token };
       player = null;
       deviceId = null;
       firstStateReceived = false;
-      state.value = 'inactive'; // always inactive — user is still connected, just needs to re-init
+      state.value = 'inactive';
     };
     window._spStepDown = _myStepDown;
   });
@@ -1018,9 +1020,10 @@ onUnmounted(() => {
     player.removeListener('ready');
     // Hand off the live player to the next SpotifyPlayer mount (e.g. MiniPlayer after pop-out)
     // so it can reuse the already-registered Spotify device without re-authenticating.
-    _handoffState = { player, deviceId, token };
+    window._spHandoff = { player, deviceId, token };
     _skipDisconnect = false;
-  } else {
+  } else if (!window._spHandoff || window._spHandoff.player !== player) {
+    // Only disconnect if we haven't already handed the player off via step-down
     player?.disconnect();
   }
   player = null;
