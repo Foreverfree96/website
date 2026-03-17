@@ -7,10 +7,12 @@
       loading="lazy"
       :class="['sp-iframe', isPlaylist ? 'sp-iframe--playlist' : 'sp-iframe--audio']" />
 
-    <!-- ── Needs Spotify connect — redirect straight to OAuth ──────────────── -->
+    <!-- ── Needs Spotify connect — show button instead of auto-redirecting ─── -->
     <div v-else-if="state === 'needs-connect'" class="sp-card sp-needs-connect">
-      <div class="sp-spinner"></div>
-      <span class="sp-status-msg">Connecting to Spotify…</span>
+      <div class="sp-connect-icon">🎵</div>
+      <span class="sp-connect-title">Connect Spotify to play</span>
+      <span class="sp-connect-sub">Requires a Spotify Premium account</span>
+      <a :href="spotifyConnectUrl" class="sp-connect-btn">Connect Spotify</a>
     </div>
 
     <!-- ── Loading ──────────────────────────────────────────────────────────── -->
@@ -56,8 +58,6 @@
 
       <!-- Playback controls -->
       <div class="sp-controls">
-        <button class="sp-btn sp-btn--shuffle" :class="{ 'sp-btn--shuffle-on': shuffleOn }"
-          @click="toggleShuffle" title="Shuffle">🔀</button>
         <button class="sp-btn sp-btn--skip" @click="prevTrack" title="Previous">⏮</button>
         <button class="sp-btn sp-btn--play" @click="togglePlay" :title="paused ? 'Play' : 'Pause'">
           {{ paused ? '▶' : '⏸' }}
@@ -65,17 +65,22 @@
         <button class="sp-btn sp-btn--skip" @click="nextTrack" title="Next">⏭</button>
       </div>
 
-      <!-- Volume row -->
-      <div class="sp-vol-row">
-        <button class="sp-btn sp-vol-icon" @click="toggleMute" :title="muted ? 'Unmute' : 'Mute'">
-          {{ muted || displayVolume === 0 ? '🔇' : displayVolume < 50 ? '🔉' : '🔊' }}
+      <!-- Shuffle + Volume row -->
+      <div class="sp-extra-row">
+        <button class="sp-shuffle-pill" :class="{ 'sp-shuffle-pill--on': shuffleOn }" @click="toggleShuffle">
+          🔀 Shuffle{{ shuffleOn ? ': On' : ': Off' }}
         </button>
-        <div class="sp-vol-track" ref="volTrack"
-          @mousedown="startVolScrub" @touchstart.passive="startVolScrub">
-          <div class="sp-vol-fill" :style="{ width: displayVolume + '%' }"></div>
-          <div class="sp-vol-thumb" :style="{ left: displayVolume + '%' }"></div>
+        <div class="sp-vol-group">
+          <button class="sp-btn sp-vol-icon" @click="toggleMute" :title="muted ? 'Unmute' : 'Mute'">
+            {{ muted || displayVolume === 0 ? '🔇' : displayVolume < 50 ? '🔉' : '🔊' }}
+          </button>
+          <div class="sp-vol-track" ref="volTrack"
+            @mousedown="startVolScrub" @touchstart.passive="startVolScrub">
+            <div class="sp-vol-fill" :style="{ width: displayVolume + '%' }"></div>
+            <div class="sp-vol-thumb" :style="{ left: displayVolume + '%' }"></div>
+          </div>
+          <span class="sp-vol-pct">{{ displayVolume }}%</span>
         </div>
-        <span class="sp-vol-pct">{{ displayVolume }}%</span>
       </div>
 
       <!-- ── Reconnect nudge (missing playlist scope) ────────────────────── -->
@@ -117,7 +122,7 @@
 
       <div class="sp-footer">
         <span class="sp-brand">Powered by Spotify</span>
-        <button class="sp-disconnect-btn" @click="disconnectSpotify" title="Disconnect Spotify account">Disconnect</button>
+        <button class="sp-disconnect-btn" @click="disconnectSpotify">⏏ Disconnect</button>
       </div>
     </div>
 
@@ -192,10 +197,10 @@ const loadSavedPosition = (url) => {
     if (!key) return null;
     const raw = localStorage.getItem(key);
     if (!raw) return null;
-    const { trackUri, positionMs, savedAt } = JSON.parse(raw);
+    const { trackUri, positionMs, paused, savedAt } = JSON.parse(raw);
     // Discard if older than 7 days
     if (Date.now() - savedAt > 7 * 24 * 60 * 60 * 1000) { localStorage.removeItem(key); return null; }
-    return { trackUri, positionMs };
+    return { trackUri, positionMs, paused };
   } catch { return null; }
 };
 
@@ -206,6 +211,7 @@ const saveCurrentPosition = () => {
     localStorage.setItem(key, JSON.stringify({
       trackUri:   currentTrackUri.value,
       positionMs: position.value,
+      paused:     paused.value,
       savedAt:    Date.now(),
     }));
   } catch { /* ignore */ }
@@ -254,11 +260,13 @@ const displayVolume      = computed(() => muted.value ? 0 : volume.value);
 const embedUrl           = computed(() =>
   props.mediaUrl.replace('open.spotify.com/', 'open.spotify.com/embed/')
 );
-const spotifyReconnectUrl = computed(() => {
+const spotifyConnectUrl = computed(() => {
   const jwt = localStorage.getItem('jwtToken');
   const returnTo = encodeURIComponent(window.location.href);
   return `${API}/api/spotify/login?token=${jwt}&returnTo=${returnTo}`;
 });
+// Alias used by reconnect banner
+const spotifyReconnectUrl = spotifyConnectUrl;
 
 // ── Auto-scroll active track into view when song changes ───────────────────────
 watch(currentTrackUri, async () => {
@@ -658,24 +666,17 @@ onMounted(async () => {
     // Pre-seed progress bar so it shows the correct position immediately (before SDK fires)
     if (_resumePosition.value > 0) position.value = _resumePosition.value;
 
+    // Auto-play: explicit prop wins (mini-player pop-out), otherwise resume if was playing before refresh
+    const _shouldAutoPlay = props.autoPlay || (!props.startPosition && savedPos?.paused === false);
+
     // Kick off token fetch and SDK load in parallel — they're independent
     statusMsg.value = 'Connecting…';
     const [tokenResult] = await Promise.all([fetchToken(), loadSDK()]);
 
     if (tokenResult.needsConnect) {
       clearTimeout(connectTimeout);
-      // First time — auto-redirect to Spotify OAuth so user authorizes once
-      // Guard: if returning from OAuth already (_reconnectAttempted) or ?spotify param present,
-      // don't redirect again — fall back to iframe to avoid an infinite loop
-      if (!_reconnectAttempted && !route.query.spotify) {
-        state.value = 'needs-connect'; // show spinner while redirecting
-        const jwt      = localStorage.getItem('jwtToken');
-        const returnTo = encodeURIComponent(window.location.href);
-        window.location.href = `${API}/api/spotify/login?token=${jwt}&returnTo=${returnTo}`;
-        return;
-      }
-      // After OAuth: still no token (not Premium or connection failed) → iframe fallback
-      state.value = 'unavailable';
+      // Show connect button — never auto-redirect (would fire on every feed page load)
+      state.value = 'needs-connect';
       return;
     }
     if (tokenResult.unavailable)  { clearTimeout(connectTimeout); state.value = 'unavailable'; return; }
@@ -723,7 +724,7 @@ onMounted(async () => {
       if (route.query.spotify === 'connected') {
         router.replace({ query: { ...route.query, spotify: undefined, premium: undefined } });
       }
-      startPlayback(props.autoPlay).catch(() => {});
+      startPlayback(_shouldAutoPlay).catch(() => {});
     });
 
     player.addListener('not_ready', () => {
@@ -867,6 +868,22 @@ defineExpose({ position, currentTrackUri, paused });
   align-items: center; justify-content: center;
   flex-direction: row; gap: 14px; min-height: 100px;
 }
+
+/* ── Needs connect ── */
+.sp-needs-connect {
+  align-items: center; justify-content: center; text-align: center; gap: 10px; padding: 28px 24px;
+}
+.sp-connect-icon { font-size: 2.2rem; }
+.sp-connect-title { font-size: 1rem; font-weight: 700; color: #fff; }
+.sp-connect-sub { font-size: 0.8rem; color: #666; margin-top: -4px; }
+.sp-connect-btn {
+  display: inline-block; margin-top: 6px;
+  padding: 10px 24px; border-radius: 24px;
+  background: #1db954; color: #000;
+  font-size: 0.9rem; font-weight: 700; text-decoration: none;
+  transition: background 0.15s, transform 0.1s;
+}
+.sp-connect-btn:hover { background: #1ed760; transform: scale(1.03); }
 .sp-spinner {
   width: 24px; height: 24px;
   border: 3px solid #333; border-top-color: #1db954;
@@ -927,22 +944,32 @@ defineExpose({ position, currentTrackUri, paused });
 .sp-btn--skip { font-size: 1.3rem; padding: 7px; width: 40px; height: 40px; }
 .sp-btn--play { width: 50px; height: 50px; font-size: 1.2rem; background: #1db954; color: #000; }
 .sp-btn--play:hover { background: #1ed760; color: #000; transform: scale(1.06); }
-.sp-btn--shuffle { font-size: 1rem; padding: 7px; width: 36px; height: 36px; opacity: 0.7; }
-.sp-btn--shuffle:hover { opacity: 1; background: #2a2a2a; }
-.sp-btn--shuffle-on { opacity: 1; color: #1db954; background: rgba(29,185,84,0.12); }
-.sp-btn--shuffle-on:hover { color: #1ed760; background: rgba(29,185,84,0.2); }
 
-/* ── Volume row ── */
-.sp-vol-row { display: flex; align-items: center; gap: 8px; }
+/* ── Shuffle + Volume row ── */
+.sp-extra-row {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+}
+.sp-shuffle-pill {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 6px 14px; border-radius: 20px; border: 1.5px solid #333;
+  background: #1a1a1a; color: #aaa; font-size: 0.8rem; font-weight: 600;
+  cursor: pointer; white-space: nowrap; flex-shrink: 0;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.sp-shuffle-pill:hover { background: #2a2a2a; color: #fff; border-color: #555; }
+.sp-shuffle-pill--on { background: rgba(29,185,84,0.15); color: #1db954; border-color: #1db954; }
+.sp-shuffle-pill--on:hover { background: rgba(29,185,84,0.25); color: #1ed760; }
+
+.sp-vol-group { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 100px; }
 .sp-vol-icon { font-size: 1.1rem; padding: 5px; width: 34px; height: 34px; flex-shrink: 0; }
 .sp-vol-track {
   position: relative; flex: 1;
-  height: 5px; background: #333; border-radius: 3px; cursor: pointer;
+  height: 6px; background: #333; border-radius: 3px; cursor: pointer;
 }
 .sp-vol-fill  { height: 100%; background: #1db954; border-radius: 3px; pointer-events: none; }
 .sp-vol-thumb {
   position: absolute; top: 50%; transform: translate(-50%, -50%);
-  width: 13px; height: 13px; background: #fff; border-radius: 50%;
+  width: 14px; height: 14px; background: #fff; border-radius: 50%;
   pointer-events: none; transition: transform 0.1s;
 }
 .sp-vol-track:hover .sp-vol-fill  { background: #1ed760; }
@@ -1043,16 +1070,18 @@ defineExpose({ position, currentTrackUri, paused });
 
 /* ── Footer (branding + disconnect) ── */
 .sp-footer {
-  display: flex; align-items: center; justify-content: space-between;
-  margin-top: -8px;
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;
+  margin-top: -4px;
 }
-.sp-brand { font-size: 0.68rem; color: #333; }
+.sp-brand { font-size: 0.68rem; color: #444; }
 .sp-disconnect-btn {
-  background: none; border: none; color: #444; font-size: 0.68rem;
-  cursor: pointer; padding: 0; text-decoration: underline; text-underline-offset: 2px;
-  transition: color 0.15s;
+  display: inline-flex; align-items: center; gap: 4px;
+  background: none; border: 1px solid #4a1a1a; color: #e11d48;
+  font-size: 0.75rem; font-weight: 600; border-radius: 6px;
+  cursor: pointer; padding: 4px 10px;
+  transition: background 0.15s, color 0.15s;
 }
-.sp-disconnect-btn:hover { color: #e11d48; }
+.sp-disconnect-btn:hover { background: #e11d48; color: #fff; }
 
 /* ── Mobile ── */
 @media (max-width: 560px) {
