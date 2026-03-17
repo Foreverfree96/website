@@ -954,11 +954,6 @@ const doConnect = async (shouldAutoPlay = true) => {
 
   player.addListener('player_state_changed', async (s) => {
     if (!s) return;
-    // Filter events whose context doesn't match this component's URL.
-    // Spotify fires stale context events immediately after the SDK connects;
-    // without this guard those events can corrupt track name/art/URI.
-    const _thisCtx = getSpotifyUri(props.mediaUrl);
-    if (_thisCtx && s.context?.uri && s.context.uri !== _thisCtx) return;
 
     firstStateReceived = true;
 
