@@ -1,11 +1,13 @@
 <template>
   <div class="sp-wrap">
 
-    <!-- ── Fallback iframe ──────────────────────────────────────────────────── -->
-    <iframe v-if="state === 'unavailable'" :src="embedUrl" frameborder="0"
-      allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
-      loading="lazy"
-      :class="['sp-iframe', isPlaylist ? 'sp-iframe--playlist' : 'sp-iframe--audio']" />
+    <!-- ── Unavailable ──────────────────────────────────────────────────────── -->
+    <div v-if="state === 'unavailable'" class="sp-card sp-unavail">
+      <div class="sp-connect-icon">🎵</div>
+      <span class="sp-connect-title">Player unavailable</span>
+      <span class="sp-connect-sub">Spotify Web Player requires HTTPS and a supported browser.</span>
+      <a :href="mediaUrl" target="_blank" rel="noopener noreferrer" class="sp-connect-btn">Open on Spotify →</a>
+    </div>
 
     <!-- ── Needs Spotify connect — show button instead of auto-redirecting ─── -->
     <div v-else-if="state === 'needs-connect'" class="sp-card sp-needs-connect">
@@ -23,7 +25,9 @@
           <div v-else class="sp-art sp-art--empty">🎵</div>
         </div>
         <div class="sp-info">
-          <div class="sp-track-name">{{ track.name || 'Spotify' }}</div>
+          <!-- Playlist / album / track name + creator -->
+          <div class="sp-track-name">{{ playlistMeta.name || track.name || 'Spotify' }}</div>
+          <div v-if="playlistMeta.owner" class="sp-meta-owner">by {{ playlistMeta.owner }}</div>
           <div class="sp-track-artist">{{ track.artist || (isPlaylist ? 'Playlist' : 'Track') }}</div>
         </div>
         <a :href="mediaUrl" target="_blank" rel="noopener noreferrer" class="sp-open-btn" title="Open on Spotify">
@@ -255,6 +259,7 @@ const currentTrackUri = ref('');
 const playlistTracks  = ref([]);
 const listOpen        = ref(props.defaultListOpen); // tracklist collapsed/expanded
 const needsReconnect  = ref(false); // true when old token is missing playlist scopes
+const playlistMeta    = ref({ name: '', owner: '' }); // display name + creator for inactive card
 
 const progressBar  = ref(null);
 const volTrack     = ref(null);
@@ -286,9 +291,6 @@ const progressPct        = computed(() =>
   duration.value > 0 ? Math.min(100, (position.value / duration.value) * 100) : 0
 );
 const displayVolume      = computed(() => muted.value ? 0 : volume.value);
-const embedUrl           = computed(() =>
-  props.mediaUrl.replace('open.spotify.com/', 'open.spotify.com/embed/')
-);
 const spotifyConnectUrl = computed(() => {
   const jwt = localStorage.getItem('jwtToken');
   const returnTo = encodeURIComponent(window.location.href);
@@ -527,6 +529,39 @@ const fetchPlaylistTracks = async () => {
   if (!_reconnectAttempted && !localStorage.getItem('sp_playlist_ok')) needsReconnect.value = true;
 };
 
+// ── Fetch playlist / album / track metadata for the inactive preview card ─────
+const fetchMetadata = async () => {
+  if (!token) return;
+  const auth = { Authorization: `Bearer ${token}` };
+  try {
+    const plMatch = props.mediaUrl.match(/open\.spotify\.com\/playlist\/([a-zA-Z0-9]+)/);
+    const alMatch = props.mediaUrl.match(/open\.spotify\.com\/album\/([a-zA-Z0-9]+)/);
+    const trMatch = props.mediaUrl.match(/open\.spotify\.com\/track\/([a-zA-Z0-9]+)/);
+    if (plMatch) {
+      const res = await fetch(`https://api.spotify.com/v1/playlists/${plMatch[1]}?fields=name,owner(display_name),images`, { headers: auth });
+      if (res.ok) {
+        const d = await res.json();
+        playlistMeta.value = { name: d.name || '', owner: d.owner?.display_name || '' };
+        if (d.images?.[0]?.url && !track.value.art) track.value = { ...track.value, art: d.images[0].url };
+      }
+    } else if (alMatch) {
+      const res = await fetch(`https://api.spotify.com/v1/albums/${alMatch[1]}?fields=name,artists,images`, { headers: auth });
+      if (res.ok) {
+        const d = await res.json();
+        playlistMeta.value = { name: d.name || '', owner: d.artists?.map(a => a.name).join(', ') || '' };
+        if (d.images?.[0]?.url && !track.value.art) track.value = { ...track.value, art: d.images[0].url };
+      }
+    } else if (trMatch) {
+      const res = await fetch(`https://api.spotify.com/v1/tracks/${trMatch[1]}`, { headers: auth });
+      if (res.ok) {
+        const d = await res.json();
+        playlistMeta.value = { name: d.name || '', owner: d.artists?.map(a => a.name).join(', ') || '' };
+        if (d.album?.images?.[0]?.url) track.value = { ...track.value, art: d.album.images[0].url };
+      }
+    }
+  } catch { /* ignore */ }
+};
+
 // ── Play a specific track from the queue list ─────────────────────────────────
 const playTrackFromList = async (uri) => {
   const contextUri = getSpotifyUri(props.mediaUrl);
@@ -735,6 +770,7 @@ onMounted(async () => {
     // If lazyConnect: show preview card now, SDK connection deferred until user clicks Play
     if (props.lazyConnect) {
       clearTimeout(connectTimeout); // no connection in progress — don't timeout
+      fetchMetadata(); // populate name/creator/art for the inactive card (background)
       state.value = 'inactive';
       return;
     }
@@ -926,6 +962,12 @@ onUnmounted(() => {
   saveCurrentPosition(); // persist position on unmount
   stopTicker();
   if (_skipDisconnect && player) {
+    // Clear ALL event listeners from this component's closures before handing off.
+    // Without this, the old component's player_state_changed handler would keep
+    // firing and corrupt the next playlist's track cache with the wrong tracks.
+    player.removeListener('player_state_changed');
+    player.removeListener('not_ready');
+    player.removeListener('ready');
     // Hand off the live player to the next SpotifyPlayer mount (e.g. MiniPlayer after pop-out)
     // so it can reuse the already-registered Spotify device without re-authenticating.
     _handoffState = { player, deviceId, token };
@@ -946,10 +988,6 @@ defineExpose({ position, currentTrackUri, paused, setHandOffMode });
 <style scoped>
 .sp-wrap { width: 100%; margin-top: 12px; box-sizing: border-box; overflow: hidden; }
 
-.sp-iframe           { width: 100%; border-radius: 10px; display: block; }
-.sp-iframe--audio    { height: 166px; }
-.sp-iframe--playlist { height: 460px; }
-
 /* ── Card ── */
 .sp-card {
   background: #121212;
@@ -966,8 +1004,12 @@ defineExpose({ position, currentTrackUri, paused, setHandOffMode });
 }
 
 
+/* ── Unavailable card ── */
+.sp-unavail { align-items: center; justify-content: center; text-align: center; gap: 10px; padding: 28px 24px; }
+
 /* ── Inactive preview (lazyConnect mode) ── */
 .sp-inactive { gap: 16px; }
+.sp-meta-owner { font-size: 0.78rem; color: #1db954; margin-top: 2px; font-weight: 600; }
 .sp-inactive-play {
   width: 100%; padding: 12px;
   border-radius: 28px;
