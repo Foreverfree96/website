@@ -800,9 +800,11 @@ const doConnect = async (shouldAutoPlay = true) => {
   // Reuse a live player from a step-down or pop-out — the device is already
   // registered with Spotify so we just take ownership and start playing.
   if (window._spHandoff) {
-    player   = window._spHandoff.player;
-    deviceId = window._spHandoff.deviceId;
-    if (window._spHandoff.token) token = window._spHandoff.token;
+    const handoff    = window._spHandoff;
+    player           = handoff.player;
+    deviceId         = handoff.deviceId;
+    if (handoff.token) token = handoff.token;
+    const handoffWasPaused = handoff.paused !== false; // true = was paused, false = was playing
     window._spHandoff = null;
     clearTimeout(connectTimeout);
     state.value = 'ready';
@@ -827,9 +829,14 @@ const doConnect = async (shouldAutoPlay = true) => {
       if (!s.paused) { startTicker(); if (!posSaver) posSaver = setInterval(saveCurrentPosition, 5000); }
       else { stopTicker(); clearInterval(posSaver); posSaver = null; saveCurrentPosition(); }
     });
-    // Device is already active — skip waitForDevice and the transfer step,
-    // just send the play command directly for the new context.
-    if (shouldAutoPlay) await startPlayback(true, true).catch(() => {});
+    // Device is already active — do NOT re-issue a play/seek command.
+    // Seeking to a saved position_ms that is already slightly stale causes
+    // Spotify to jump back, producing a restart/stutter on every toggle.
+    // • Already playing → leave it alone (state events will sync the UI).
+    // • Was paused + shouldAutoPlay → just resume in-place (no seek).
+    if (shouldAutoPlay && handoffWasPaused) {
+      player.resume().catch(() => {});
+    }
     tokenRefresher = setInterval(async () => {
       _tokenCache = null;
       const result = await fetchToken();
@@ -901,6 +908,11 @@ const doConnect = async (shouldAutoPlay = true) => {
 
   player.addListener('player_state_changed', async (s) => {
     if (!s) return;
+    // Filter events whose context doesn't match this component's URL.
+    // Spotify fires stale context events immediately after the SDK connects;
+    // without this guard those events can corrupt track name/art/URI.
+    const _thisCtx = getSpotifyUri(props.mediaUrl);
+    if (_thisCtx && s.context?.uri && s.context.uri !== _thisCtx) return;
 
     firstStateReceived = true;
 
@@ -1030,7 +1042,7 @@ onUnmounted(() => {
     player.removeListener('ready');
     // Hand off the live player to the next SpotifyPlayer mount (e.g. MiniPlayer after pop-out)
     // so it can reuse the already-registered Spotify device without re-authenticating.
-    window._spHandoff = { player, deviceId, token };
+    window._spHandoff = { player, deviceId, token, paused: paused.value };
     _skipDisconnect = false;
   } else {
     player?.disconnect();
