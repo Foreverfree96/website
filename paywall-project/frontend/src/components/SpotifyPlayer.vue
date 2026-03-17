@@ -178,7 +178,10 @@ const router = useRouter();
 // This prevents re-fetching the token every time the component mounts and
 // ensures getOAuthToken always hands Spotify a fresh token when it asks.
 let _tokenCache         = null; // { token, expiresAt }
+let _tokenFetchPromise  = null; // deduplicates concurrent fetchToken calls across instances
 let _reconnectAttempted = false; // true after user has gone through OAuth reconnect this session
+let _oauthRedirecting   = false; // true once any instance has triggered the OAuth redirect this session
+                                 // prevents multiple players on the same page each redirecting
 
 // ── Module-level playlist fetch deduplication ─────────────────────────────────
 // If multiple SpotifyPlayer instances on the same page (feed) call fetchPlaylistTracks
@@ -335,8 +338,8 @@ const spotifyFetch = (method, path, body) =>
 // ── Token ──────────────────────────────────────────────────────────────────────
 // Returns { token } on success, { needsConnect: true } if not linked/premium,
 // { unavailable: true } on other errors.
-// Uses a module-level cache so rapid remounts and SDK token-refresh callbacks
-// don't hammer the backend on every call.
+// Uses a module-level cache + in-flight deduplication so all SpotifyPlayer
+// instances on a page share a single backend request — one OAuth authenticates all.
 const fetchToken = async () => {
   const jwt = localStorage.getItem('jwtToken');
   if (!jwt) return { needsConnect: true };
@@ -346,16 +349,27 @@ const fetchToken = async () => {
     return { token: _tokenCache.token };
   }
 
-  const res = await fetch(`${API}/api/spotify/token`, {
-    headers: { Authorization: `Bearer ${jwt}` },
-  });
-  if (res.status === 403 || res.status === 404) return { needsConnect: true };
-  if (!res.ok) return { unavailable: true };
-  const data = await res.json();
-  // Use server-provided expiry (backend already proactively refreshed if near-expiry)
-  const expiresAt = data.expiresAt ? new Date(data.expiresAt).getTime() : Date.now() + 55 * 60 * 1000;
-  _tokenCache = { token: data.accessToken, expiresAt };
-  return { token: data.accessToken };
+  // If another instance is already fetching, wait for that request instead of
+  // firing a second one — prevents N parallel /api/spotify/token calls on page load
+  if (_tokenFetchPromise) return _tokenFetchPromise;
+
+  _tokenFetchPromise = (async () => {
+    try {
+      const res = await fetch(`${API}/api/spotify/token`, {
+        headers: { Authorization: `Bearer ${jwt}` },
+      });
+      if (res.status === 403 || res.status === 404) return { needsConnect: true };
+      if (!res.ok) return { unavailable: true };
+      const data = await res.json();
+      const expiresAt = data.expiresAt ? new Date(data.expiresAt).getTime() : Date.now() + 55 * 60 * 1000;
+      _tokenCache = { token: data.accessToken, expiresAt };
+      return { token: data.accessToken };
+    } finally {
+      _tokenFetchPromise = null;
+    }
+  })();
+
+  return _tokenFetchPromise;
 };
 
 // ── SDK loader ─────────────────────────────────────────────────────────────────
@@ -752,7 +766,9 @@ onMounted(async () => {
     // If returning from Spotify OAuth, force a fresh token so the new scopes are picked up
     if (route.query.spotify === 'connected') {
       _tokenCache = null;
+      _tokenFetchPromise = null;
       _reconnectAttempted = true;
+      _oauthRedirecting   = false; // allow future reconnects if needed
       sessionStorage.setItem('sp_oauth_done', '1'); // persist across remounts
     }
     // Also honour the sessionStorage flag set by a previous mount this session
@@ -774,9 +790,12 @@ onMounted(async () => {
 
     if (tokenResult.needsConnect) {
       clearTimeout(connectTimeout);
-      // Auto-redirect to Spotify OAuth if user is logged in but Spotify isn't connected/authorized
+      // Auto-redirect to Spotify OAuth if user is logged in but Spotify isn't connected/authorized.
+      // _oauthRedirecting ensures only the first of N concurrent players triggers the redirect —
+      // after OAuth the shared token cache means all players authenticate from a single flow.
       const jwt = localStorage.getItem('jwtToken');
-      if (jwt) {
+      if (jwt && !_oauthRedirecting) {
+        _oauthRedirecting = true;
         window.location.href = spotifyConnectUrl.value;
         return;
       }
