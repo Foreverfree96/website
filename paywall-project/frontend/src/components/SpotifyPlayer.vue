@@ -82,7 +82,14 @@
 
       <!-- ── Reconnect nudge (missing playlist scope) ────────────────────── -->
       <div v-if="needsReconnect" class="sp-reconnect-banner">
-        <span>⚠ Queue unavailable — <a :href="spotifyReconnectUrl">Reconnect Spotify</a> to fix (one-time).</span>
+        <div class="sp-reconnect-body">
+          <span class="sp-reconnect-title">⚠ Playlist queue unavailable</span>
+          <span class="sp-reconnect-desc">
+            Spotify now requires a new permission (<em>playlist-read-private</em>) to load track lists.
+            Reconnecting takes ~5 seconds and only needs to be done once — after that your full queue loads automatically.
+          </span>
+          <a :href="spotifyReconnectUrl" class="sp-reconnect-btn">Reconnect Spotify →</a>
+        </div>
         <button class="sp-reconnect-dismiss" @click="needsReconnect = false" title="Dismiss">✕</button>
       </div>
 
@@ -852,17 +859,35 @@ defineExpose({ position, currentTrackUri, paused });
 
 /* ── Reconnect banner ── */
 .sp-reconnect-banner {
-  font-size: 0.78rem; color: #f59e0b; background: rgba(245,158,11,0.1);
-  border: 1px solid rgba(245,158,11,0.3); border-radius: 8px;
-  padding: 8px 12px;
-  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  background: rgba(245,158,11,0.08);
+  border: 1px solid rgba(245,158,11,0.3); border-radius: 10px;
+  padding: 12px 14px;
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
 }
-.sp-reconnect-banner a { color: #1db954; font-weight: 700; text-decoration: underline; }
+.sp-reconnect-body {
+  display: flex; flex-direction: column; gap: 6px; min-width: 0;
+}
+.sp-reconnect-title {
+  font-size: 0.8rem; font-weight: 700; color: #f59e0b;
+}
+.sp-reconnect-desc {
+  font-size: 0.76rem; color: #aaa; line-height: 1.5;
+}
+.sp-reconnect-desc em { color: #888; font-style: normal; font-family: monospace; }
+.sp-reconnect-btn {
+  display: inline-block; margin-top: 4px;
+  padding: 7px 16px; border-radius: 20px;
+  background: #1db954; color: #000;
+  font-size: 0.78rem; font-weight: 700;
+  text-decoration: none; transition: background 0.15s, transform 0.1s;
+  align-self: flex-start;
+}
+.sp-reconnect-btn:hover { background: #1ed760; transform: scale(1.03); }
 .sp-reconnect-dismiss {
-  background: none; border: 1px solid; border-radius: 6px;
+  background: none; border: 1px solid rgba(245,158,11,0.4); border-radius: 6px;
   font-size: 0.72rem; cursor: pointer; padding: 2px 7px; line-height: 1.6;
   transition: background 0.15s, color 0.15s; flex-shrink: 0;
-  color: #f59e0b; border-color: rgba(245,158,11,0.4);
+  color: #f59e0b;
 }
 .sp-reconnect-dismiss:hover { background: rgba(245,158,11,0.2); }
 
