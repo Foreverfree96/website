@@ -173,6 +173,37 @@ const saveCachedTracks = (url, tracks) => {
   } catch { /* localStorage full — ignore */ }
 };
 
+// ── Playback position cache (survive page refresh) ────────────────────────────
+const _posCacheKey = (url) => {
+  const m = url.match(/open\.spotify\.com\/(track|playlist|album|artist)\/([a-zA-Z0-9]+)/);
+  return m ? `sp_pos_${m[2]}` : null;
+};
+
+const loadSavedPosition = (url) => {
+  try {
+    const key = _posCacheKey(url);
+    if (!key) return null;
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const { trackUri, positionMs, savedAt } = JSON.parse(raw);
+    // Discard if older than 7 days
+    if (Date.now() - savedAt > 7 * 24 * 60 * 60 * 1000) { localStorage.removeItem(key); return null; }
+    return { trackUri, positionMs };
+  } catch { return null; }
+};
+
+const saveCurrentPosition = () => {
+  try {
+    const key = _posCacheKey(props.mediaUrl);
+    if (!key || !currentTrackUri.value) return;
+    localStorage.setItem(key, JSON.stringify({
+      trackUri:   currentTrackUri.value,
+      positionMs: position.value,
+      savedAt:    Date.now(),
+    }));
+  } catch { /* ignore */ }
+};
+
 // ── State ──────────────────────────────────────────────────────────────────────
 const state           = ref('loading');
 const statusMsg       = ref('Connecting to Spotify…');
@@ -198,9 +229,15 @@ let ticker         = null;
 let token          = null;
 let connectTimeout = null;
 let tokenRefresher = null;
+let posSaver       = null;
 let prevVol        = _savedVol;
 let firstStateReceived = false;
 let fullTracksFetched  = false; // true once the API returns the full 100-track list
+
+// Internal resume refs — seeded from saved position (page refresh) or props (mini-player pop-out)
+// Props take priority so MiniPlayer's saved state wins over the on-disk position.
+const _resumePosition = ref(0);
+const _resumeTrackUri = ref('');
 
 // ── Computed ───────────────────────────────────────────────────────────────────
 const progressPct        = computed(() =>
@@ -328,8 +365,8 @@ const startPlayback = async (shouldPlay = true) => {
     await spotifyFetch('PUT', '/me/player', { device_ids: [deviceId], play: false });
     return;
   }
-  const resumeMs = props.startPosition || 0;
-  const offset   = props.startTrackUri ? { uri: props.startTrackUri } : { position: 0 };
+  const resumeMs = _resumePosition.value || 0;
+  const offset   = _resumeTrackUri.value ? { uri: _resumeTrackUri.value } : { position: 0 };
   await spotifyFetch('PUT', `/me/player/play?device_id=${deviceId}`,
     isTrack
       ? { uris: [uri], position_ms: resumeMs }
@@ -582,6 +619,11 @@ onMounted(async () => {
       _reconnectAttempted = true; // stop the reconnect banner from looping
     }
 
+    // Seed resume position: props take priority (MiniPlayer pop-out), then localStorage (page refresh)
+    const savedPos = loadSavedPosition(props.mediaUrl);
+    _resumePosition.value = props.startPosition || savedPos?.positionMs || 0;
+    _resumeTrackUri.value = props.startTrackUri  || savedPos?.trackUri  || '';
+
     statusMsg.value = 'Fetching credentials…';
     const tokenResult = await fetchToken();
     if (tokenResult.needsConnect) {
@@ -716,8 +758,15 @@ onMounted(async () => {
         }
       }
 
-      if (!s.paused) startTicker();
-      else           stopTicker();
+      if (!s.paused) {
+        startTicker();
+        // Save position every 5s while playing so page refresh can resume
+        if (!posSaver) posSaver = setInterval(saveCurrentPosition, 5000);
+      } else {
+        stopTicker();
+        clearInterval(posSaver); posSaver = null;
+        saveCurrentPosition(); // save immediately on pause too
+      }
     });
 
     player.addListener('initialization_error', () => { clearTimeout(connectTimeout); state.value = 'unavailable'; });
@@ -744,6 +793,8 @@ onMounted(async () => {
 onUnmounted(() => {
   clearTimeout(connectTimeout);
   clearInterval(tokenRefresher);
+  clearInterval(posSaver);
+  saveCurrentPosition(); // persist position on unmount
   stopTicker();
   player?.disconnect();
   player = null;
