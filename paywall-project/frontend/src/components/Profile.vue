@@ -106,31 +106,6 @@
                     </div>
                 </div>
 
-                <!-- Spotify Account Link -->
-                <div class="dashboard-section spotify-box">
-                    <h2 class="section-title">Spotify</h2>
-                    <div v-if="spotifyLoading" class="section-hint">Loading…</div>
-                    <template v-else-if="spotifyStatus.connected">
-                        <p class="section-hint">
-                            Connected as <strong>{{ spotifyStatus.displayName || 'Spotify User' }}</strong>
-                        </p>
-                        <div class="spotify-badge" :class="{ premium: spotifyStatus.isPremium }">
-                            {{ spotifyStatus.isPremium ? '✓ Spotify Premium' : 'Spotify Free' }}
-                        </div>
-                        <p v-if="spotifyStatus.tokenExpired" class="section-hint spotify-warn">
-                            Token expired — reconnect to refresh.
-                        </p>
-                        <div class="spotify-actions">
-                            <a :href="spotifyConnectUrl" class="btn-black spotify-reconnect-btn">Reconnect</a>
-                            <button @click="handleSpotifyDisconnect" class="btn-black spotify-disconnect-btn">Disconnect</button>
-                        </div>
-                    </template>
-                    <template v-else>
-                        <p class="section-hint">Link your Spotify account to verify Premium status.</p>
-                        <a :href="spotifyConnectUrl" class="btn-black spotify-connect-btn">Connect Spotify</a>
-                    </template>
-                </div>
-
                 <!-- Delete Account — styled with danger colours to signal destructiveness -->
                 <div class="dashboard-section delete-box">
                     <h2 class="section-title danger-title">Danger Zone</h2>
@@ -348,21 +323,12 @@ onMounted(async () => {
             } catch { /* non-critical — silently ignore */ }
         }
 
-        // Handle redirect back from Spotify OAuth
-        const sp = route.query.spotify;
-        if (sp === 'connected') {
-            errorMessage.value = `Spotify connected${route.query.premium === 'true' ? ' — Premium verified!' : '.'}`;
-            router.replace({ query: {} }); // clean up the URL
-        } else if (sp === 'error') {
-            errorMessage.value = 'Spotify connection failed. Please try again.';
-            router.replace({ query: {} });
-        }
+        // Clean up any leftover Spotify OAuth query params
+        if (route.query.spotify) router.replace({ query: {} });
     } catch (err) {
         errorMessage.value = 'Failed to load profile.';
     }
 
-    // Load Spotify status independently so it never blocks the rest of the page
-    fetchSpotifyStatus();
 });
 
 // ─── HANDLERS ────────────────────────────────────────────────────────────────
@@ -496,47 +462,6 @@ const handleTogglePrivate = async () => {
         errorMessage.value = user.value.isPrivateAccount ? 'Account set to private.' : 'Account set to public.';
     } catch {
         errorMessage.value = 'Failed to update privacy.';
-    }
-};
-
-// ─── SPOTIFY ──────────────────────────────────────────────────────────────────
-
-const API_SPOTIFY = import.meta.env.VITE_API_URL + '/api/spotify';
-
-const spotifyLoading = ref(true);
-const spotifyStatus  = ref({ connected: false, displayName: null, isPremium: false, tokenExpired: true });
-
-// URL that initiates the OAuth flow — passes JWT so backend can identify the user
-const spotifyConnectUrl = computed(() => {
-    const token = localStorage.getItem('jwtToken');
-    return `${API_SPOTIFY}/login?token=${token}`;
-});
-
-const fetchSpotifyStatus = async () => {
-    spotifyLoading.value = true;
-    try {
-        const token = localStorage.getItem('jwtToken');
-        const res = await axios.get(`${API_SPOTIFY}/status`, {
-            headers: { Authorization: `Bearer ${token}` },
-        });
-        spotifyStatus.value = res.data;
-    } catch {
-        spotifyStatus.value = { connected: false, displayName: null, isPremium: false, tokenExpired: true };
-    } finally {
-        spotifyLoading.value = false;
-    }
-};
-
-const handleSpotifyDisconnect = async () => {
-    try {
-        const token = localStorage.getItem('jwtToken');
-        await axios.delete(`${API_SPOTIFY}/disconnect`, {
-            headers: { Authorization: `Bearer ${token}` },
-        });
-        spotifyStatus.value = { connected: false, displayName: null, isPremium: false, tokenExpired: true };
-        errorMessage.value = 'Spotify disconnected.';
-    } catch {
-        errorMessage.value = 'Failed to disconnect Spotify.';
     }
 };
 
@@ -946,58 +871,6 @@ const doDeleteAccount = async () => {
 }
 .net-modal-user:hover { transform: translateX(4px); color: rgb(125, 190, 157); }
 
-/* ── Spotify section ── */
-
-.spotify-box {
-    border-color: #1db954;
-}
-
-.spotify-badge {
-    display: inline-block;
-    padding: 5px 14px;
-    border-radius: 20px;
-    font-size: 0.85rem;
-    font-weight: 700;
-    background: #000;
-    color: #aaa;
-    border: 2px solid #555;
-}
-.spotify-badge.premium {
-    background: #1db954;
-    color: #fff;
-    border-color: #1db954;
-}
-
-.spotify-warn { color: #b45309; }
-
-.spotify-actions {
-    display: flex;
-    gap: 10px;
-    flex-wrap: wrap;
-}
-
-.spotify-connect-btn,
-.spotify-reconnect-btn {
-    text-decoration: none;
-    display: inline-flex;
-    align-items: center;
-    border-color: #1db954 !important;
-}
-.spotify-connect-btn:hover,
-.spotify-reconnect-btn:hover {
-    background: #1db954 !important;
-    color: #fff !important;
-    transform: translateY(-2px);
-}
-
-.spotify-disconnect-btn {
-    border-color: #7f1d1d !important;
-}
-.spotify-disconnect-btn:hover {
-    background: #7f1d1d !important;
-    color: #fff !important;
-    transform: translateY(-2px);
-}
 
 .confirm-overlay {
     position: fixed;

@@ -7,14 +7,10 @@
       loading="lazy"
       :class="['sp-iframe', isPlaylist ? 'sp-iframe--playlist' : 'sp-iframe--audio']" />
 
-    <!-- ── Needs Spotify connect ────────────────────────────────────────────── -->
+    <!-- ── Needs Spotify connect — redirect straight to OAuth ──────────────── -->
     <div v-else-if="state === 'needs-connect'" class="sp-card sp-needs-connect">
-      <span class="sp-nc-icon">🎵</span>
-      <div class="sp-nc-text">
-        <strong>Spotify Premium required</strong>
-        <span>Connect your Spotify account on your profile to use the player.</span>
-      </div>
-      <a href="/profile" class="sp-nc-btn">Go to Profile</a>
+      <div class="sp-spinner"></div>
+      <span class="sp-status-msg">Connecting to Spotify…</span>
     </div>
 
     <!-- ── Loading ──────────────────────────────────────────────────────────── -->
@@ -403,17 +399,26 @@ const fetchPlaylistTracks = async () => {
           if (applyTracks(parseAlbum(await trRes.json(), albumArt))) return;
         }
       } else {
-        // 1a. GET /v1/playlists/{id}/tracks?limit=100 — needs playlist-read-private, returns most tracks
-        const trRes = await fetch(`https://api.spotify.com/v1/playlists/${id}/tracks?limit=100`, { headers: { Authorization: `Bearer ${token}` } });
-        if (trRes.ok) {
-          if (applyTracks(parsePlaylist(await trRes.json()))) return;
+        // 1a. GET /v1/playlists/{id}/tracks — paginate through ALL tracks (needs playlist-read-private)
+        const auth = { Authorization: `Bearer ${token}` };
+        let nextUrl = `https://api.spotify.com/v1/playlists/${id}/tracks?limit=100`;
+        let allItems = [];
+        let paginationOk = true;
+        while (nextUrl) {
+          const r = await fetch(nextUrl, { headers: auth });
+          if (!r.ok) { paginationOk = r.status !== 403; nextUrl = null; break; }
+          const page = await r.json();
+          allItems = allItems.concat(page.items || []);
+          nextUrl = page.next || null;
         }
-
-        // 1b. Fallback: GET /v1/playlists/{id} parent object — fewer tracks but no scope for public
-        const pRes = await fetch(`https://api.spotify.com/v1/playlists/${id}`, { headers: { Authorization: `Bearer ${token}` } });
-        if (pRes.ok) {
-          const pData = await pRes.json();
-          if (pData.tracks && applyTracks(parsePlaylist(pData.tracks))) return;
+        if (allItems.length && applyTracks(parsePlaylist({ items: allItems }))) return;
+        if (!paginationOk) {
+          // 403 → missing scope, fall through to parent object
+          const pRes = await fetch(`https://api.spotify.com/v1/playlists/${id}`, { headers: auth });
+          if (pRes.ok) {
+            const pData = await pRes.json();
+            if (pData.tracks && applyTracks(parsePlaylist(pData.tracks))) return;
+          }
         }
       }
     } catch { /* fall through */ }
@@ -463,8 +468,8 @@ const stopTicker = () => { clearInterval(ticker); ticker = null; };
 
 // ── Controls ───────────────────────────────────────────────────────────────────
 const togglePlay = async () => {
-  // No track loaded yet — load the specific URL from position 0
-  if (!currentTrackUri.value) {
+  // If the SDK hasn't reported any state yet, nothing is loaded — start fresh
+  if (!firstStateReceived) {
     await startPlayback(true);
   } else {
     player?.togglePlay();
@@ -579,7 +584,22 @@ onMounted(async () => {
 
     statusMsg.value = 'Fetching credentials…';
     const tokenResult = await fetchToken();
-    if (tokenResult.needsConnect) { clearTimeout(connectTimeout); state.value = 'needs-connect'; return; }
+    if (tokenResult.needsConnect) {
+      clearTimeout(connectTimeout);
+      // First time — auto-redirect to Spotify OAuth so user authorizes once
+      // Guard: if returning from OAuth already (_reconnectAttempted) or ?spotify param present,
+      // don't redirect again — fall back to iframe to avoid an infinite loop
+      if (!_reconnectAttempted && !route.query.spotify) {
+        state.value = 'needs-connect'; // show spinner while redirecting
+        const jwt      = localStorage.getItem('jwtToken');
+        const returnTo = encodeURIComponent(window.location.href);
+        window.location.href = `${API}/api/spotify/login?token=${jwt}&returnTo=${returnTo}`;
+        return;
+      }
+      // After OAuth: still no token (not Premium or connection failed) → iframe fallback
+      state.value = 'unavailable';
+      return;
+    }
     if (tokenResult.unavailable)  { clearTimeout(connectTimeout); state.value = 'unavailable'; return; }
     token = tokenResult.token;
 
@@ -755,23 +775,6 @@ defineExpose({ position, currentTrackUri, paused });
   overflow: hidden;
 }
 
-/* ── Needs connect ── */
-.sp-needs-connect {
-  align-items: center; text-align: center;
-  flex-direction: column; gap: 14px; padding: 28px 20px;
-}
-.sp-nc-icon { font-size: 2.2rem; }
-.sp-nc-text { display: flex; flex-direction: column; gap: 6px; }
-.sp-nc-text strong { color: #fff; font-size: 0.95rem; }
-.sp-nc-text span   { color: #888; font-size: 0.82rem; line-height: 1.4; }
-.sp-nc-btn {
-  display: inline-block; padding: 8px 22px;
-  background: #1db954; color: #000;
-  font-size: 0.82rem; font-weight: 700;
-  border-radius: 20px; text-decoration: none;
-  transition: background 0.15s;
-}
-.sp-nc-btn:hover { background: #1ed760; }
 
 /* ── Loading ── */
 .sp-loading {
