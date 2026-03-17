@@ -113,7 +113,10 @@
         </div>
       </div>
 
-      <div class="sp-brand">Powered by Spotify</div>
+      <div class="sp-brand">
+        Powered by Spotify
+        <button class="sp-disconnect-btn" @click="disconnectSpotify" title="Disconnect Spotify account">Disconnect</button>
+      </div>
     </div>
 
   </div>
@@ -601,6 +604,28 @@ const startVolScrub = (e) => {
   window.addEventListener('touchend',  onUp);
 };
 
+// ── Disconnect ─────────────────────────────────────────────────────────────────
+const disconnectSpotify = async () => {
+  try {
+    const jwt = localStorage.getItem('jwtToken');
+    await fetch(`${API}/api/spotify/disconnect`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${jwt}` },
+    });
+  } catch { /* ignore network errors */ }
+
+  // Clear all local Spotify state
+  _tokenCache = null;
+  sessionStorage.removeItem('sp_oauth_done');
+  localStorage.removeItem('sp_playlist_ok');
+  localStorage.removeItem('sp_shuffle');
+  localStorage.removeItem('sp_volume');
+
+  player?.disconnect();
+  player = null;
+  state.value = 'unavailable';
+};
+
 // ── Mount ──────────────────────────────────────────────────────────────────────
 onMounted(async () => {
   // Web Playback SDK requires HTTPS — skip straight to iframe on HTTP
@@ -1010,7 +1035,16 @@ defineExpose({ position, currentTrackUri, paused });
 .sp-track-row-dur { font-size: 0.72rem; color: #555; flex-shrink: 0; font-variant-numeric: tabular-nums; }
 
 /* ── Branding ── */
-.sp-brand { font-size: 0.68rem; color: #333; text-align: right; margin-top: -8px; }
+.sp-brand {
+  font-size: 0.68rem; color: #333; margin-top: -8px;
+  display: flex; align-items: center; justify-content: flex-end; gap: 10px;
+}
+.sp-disconnect-btn {
+  background: none; border: none; color: #444; font-size: 0.68rem;
+  cursor: pointer; padding: 0; text-decoration: underline; text-underline-offset: 2px;
+  transition: color 0.15s;
+}
+.sp-disconnect-btn:hover { color: #e11d48; }
 
 /* ── Mobile ── */
 @media (max-width: 560px) {
