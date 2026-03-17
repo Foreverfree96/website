@@ -276,6 +276,7 @@ let prevVol        = _savedVol;
 let firstStateReceived = false;
 let fullTracksFetched  = false; // true once the API returns the full 100-track list
 let _skipDisconnect    = false; // set via setHandOffMode() before a pop-out unmount
+let _myStepDown        = null;  // reference to this instance's step-down fn (for ownership check)
 
 // Module-level handoff slot — when a player is handed off (not disconnected),
 // the next mount picks it up and reuses the already-registered Spotify device.
@@ -818,6 +819,14 @@ const doConnect = async (shouldAutoPlay = true) => {
     return;
   }
 
+  // Step down any other in-page Spotify player before we connect.
+  // This prevents two SDK players fighting over the same Spotify device.
+  // The stepped-down player resets to its inactive preview card.
+  if (window._spStepDown) {
+    window._spStepDown();
+    window._spStepDown = null;
+  }
+
   state.value = 'connecting';
 
   // Start a fresh timeout for this connection attempt
@@ -846,6 +855,19 @@ const doConnect = async (shouldAutoPlay = true) => {
       router.replace({ query: { ...route.query, spotify: undefined, premium: undefined } });
     }
     startPlayback(shouldAutoPlay).catch(() => {});
+
+    // Register step-down so a later player can cleanly take over this device
+    _myStepDown = () => {
+      player?.removeListener('player_state_changed');
+      player?.removeListener('not_ready');
+      player?.removeListener('ready');
+      player?.disconnect();
+      player = null;
+      deviceId = null;
+      firstStateReceived = false;
+      state.value = props.lazyConnect ? 'inactive' : 'needs-connect';
+    };
+    window._spStepDown = _myStepDown;
   });
 
   player.addListener('not_ready', () => {
@@ -956,6 +978,10 @@ const connectAndPlay = async () => {
 };
 
 onUnmounted(() => {
+  // Release global step-down slot only if we own it (another player may have taken it)
+  if (window._spStepDown === _myStepDown) window._spStepDown = null;
+  _myStepDown = null;
+
   clearTimeout(connectTimeout);
   clearInterval(tokenRefresher);
   clearInterval(posSaver);
