@@ -16,6 +16,7 @@
         <!-- ── Spotify: use full SDK player ──────────────────────────────── -->
         <div v-if="isSpotify" class="mp-spotify-wrap">
           <SpotifyPlayer
+            :key="nowPlaying.url"
             ref="spotifyPlayerRef"
             :mediaUrl="nowPlaying.url"
             :isPlaylist="nowPlaying.isPlaylist || false"

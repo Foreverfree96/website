@@ -359,6 +359,7 @@ const fetchPlaylistTracks = async () => {
     playlistTracks.value = tracks;
     fullTracksFetched = true;
     saveCachedTracks(props.mediaUrl, tracks);
+    localStorage.setItem('sp_playlist_ok', '1'); // mark: user has scope, suppress future banners
     if (!currentTrackUri.value) {
       const t = (props.startTrackUri && tracks.find(t => t.uri === props.startTrackUri)) || tracks[0];
       if (t) track.value = { name: t.name, artist: t.artist, album: '', art: t.art };
@@ -402,18 +403,17 @@ const fetchPlaylistTracks = async () => {
           if (applyTracks(parseAlbum(await trRes.json(), albumArt))) return;
         }
       } else {
-        // 1a. GET /v1/playlists/{id} — works for public playlists WITHOUT playlist-read-private
-        //     (the /tracks sub-resource now always requires the scope; the parent object doesn't)
+        // 1a. GET /v1/playlists/{id}/tracks?limit=100 — needs playlist-read-private, returns most tracks
+        const trRes = await fetch(`https://api.spotify.com/v1/playlists/${id}/tracks?limit=100`, { headers: { Authorization: `Bearer ${token}` } });
+        if (trRes.ok) {
+          if (applyTracks(parsePlaylist(await trRes.json()))) return;
+        }
+
+        // 1b. Fallback: GET /v1/playlists/{id} parent object — fewer tracks but no scope for public
         const pRes = await fetch(`https://api.spotify.com/v1/playlists/${id}`, { headers: { Authorization: `Bearer ${token}` } });
         if (pRes.ok) {
           const pData = await pRes.json();
           if (pData.tracks && applyTracks(parsePlaylist(pData.tracks))) return;
-        }
-
-        // 1b. Fallback: GET /v1/playlists/{id}/tracks (requires playlist-read-private)
-        const res = await fetch(`https://api.spotify.com/v1/playlists/${id}/tracks?limit=100`, { headers: { Authorization: `Bearer ${token}` } });
-        if (res.ok) {
-          if (applyTracks(parsePlaylist(await res.json()))) return;
         }
       }
     } catch { /* fall through */ }
@@ -436,10 +436,9 @@ const fetchPlaylistTracks = async () => {
     console.error('[Spotify] fetchPlaylistTracks backend error:', err);
   }
 
-  // Both paths failed — token likely missing playlist-read-private scope.
-  // Only show the reconnect banner if the user hasn't already tried reconnecting
-  // this session (avoids an infinite reconnect loop when the scope is still missing).
-  if (!_reconnectAttempted) needsReconnect.value = true;
+  // All paths failed — show reconnect banner only if we've never had a successful fetch
+  // (sp_playlist_ok is set when applyTracks succeeds, so banner won't reappear after reconnect)
+  if (!_reconnectAttempted && !localStorage.getItem('sp_playlist_ok')) needsReconnect.value = true;
 };
 
 // ── Play a specific track from the queue list ─────────────────────────────────
@@ -474,14 +473,18 @@ const togglePlay = async () => {
 
 const nextTrack = () => player?.nextTrack();
 
-// ⏮ first press: restart current song; second press (when already at start): go to previous track
+// ⏮ always restarts current song on first press.
+// Double-tap within 700 ms while near the start → go to previous track.
+let _lastPrevAt = 0;
 const prevTrack = async () => {
-  if (position.value > 3000) {
-    // Restart current song via REST seek (more reliable than SDK previousTrack at >3s)
+  const now = Date.now();
+  const doubleTap = now - _lastPrevAt < 700;
+  _lastPrevAt = now;
+  if (doubleTap && position.value < 2000) {
+    player?.previousTrack();
+  } else {
     position.value = 0;
     await spotifyFetch('PUT', `/me/player/seek?position_ms=0&device_id=${deviceId}`).catch(() => {});
-  } else {
-    player?.previousTrack();
   }
 };
 
