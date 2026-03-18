@@ -457,7 +457,7 @@ export const searchTracks = async (req, res) => {
 // artist names + genres, collect and deduplicate results.
 export const generatePlaylist = async (req, res) => {
   try {
-    let { seedTrackIds = [], seedPlaylistId, genres = [], limit = 30 } = req.body;
+    let { seedTrackIds = [], seedTrackMeta = [], seedPlaylistId, genres = [], limit = 30 } = req.body;
     limit = Math.max(1, Math.min(Number(limit) || 30, 100));
 
     let token;
@@ -468,6 +468,12 @@ export const generatePlaylist = async (req, res) => {
     // Collect artist names from seed tracks
     const seedArtists = [];
     const seedTrackUris = new Set();
+
+    // Use frontend-provided metadata as initial artist source
+    seedTrackMeta.forEach((m) => {
+      const artist = (m.artist || "").split(",")[0].trim();
+      if (artist && !seedArtists.includes(artist)) seedArtists.push(artist);
+    });
 
     // If a reference playlist is provided, pull tracks from it
     if (seedPlaylistId) {
@@ -508,8 +514,15 @@ export const generatePlaylist = async (req, res) => {
       } catch { /* proceed with what we have */ }
     }
 
-    if (!seedArtists.length && !genres.length) {
+    if (!seedArtists.length && !genres.length && !uniqueIds.length) {
       return res.status(400).json({ message: "Provide at least one seed track or genre" });
+    }
+
+    // If we have track IDs but no artist names (lookup failed), use track names as search queries
+    if (!seedArtists.length && seedTrackMeta.length) {
+      seedTrackMeta.forEach((m) => {
+        if (m.name) seedArtists.push(m.name);
+      });
     }
 
     // Build diverse search queries

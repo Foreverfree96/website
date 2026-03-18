@@ -139,6 +139,7 @@ export function usePlaylistTools() {
     try {
       const body = {
         seedTrackIds: seedTracks.value.map((t) => t.id),
+        seedTrackMeta: seedTracks.value.map((t) => ({ name: t.name, artist: t.artist })),
         genres: selectedGenres.value,
         limit: trackLimit.value,
       };
