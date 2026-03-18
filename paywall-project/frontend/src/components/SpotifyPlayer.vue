@@ -698,6 +698,7 @@ const disconnectSpotify = async () => {
   // Clear all local Spotify state
   _w.tokenCache = null;
   sessionStorage.removeItem('sp_oauth_done');
+  localStorage.removeItem('sp_oauth_done');
   localStorage.removeItem('sp_playlist_ok');
   localStorage.removeItem('sp_shuffle');
   localStorage.removeItem('sp_volume');
@@ -735,9 +736,12 @@ onMounted(async () => {
     _w.tokenFetchPromise = null;
     _w.reconnectAttempted = true;
     _w.oauthRedirecting   = false;
+    // Persist in both localStorage (survives browser restart, shared across tabs)
+    // and sessionStorage (legacy path, kept for safety).
+    localStorage.setItem('sp_oauth_done', '1');
     sessionStorage.setItem('sp_oauth_done', '1');
   }
-  if (sessionStorage.getItem('sp_oauth_done')) _w.reconnectAttempted = true;
+  if (localStorage.getItem('sp_oauth_done') || sessionStorage.getItem('sp_oauth_done')) _w.reconnectAttempted = true;
 
   // Lazy players: show inactive preview card immediately without touching token or SDK.
   // Token + SDK are deferred until the user explicitly clicks Play (connectAndPlay).
@@ -891,6 +895,9 @@ const doConnect = async (shouldAutoPlay = true) => {
       player?.removeListener('player_state_changed');
       player?.removeListener('not_ready');
       player?.removeListener('ready');
+      player?.removeListener('account_error');
+      player?.removeListener('authentication_error');
+      player?.removeListener('initialization_error');
       player?.disconnect();
       player = null;
       deviceId = null;
@@ -949,6 +956,9 @@ const doConnect = async (shouldAutoPlay = true) => {
       player?.removeListener('player_state_changed');
       player?.removeListener('not_ready');
       player?.removeListener('ready');
+      player?.removeListener('account_error');
+      player?.removeListener('authentication_error');
+      player?.removeListener('initialization_error');
       player?.disconnect();
       player = null;
       deviceId = null;
@@ -1054,6 +1064,11 @@ const doConnect = async (shouldAutoPlay = true) => {
   player.addListener('account_error', () => {
     if (state.value !== 'ready') {
       clearTimeout(connectTimeout);
+      // If OAuth was already completed this session (or in a prior session), don't
+      // redirect again — the error may be transient (Spotify Premium check race).
+      // Let the user retry via the "Try Again" button instead.
+      const alreadyConnected = localStorage.getItem('sp_oauth_done') || sessionStorage.getItem('sp_oauth_done') || localStorage.getItem('sp_playlist_ok');
+      if (alreadyConnected) { state.value = 'unavailable'; return; }
       const jwt = localStorage.getItem('jwtToken');
       if (jwt && !_w.oauthRedirecting) { _w.oauthRedirecting = true; window.location.href = spotifyConnectUrl.value; return; }
       state.value = 'needs-connect';
