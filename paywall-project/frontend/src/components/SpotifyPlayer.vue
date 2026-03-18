@@ -877,6 +877,27 @@ const doConnect = async (shouldAutoPlay = true) => {
       const result = await fetchToken();
       if (result.token) token = result.token;
     }, 45 * 60 * 1000);
+
+    // Register step-down so a later player can cleanly take over this device.
+    // The handoff path skips the new-player setup block where _myStepDown is
+    // normally registered — so we must do it here explicitly, otherwise
+    // window._spStepDown stays null and the next player can't step us down.
+    _myStepDown = () => {
+      stopTicker();
+      clearInterval(posSaver); posSaver = null;
+      saveCurrentPosition();
+      if (currentTrackUri.value) _resumeTrackUri.value = currentTrackUri.value;
+      if (position.value > 0)    _resumePosition.value = position.value;
+      player?.removeListener('player_state_changed');
+      player?.removeListener('not_ready');
+      player?.removeListener('ready');
+      player?.disconnect();
+      player = null;
+      deviceId = null;
+      firstStateReceived = false;
+      state.value = 'inactive';
+    };
+    window._spStepDown = _myStepDown;
     return;
   }
 
