@@ -497,12 +497,13 @@ const fetchPlaylistTracks = async () => {
   const parseAlbum = (data, art) =>
     (data.items || [])
       .filter(item => item?.uri)
-      .map(item => ({
+      .map((item, index) => ({
         name:     item.name || '',
         uri:      item.uri,
         artist:   item.artists?.map(a => a.name).join(', ') || '',
         duration: item.duration_ms || 0,
         art,
+        index,
       }));
 
   // doFetch: performs the actual API calls and returns a tracks array (or null)
@@ -698,6 +699,9 @@ const disconnectSpotify = async () => {
   localStorage.removeItem('sp_shuffle');
   localStorage.removeItem('sp_volume');
 
+  // Release step-down slot so other players don't try to step down a dead player
+  if (window._spStepDown === _myStepDown) window._spStepDown = null;
+  _myStepDown = null;
   player?.disconnect();
   player = null;
   state.value = 'unavailable';
@@ -1056,6 +1060,8 @@ const connectAndPlay = async () => {
     }
     if (tokenResult.unavailable) { clearTimeout(connectTimeout); state.value = 'unavailable'; return; }
     token = tokenResult.token;
+    // Retry the playlist fetch if the background fetch at mount failed (403/rate-limited)
+    if (props.isPlaylist && !fullTracksFetched) fetchPlaylistTracks();
     await doConnect(true); // always autoplay on explicit user click
   } catch {
     clearTimeout(connectTimeout);
@@ -1093,6 +1099,8 @@ const retryConnect = async () => {
     }
     if (tokenResult.unavailable) { clearTimeout(connectTimeout); state.value = 'unavailable'; return; }
     token = tokenResult.token;
+    // Re-fetch playlist tracks — the initial fetch may have failed before the retry
+    if (props.isPlaylist && !fullTracksFetched) fetchPlaylistTracks();
     await doConnect(true);
   } catch {
     clearTimeout(connectTimeout);
