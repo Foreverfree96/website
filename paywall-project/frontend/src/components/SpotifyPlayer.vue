@@ -846,7 +846,8 @@ const doConnect = async (shouldAutoPlay = true) => {
     // playlist — a different-URL handoff (e.g. mini player closed then user
     // opens a different post) must NOT populate this instance's track list
     // or overwrite the wrong playlist's localStorage cache.
-    if (handoff.tracks?.length && !playlistTracks.value.length && handoff.mediaUrl === props.mediaUrl) {
+    const sameUrl = handoff.mediaUrl === props.mediaUrl;
+    if (handoff.tracks?.length && !playlistTracks.value.length && sameUrl) {
       playlistTracks.value = handoff.tracks;
       fullTracksFetched = true;
       saveCachedTracks(props.mediaUrl, handoff.tracks);
@@ -912,13 +913,22 @@ const doConnect = async (shouldAutoPlay = true) => {
         state.value = 'needs-connect';
       }
     });
-    // Device is already active — do NOT re-issue a play/seek command.
-    // Seeking to a saved position_ms that is already slightly stale causes
-    // Spotify to jump back, producing a restart/stutter on every toggle.
-    // • Already playing → leave it alone (state events will sync the UI).
-    // • Was paused + shouldAutoPlay → just resume in-place (no seek).
-    if (shouldAutoPlay && handoffWasPaused) {
-      player.resume().catch(() => {});
+    if (sameUrl) {
+      // Same playlist — device is already playing the right context.
+      // Don't re-issue a play command (causes stutter). Just resume if paused.
+      if (shouldAutoPlay && handoffWasPaused) {
+        player.resume().catch(() => {});
+      }
+    } else {
+      // Different playlist — tell Spotify to switch context on this device.
+      // The device is already registered so startPlayback can skip the
+      // device-poll step (skipDeviceSetup=true).
+      if (shouldAutoPlay) {
+        // Reset resume state for the new playlist
+        fullTracksFetched = false;
+        if (props.isPlaylist) fetchPlaylistTracks();
+        startPlayback(true, true).catch(() => {});
+      }
     }
     tokenRefresher = setInterval(async () => {
       _w.tokenCache = null;
@@ -927,9 +937,10 @@ const doConnect = async (shouldAutoPlay = true) => {
     }, 45 * 60 * 1000);
 
     // Register step-down so a later player can cleanly take over this device.
-    // The handoff path skips the new-player setup block where _myStepDown is
-    // normally registered — so we must do it here explicitly, otherwise
-    // window._spStepDown stays null and the next player can't step us down.
+    // Instead of disconnecting the SDK player (which forces the next player to
+    // create a new one from scratch — slow, and causes account_error races),
+    // we hand off the live player object via window._spHandoff. The next player
+    // picks it up instantly in its doConnect handoff path.
     _myStepDown = () => {
       stopTicker();
       clearInterval(posSaver); posSaver = null;
@@ -943,7 +954,9 @@ const doConnect = async (shouldAutoPlay = true) => {
       player?.removeListener('account_error');
       player?.removeListener('authentication_error');
       player?.removeListener('initialization_error');
-      player?.disconnect();
+      // Hand off the live player instead of disconnecting — the next player
+      // reuses this device instantly, no new SDK connection needed.
+      window._spHandoff = { player, deviceId, token, paused: paused.value, tracks: playlistTracks.value, mediaUrl: props.mediaUrl };
       player = null;
       deviceId = null;
       firstStateReceived = false;
@@ -991,7 +1004,9 @@ const doConnect = async (shouldAutoPlay = true) => {
     startPlayback(shouldAutoPlay).catch(() => {});
 
     // Register step-down so a later player can cleanly take over this device.
-    // Disconnect immediately so the new playlist gets a clean fresh connect.
+    // Hand off the live player instead of disconnecting — avoids the
+    // account_error race that occurs when two SDK players connect/disconnect
+    // in quick succession.
     _myStepDown = () => {
       stopTicker();
       clearInterval(posSaver); posSaver = null;
@@ -1005,7 +1020,7 @@ const doConnect = async (shouldAutoPlay = true) => {
       player?.removeListener('account_error');
       player?.removeListener('authentication_error');
       player?.removeListener('initialization_error');
-      player?.disconnect();
+      window._spHandoff = { player, deviceId, token, paused: paused.value, tracks: playlistTracks.value, mediaUrl: props.mediaUrl };
       player = null;
       deviceId = null;
       firstStateReceived = false;
@@ -1190,6 +1205,8 @@ const retryConnect = async () => {
     const [tokenResult] = await Promise.all([fetchToken(), loadSDK()]);
     if (tokenResult.needsConnect) {
       clearTimeout(connectTimeout);
+      const alreadyDone = localStorage.getItem('sp_oauth_done') || sessionStorage.getItem('sp_oauth_done');
+      if (alreadyDone) { state.value = 'unavailable'; return; }
       const jwt = localStorage.getItem('jwtToken');
       if (jwt && !_w.oauthRedirecting) { _w.oauthRedirecting = true; window.location.href = spotifyConnectUrl.value; return; }
       state.value = _w.oauthRedirecting ? 'inactive' : 'needs-connect'; return;
