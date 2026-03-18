@@ -152,10 +152,13 @@ export const matchYoutubeTracks = async (req, res) => {
     const { tracks = [] } = req.body;
     if (!tracks.length) return res.status(400).json({ message: "No tracks provided" });
 
-    const matches = [];
+    // Cap at 50 tracks — YouTube search costs 100 quota units each
+    const capped = tracks.slice(0, 50);
+    console.log(`🔍 Matching ${capped.length} tracks to YouTube...`);
 
-    for (const src of tracks) {
+    const matchOne = async (src) => {
       const query = `${src.title || ""} ${src.artist || ""}`.trim();
+      if (!query) return { source: src, bestMatch: null, confidence: "none", alternatives: [] };
 
       try {
         const r = await axios.get(`${BASE}/search`, {
@@ -188,17 +191,22 @@ export const matchYoutubeTracks = async (req, res) => {
         const best = candidates[0] || null;
         const confidence = !best ? "none" : best.score >= 0.85 ? "exact" : best.score >= 0.55 ? "close" : "none";
 
-        matches.push({
-          source: src,
-          bestMatch: best,
-          confidence,
-          alternatives: candidates.slice(1, 4),
-        });
+        return { source: src, bestMatch: best, confidence, alternatives: candidates.slice(1, 4) };
       } catch {
-        matches.push({ source: src, bestMatch: null, confidence: "none", alternatives: [] });
+        return { source: src, bestMatch: null, confidence: "none", alternatives: [] };
       }
+    };
+
+    // Process in parallel batches of 3 (YouTube quota is more expensive)
+    const matches = [];
+    const BATCH = 3;
+    for (let i = 0; i < capped.length; i += BATCH) {
+      const batch = capped.slice(i, i + BATCH);
+      const results = await Promise.all(batch.map(matchOne));
+      matches.push(...results);
     }
 
+    console.log(`✅ YouTube matched ${capped.length} tracks`);
     res.json({ matches });
   } catch (err) {
     console.error("❌ YouTube match error:", err.response?.data || err.message);

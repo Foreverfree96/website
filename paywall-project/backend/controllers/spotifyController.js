@@ -707,16 +707,21 @@ export const matchTracks = async (req, res) => {
     const { tracks = [] } = req.body;
     if (!tracks.length) return res.status(400).json({ message: "No tracks provided" });
 
+    // Cap at 100 tracks to avoid timeout
+    const capped = tracks.slice(0, 100);
+
     let token;
     const result = await getValidToken(req.user.id, false);
     token = result.error ? await getClientCredToken() : result.accessToken;
 
     const auth = { Authorization: `Bearer ${token}` };
-    const matches = [];
 
-    for (const src of tracks) {
+    console.log(`🔍 Matching ${capped.length} tracks to Spotify...`);
+
+    const matchOne = async (src) => {
       const cleaned = cleanTitle(src.title || "");
       const query = `${cleaned} ${src.artist || ""}`.trim();
+      if (!query) return { source: src, bestMatch: null, confidence: "none", alternatives: [] };
 
       try {
         const r = await axios.get("https://api.spotify.com/v1/search", {
@@ -749,16 +754,24 @@ export const matchTracks = async (req, res) => {
         const best = candidates[0] || null;
         const confidence = !best ? "none" : best.score >= 0.85 ? "exact" : best.score >= 0.55 ? "close" : "none";
 
-        matches.push({
-          source: src,
-          bestMatch: best,
-          confidence,
-          alternatives: candidates.slice(1, 4),
-        });
+        return { source: src, bestMatch: best, confidence, alternatives: candidates.slice(1, 4) };
       } catch {
-        matches.push({ source: src, bestMatch: null, confidence: "none", alternatives: [] });
+        return { source: src, bestMatch: null, confidence: "none", alternatives: [] };
       }
+    };
+
+    // Process in parallel batches of 5 to avoid rate limits but stay fast
+    const matches = [];
+    const BATCH = 5;
+    for (let i = 0; i < capped.length; i += BATCH) {
+      const batch = capped.slice(i, i + BATCH);
+      const results = await Promise.all(batch.map(matchOne));
+      matches.push(...results);
     }
+
+    const exact = matches.filter(m => m.confidence === 'exact').length;
+    const close = matches.filter(m => m.confidence === 'close').length;
+    console.log(`✅ Matched ${capped.length} tracks: ${exact} exact, ${close} close, ${capped.length - exact - close} none`);
 
     res.json({ matches });
   } catch (err) {
