@@ -1529,4 +1529,16 @@ defineExpose({ position, currentTrackUri, paused, setHandOffMode });
   .sp-vol-track  { width: 60px; }
   .sp-vol-pct    { display: none; }
 }
+@media (max-width: 400px) {
+  .sp-card { padding: 10px; gap: 10px; }
+  .sp-art  { width: 52px; height: 52px; }
+  .sp-track-name { font-size: 0.85rem; }
+  .sp-track-artist { font-size: 0.75rem; }
+  .sp-btn--play  { width: 40px; height: 40px; }
+  .sp-btn--skip  { width: 30px; height: 30px; }
+  .sp-vol-track  { display: none; }
+  .sp-connect-title { font-size: 0.9rem; }
+  .sp-connect-sub   { font-size: 0.75rem; }
+  .sp-inactive-play { font-size: 0.85rem; padding: 8px 16px; }
+}
 </style>

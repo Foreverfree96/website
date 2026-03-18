@@ -1137,6 +1137,9 @@ const formatTime = (d) => {
 .convo-item.active {
   background: rgba(0, 0, 0, 0.12);
 }
+.convo-item.active:hover {
+  background: rgba(0, 0, 0, 0.16);
+}
 
 .convo-item.unread .convo-item__name {
   color: #14532d;
@@ -1720,6 +1723,11 @@ const formatTime = (d) => {
   background: #ede9fe !important;
   color: #3b0764 !important;
 }
+.bubble.selected:hover {
+  outline: 2.5px solid #5b21b6;
+  background: #ddd6fe !important;
+  color: #3b0764 !important;
+}
 .bubble::selection,
 .bubble *::selection {
   background: #7c3aed;
@@ -1867,6 +1875,20 @@ const formatTime = (d) => {
     text-align: center;
     justify-content: center;
   }
+}
+@media (max-width: 480px) {
+  .convo-item { padding: 10px 12px; }
+  .convo-item__name { font-size: 0.85rem; }
+  .convo-item__preview { font-size: 0.75rem; }
+  .bubble { max-width: 88%; font-size: 0.88rem; padding: 8px 12px; }
+  .chat-header { padding: 8px 10px; }
+  .report-panel { padding: 8px 10px; }
+  .report-panel-actions { flex-wrap: wrap; gap: 6px; }
+}
+@media (max-width: 360px) {
+  .msg-page { height: calc(100vh - 50px); height: calc(100dvh - 50px); }
+  .bubble { max-width: 92%; font-size: 0.84rem; }
+  .convo-item__name { font-size: 0.82rem; }
 }
 
 @media (max-width: 480px) {

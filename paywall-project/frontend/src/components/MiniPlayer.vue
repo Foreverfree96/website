@@ -636,9 +636,15 @@ const previewLabel = computed(() => {
 .mp-slide-enter-active, .mp-slide-leave-active { transition: opacity 0.22s ease, transform 0.22s ease; }
 .mp-slide-enter-from, .mp-slide-leave-to { opacity: 0; transform: translateY(12px); }
 
-/* ── Mobile ── */
+/* ── Mobile / Tablet ── */
 @media (max-width: 600px) {
   .mp-root  { bottom: 14px; left: 14px; }
   .mp-panel { width: calc(100vw - 28px); max-width: 360px; }
+}
+@media (max-width: 400px) {
+  .mp-root  { bottom: 10px; left: 10px; }
+  .mp-panel { width: calc(100vw - 20px); max-width: none; }
+  .mp-header { padding: 8px 10px; }
+  .mp-label  { font-size: 0.78rem; }
 }
 </style>

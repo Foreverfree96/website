@@ -414,4 +414,25 @@ const platformLabel = computed(() => ({ instagram: 'View on Instagram', tiktok: 
 .link-card__icon { font-size: 1.8rem; flex-shrink: 0; }
 .link-card__text { font-size: 0.95rem; word-break: break-all; }
 .link-card__text small { font-weight: 400; opacity: 0.7; }
+
+/* ── Mobile / Tablet ── */
+@media (max-width: 768px) {
+  .embed-iframe          { height: 320px; }
+  .embed-iframe--playlist { height: 420px; }
+  .embed-popped-static   { padding: 16px 20px; font-size: 0.88rem; }
+}
+@media (max-width: 480px) {
+  .embed-iframe          { height: 240px; border-radius: 8px; }
+  .embed-iframe--audio   { height: 160px; }
+  .embed-iframe--playlist { height: 360px; }
+  .embed-guard-play      { width: 52px; height: 52px; font-size: 1.3rem; }
+  .embed-popout-pill     { padding: 7px 14px; font-size: 0.82rem; }
+  .embed-popin-btn       { padding: 6px 14px; font-size: 0.8rem; }
+  .link-card             { padding: 10px 14px; gap: 10px; }
+  .link-card__text       { font-size: 0.85rem; }
+}
+@media (max-width: 360px) {
+  .embed-iframe          { height: 200px; }
+  .embed-iframe--playlist { height: 320px; }
+}
 </style>
