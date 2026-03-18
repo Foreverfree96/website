@@ -5,8 +5,9 @@
     <div v-if="state === 'unavailable'" class="sp-card sp-unavail">
       <div class="sp-connect-icon">🎵</div>
       <span class="sp-connect-title">Player unavailable</span>
-      <span class="sp-connect-sub">Spotify Web Player requires HTTPS and a supported browser.</span>
-      <a :href="mediaUrl" target="_blank" rel="noopener noreferrer" class="sp-connect-btn">Open on Spotify →</a>
+      <span v-if="!isSecureCtx" class="sp-connect-sub">Spotify Web Player requires HTTPS and a supported browser.</span>
+      <span v-else class="sp-connect-sub">Could not connect to Spotify. Check your connection and try again.</span>
+      <button v-if="isSecureCtx" class="sp-connect-btn" @click="retryConnect">Try Again</button>
     </div>
 
     <!-- ── Needs Spotify connect — show button instead of auto-redirecting ─── -->
@@ -291,6 +292,7 @@ const _resumePosition = ref(0);
 const _resumeTrackUri = ref('');
 
 // ── Computed ───────────────────────────────────────────────────────────────────
+const isSecureCtx = window.isSecureContext;
 const progressPct        = computed(() =>
   duration.value > 0 ? Math.min(100, (position.value / duration.value) * 100) : 0
 );
@@ -551,39 +553,6 @@ const fetchPlaylistTracks = async () => {
     console.error('[Spotify] fetchPlaylistTracks error:', err);
     if (!_w.reconnectAttempted && !localStorage.getItem('sp_playlist_ok')) needsReconnect.value = true;
   }
-};
-
-// ── Fetch playlist / album / track metadata for the inactive preview card ─────
-const fetchMetadata = async () => {
-  if (!token) return;
-  const auth = { Authorization: `Bearer ${token}` };
-  try {
-    const plMatch = props.mediaUrl.match(/open\.spotify\.com\/playlist\/([a-zA-Z0-9]+)/);
-    const alMatch = props.mediaUrl.match(/open\.spotify\.com\/album\/([a-zA-Z0-9]+)/);
-    const trMatch = props.mediaUrl.match(/open\.spotify\.com\/track\/([a-zA-Z0-9]+)/);
-    if (plMatch) {
-      const res = await fetch(`https://api.spotify.com/v1/playlists/${plMatch[1]}?fields=name,owner(display_name),images`, { headers: auth });
-      if (res.ok) {
-        const d = await res.json();
-        playlistMeta.value = { name: d.name || '', owner: d.owner?.display_name || '' };
-        if (d.images?.[0]?.url && !track.value.art) track.value = { ...track.value, art: d.images[0].url };
-      }
-    } else if (alMatch) {
-      const res = await fetch(`https://api.spotify.com/v1/albums/${alMatch[1]}?fields=name,artists,images`, { headers: auth });
-      if (res.ok) {
-        const d = await res.json();
-        playlistMeta.value = { name: d.name || '', owner: d.artists?.map(a => a.name).join(', ') || '' };
-        if (d.images?.[0]?.url && !track.value.art) track.value = { ...track.value, art: d.images[0].url };
-      }
-    } else if (trMatch) {
-      const res = await fetch(`https://api.spotify.com/v1/tracks/${trMatch[1]}`, { headers: auth });
-      if (res.ok) {
-        const d = await res.json();
-        playlistMeta.value = { name: d.name || '', owner: d.artists?.map(a => a.name).join(', ') || '' };
-        if (d.album?.images?.[0]?.url) track.value = { ...track.value, art: d.album.images[0].url };
-      }
-    }
-  } catch { /* ignore */ }
 };
 
 // ── Play a specific track from the queue list ─────────────────────────────────
@@ -1025,7 +994,7 @@ const doConnect = async (shouldAutoPlay = true) => {
     if (state.value !== 'ready') {
       clearTimeout(connectTimeout);
       const jwt = localStorage.getItem('jwtToken');
-      if (jwt) { window.location.href = spotifyConnectUrl.value; return; }
+      if (jwt && !_w.oauthRedirecting) { _w.oauthRedirecting = true; window.location.href = spotifyConnectUrl.value; return; }
       state.value = 'needs-connect';
     }
   });
@@ -1060,6 +1029,43 @@ const connectAndPlay = async () => {
     if (tokenResult.unavailable) { clearTimeout(connectTimeout); state.value = 'unavailable'; return; }
     token = tokenResult.token;
     await doConnect(true); // always autoplay on explicit user click
+  } catch {
+    clearTimeout(connectTimeout);
+    state.value = 'unavailable';
+  }
+};
+
+// ── Retry connection after an unavailable/error state ─────────────────────────
+const retryConnect = async () => {
+  if (!window.isSecureContext) return;
+  // Clear stale caches so a fresh attempt is made
+  _w.tokenCache = null;
+  _w.oauthRedirecting = false;
+
+  if (props.lazyConnect) {
+    // Lazy path: reset to inactive, then let connectAndPlay run the full flow
+    state.value = 'inactive';
+    await connectAndPlay();
+    return;
+  }
+
+  // Non-lazy path: re-run the full connect flow
+  statusMsg.value = 'Reconnecting…';
+  state.value = 'loading';
+  connectTimeout = setTimeout(() => {
+    if (state.value !== 'ready') state.value = 'unavailable';
+  }, 15000);
+  try {
+    const [tokenResult] = await Promise.all([fetchToken(), loadSDK()]);
+    if (tokenResult.needsConnect) {
+      clearTimeout(connectTimeout);
+      const jwt = localStorage.getItem('jwtToken');
+      if (jwt && !_w.oauthRedirecting) { _w.oauthRedirecting = true; window.location.href = spotifyConnectUrl.value; return; }
+      state.value = 'needs-connect'; return;
+    }
+    if (tokenResult.unavailable) { clearTimeout(connectTimeout); state.value = 'unavailable'; return; }
+    token = tokenResult.token;
+    await doConnect(true);
   } catch {
     clearTimeout(connectTimeout);
     state.value = 'unavailable';
