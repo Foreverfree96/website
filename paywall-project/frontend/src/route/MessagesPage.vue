@@ -1714,17 +1714,37 @@ const formatTime = (d) => {
 .bubble-wrap.reportable .bubble:hover {
   outline: 2px dashed #7c3aed;
   outline-offset: 1px;
+}
+.bubble-wrap.reportable.mine .bubble:hover {
+  background: #1a0020 !important;
+}
+.bubble-wrap.reportable.theirs .bubble:hover {
   background: #f5f3ff !important;
 }
 
 .bubble.selected {
   outline: 2.5px solid #7c3aed;
   outline-offset: 1px;
+}
+.mine .bubble.selected {
+  background: #1a0030 !important;
+  color: #d8b4fe !important;
+  border-radius: 18px 18px 4px 18px;
+}
+.theirs .bubble.selected {
   background: #ede9fe !important;
   color: #3b0764 !important;
+  border: 2px solid #7c3aed;
+  border-radius: 18px 18px 18px 4px;
 }
 .bubble.selected:hover {
   outline: 2.5px solid #5b21b6;
+}
+.mine .bubble.selected:hover {
+  background: #2d0050 !important;
+  color: #d8b4fe !important;
+}
+.theirs .bubble.selected:hover {
   background: #ddd6fe !important;
   color: #3b0764 !important;
 }
@@ -1734,10 +1754,6 @@ const formatTime = (d) => {
   color: #fff;
 }
 
-.report-check {
-  font-size: 0.9em;
-  pointer-events: none;
-}
 
 .report-panel {
   padding: 12px 14px;

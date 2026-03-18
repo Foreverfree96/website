@@ -363,23 +363,30 @@ const savePositionAndClose = () => {
 
 const handleClose = savePositionAndClose;
 
+// Guard: prevent both watchers from firing close() on the same tick
+let _closing = false;
+
 // "Pop back in" requested by the in-post embed button
 watch(popInRequested, (requested) => {
-  if (!requested) return;
+  if (!requested || _closing) return;
   popInRequested.value = false;
+  _closing = true;
   savePositionAndClose();
+  _closing = false;
 });
 
 // Post player wants the MiniPlayer to close via handoff (preserve SDK player)
 watch(closeWithHandoff, (requested) => {
-  if (!requested) return;
+  if (!requested || _closing) return;
   closeWithHandoff.value = false;
+  _closing = true;
   if (nowPlaying.value?.type === 'spotify' && spotifyPlayerRef.value) {
     spotifyPlayerRef.value.setHandOffMode?.();
   }
   playerReady.value = false;
   expanded.value    = false;
   close();
+  _closing = false;
 });
 
 
