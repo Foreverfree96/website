@@ -134,7 +134,7 @@
             :key="t.uri"
             class="sp-track-row"
             :class="{ 'sp-track-row--active': t.uri === currentTrackUri }"
-            @click="playTrackFromList(t.uri)"
+            @click="playTrackFromList(t)"
           >
             <span class="sp-track-row-num">{{ i + 1 }}</span>
             <div class="sp-track-row-info">
@@ -485,12 +485,13 @@ const fetchPlaylistTracks = async () => {
   const parsePlaylist = (data) =>
     (data.items || [])
       .filter(item => item?.track?.uri)
-      .map(item => ({
+      .map((item, index) => ({
         name:     item.track.name || '',
         uri:      item.track.uri,
         artist:   item.track.artists?.map(a => a.name).join(', ') || '',
         duration: item.track.duration_ms || 0,
         art:      item.track.album?.images?.[0]?.url || '',
+        index,    // original playlist position — used for offset: { position } on click
       }));
 
   const parseAlbum = (data, art) =>
@@ -556,13 +557,22 @@ const fetchPlaylistTracks = async () => {
 };
 
 // ── Play a specific track from the queue list ─────────────────────────────────
-const playTrackFromList = async (uri) => {
+// Uses offset: { position } (index-based) when we know the track's position in
+// the playlist — this works for every track regardless of whether Spotify has
+// buffered it yet. offset: { uri } only works for the SDK's active track_window.
+const playTrackFromList = async (track) => {
   const contextUri = getSpotifyUri(props.mediaUrl);
-  await spotifyFetch('PUT', `/me/player/play?device_id=${deviceId}`,
-    contextUri
-      ? { context_uri: contextUri, offset: { uri }, position_ms: 0 }
-      : { uris: [uri] }
-  );
+  if (!contextUri) {
+    await spotifyFetch('PUT', `/me/player/play?device_id=${deviceId}`, { uris: [track.uri] }).catch(() => {});
+    return;
+  }
+  // Prefer the stored backend index; fall back to the current array position
+  const position = track.index ?? playlistTracks.value.findIndex(t => t.uri === track.uri);
+  const body = position >= 0
+    ? { context_uri: contextUri, offset: { position }, position_ms: 0 }
+    : { context_uri: contextUri, offset: { uri: track.uri }, position_ms: 0 };
+  const res = await spotifyFetch('PUT', `/me/player/play?device_id=${deviceId}`, body);
+  if (res && !res.ok) console.error('[Spotify] playTrackFromList failed:', res.status);
 };
 
 // ── Ticker ─────────────────────────────────────────────────────────────────────
