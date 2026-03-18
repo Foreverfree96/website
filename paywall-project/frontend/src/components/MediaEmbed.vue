@@ -81,7 +81,7 @@ const props = defineProps({
   embedType: { type: String, default: '' },
 });
 
-const { nowPlaying, popOut, close: closeMiniPlayer, lastPosition, popIn } = useNowPlaying();
+const { nowPlaying, popOut, close: closeMiniPlayer, lastPosition, popIn, requestCloseWithHandoff } = useNowPlaying();
 
 const active            = ref(false);
 const embedKey          = ref(0);
@@ -237,7 +237,7 @@ const activate = () => { active.value = true; };
 // one SDK player is ever active at a time.
 const onSpotifyWillConnect = () => {
   if (nowPlaying.value?.type === 'spotify' && nowPlaying.value?.url !== props.mediaUrl) {
-    closeMiniPlayer();
+    requestCloseWithHandoff();
   }
 };
 

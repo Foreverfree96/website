@@ -18,6 +18,10 @@ const lastPosition = ref({ url: null, position: 0, playlistIndex: 0, trackUri: '
 // saves current position, then calls close() so the post embed can resume.
 const popInRequested = ref(false);
 
+// Set to true when a post player wants the MiniPlayer to close via handoff
+// (preserving the live SDK player) rather than hard-disconnecting.
+const closeWithHandoff = ref(false);
+
 // Persist nowPlaying to localStorage whenever it changes
 watch(nowPlaying, (val) => {
   if (val) localStorage.setItem(STORAGE_KEY, JSON.stringify(val));
@@ -48,5 +52,8 @@ export function useNowPlaying() {
   // Called by the in-post "Pop back in" button — MiniPlayer handles the rest
   const popIn = () => { popInRequested.value = true; };
 
-  return { nowPlaying, isActive, popOut, close, lastPosition, popIn, popInRequested };
+  // Ask MiniPlayer to close with handoff (preserving the SDK player)
+  const requestCloseWithHandoff = () => { closeWithHandoff.value = true; };
+
+  return { nowPlaying, isActive, popOut, close, lastPosition, popIn, popInRequested, closeWithHandoff, requestCloseWithHandoff };
 }

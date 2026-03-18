@@ -113,7 +113,7 @@ import { ref, computed, watch, onMounted, onUnmounted, watchEffect } from 'vue';
 import { useNowPlaying } from '../composables/useNowPlaying.js';
 import SpotifyPlayer from './SpotifyPlayer.vue';
 
-const { nowPlaying, close, popInRequested } = useNowPlaying();
+const { nowPlaying, close, popInRequested, closeWithHandoff } = useNowPlaying();
 
 // Auto-expand and resume if there was something playing before the page refreshed
 const expanded          = ref(!!nowPlaying.value);
@@ -352,6 +352,18 @@ watch(popInRequested, (requested) => {
   if (!requested) return;
   popInRequested.value = false;
   savePositionAndClose();
+});
+
+// Post player wants the MiniPlayer to close via handoff (preserve SDK player)
+watch(closeWithHandoff, (requested) => {
+  if (!requested) return;
+  closeWithHandoff.value = false;
+  if (nowPlaying.value?.type === 'spotify' && spotifyPlayerRef.value) {
+    spotifyPlayerRef.value.setHandOffMode?.();
+  }
+  playerReady.value = false;
+  expanded.value    = false;
+  close();
 });
 
 
