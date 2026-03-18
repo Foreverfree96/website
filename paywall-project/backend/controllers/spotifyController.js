@@ -360,13 +360,14 @@ export const getPlaylistTracks = async (req, res) => {
       }
     }
 
-    // 3. Client credentials (public playlists only)
+    // 3. Client credentials (public playlists only) — paginate all tracks
     try {
       const appToken = await getClientCredToken();
-      const r = await axios.get(`https://api.spotify.com/v1/playlists/${playlistId}`, {
-        headers: { Authorization: `Bearer ${appToken}` },
-      });
-      const items = parseItems(r.data.tracks || {});
+      const auth = { Authorization: `Bearer ${appToken}` };
+      const items = await fetchAllPages(
+        `https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=100`,
+        auth
+      );
       if (items.length) return cacheAndReturn(items);
     } catch (err) {
       if (err.response?.status === 429) {

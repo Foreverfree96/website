@@ -813,9 +813,11 @@ const doConnect = async (shouldAutoPlay = true) => {
     deviceId         = handoff.deviceId;
     if (handoff.token) token = handoff.token;
     const handoffWasPaused = handoff.paused !== false; // true = was paused, false = was playing
-    // Carry over the full track list so the new instance doesn't need a fresh
-    // backend fetch — the list is already loaded from the previous player instance.
-    if (handoff.tracks?.length && !playlistTracks.value.length) {
+    // Carry over the full track list only when the handoff is for the SAME
+    // playlist — a different-URL handoff (e.g. mini player closed then user
+    // opens a different post) must NOT populate this instance's track list
+    // or overwrite the wrong playlist's localStorage cache.
+    if (handoff.tracks?.length && !playlistTracks.value.length && handoff.mediaUrl === props.mediaUrl) {
       playlistTracks.value = handoff.tracks;
       fullTracksFetched = true;
       saveCachedTracks(props.mediaUrl, handoff.tracks);
@@ -1116,7 +1118,7 @@ onUnmounted(() => {
     player.removeListener('ready');
     // Hand off the live player to the next SpotifyPlayer mount (e.g. MiniPlayer after pop-out)
     // so it can reuse the already-registered Spotify device without re-authenticating.
-    window._spHandoff = { player, deviceId, token, paused: paused.value, tracks: playlistTracks.value };
+    window._spHandoff = { player, deviceId, token, paused: paused.value, tracks: playlistTracks.value, mediaUrl: props.mediaUrl };
     _skipDisconnect = false;
   } else {
     player?.disconnect();
