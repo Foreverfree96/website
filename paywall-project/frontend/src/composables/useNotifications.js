@@ -60,23 +60,6 @@ const playDmPing = () => {
   } catch { /* browser audio blocked */ }
 };
 
-// ── Send bump (very soft, brief) ──────────────────────────────────────────────
-export const playBump = () => {
-  try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const osc  = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.connect(gain); gain.connect(ctx.destination);
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(300, ctx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(200, ctx.currentTime + 0.08);
-    gain.gain.setValueAtTime(0.1, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
-    osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.15);
-    osc.onended = () => ctx.close();
-  } catch { /* browser audio blocked */ }
-};
-
 // Base URL for all notification REST endpoints
 const API_URL = import.meta.env.VITE_API_URL + "/api/notifications";
 

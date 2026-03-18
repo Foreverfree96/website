@@ -26,7 +26,6 @@ import bcrypt from "bcryptjs";
 import axios from "axios";
 import Appeal from "../models/appealModel.js";
 import AdminLog from "../models/adminLogModel.js";
-import { siteLog } from "../utils/siteLog.js";
 
 /** Helper — fire-and-forget admin log entry with optional source link */
 const log = (req, action, target, detail = "", extras = {}) => {
@@ -817,7 +816,7 @@ export const createTestUser = async (req, res) => {
     }).catch(err => console.error("❌ Test user email failed:", err.response?.data || err.message));
 
     res.status(201).json({ message: `Test account @${user.username} created (${uniqueEmail}). Signup email sent.`, username: user.username });
-    siteLog({ userId: req.user._id, username: req.user.username, action: "Test Account Created", targetUsername: user.username, detail: uniqueEmail });
+    log(req, "Test Account Created", user, uniqueEmail);
   } catch (err) {
     console.error("❌ createTestUser Error:", err);
     res.status(500).json({ message: "Server error" });

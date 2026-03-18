@@ -6,7 +6,6 @@
       v-model="search"
       class="search-input"
       placeholder="Search creators..."
-      @input="onSearch"
     />
 
     <p v-if="loading" class="status-msg">Loading...</p>
@@ -73,8 +72,6 @@ onMounted(async () => {
   }
 });
 
-// Keep search as client-side only — no need to re-fetch for every keystroke
-const onSearch = () => {}; // filtered computed handles it
 </script>
 
 <style scoped>

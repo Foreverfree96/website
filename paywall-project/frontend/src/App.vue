@@ -310,7 +310,7 @@ const handleLogout = async () => {
   menuOpen.value = false;
   disconnectSocket();
   try {
-    const token = localStorage.getItem("token");
+    const token = localStorage.getItem("jwtToken");
     if (token) {
       const axios = (await import("axios")).default;
       await axios.post(import.meta.env.VITE_API_URL + "/api/users/logout", {}, {

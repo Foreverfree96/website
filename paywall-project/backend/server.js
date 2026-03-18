@@ -41,8 +41,8 @@ import { setIo } from "./utils/socketEmitter.js";
 // Load .env variables into process.env
 config();
 
-// Connect to MongoDB
-connectDatabase();
+// Connect to MongoDB — await so routes don't run before DB is ready
+await connectDatabase();
 
 const app = express();
 
