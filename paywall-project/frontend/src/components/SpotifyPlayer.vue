@@ -924,7 +924,10 @@ const doConnect = async (shouldAutoPlay = true) => {
       // The device is already registered so startPlayback can skip the
       // device-poll step (skipDeviceSetup=true).
       if (shouldAutoPlay) {
-        // Reset resume state for the new playlist
+        // Reset resume state — clear stale position/track from the previous
+        // playlist so we start fresh at track 0, position 0.
+        _resumePosition.value = 0;
+        _resumeTrackUri.value = '';
         fullTracksFetched = false;
         if (props.isPlaylist) fetchPlaylistTracks();
         startPlayback(true, true).catch(() => {});

@@ -185,8 +185,14 @@ watch(nowPlaying, (np, old) => {
     ytQueueOpen.value      = false;
     ytVideoIds.value       = [];
     ytTitles.value         = {};
-  } else if (old && (old.url !== np.url || old.type !== np.type)) {
-    // Auto-start iframe for non-Spotify when popped out while playing
+  } else if (!old) {
+    // First pop-out (null → value) — auto-expand and auto-play
+    expanded.value    = true;
+    playerReady.value = !!(np.resumeOnLoad && np.type !== 'spotify');
+    ytPlaylistIndex.value = np.playlistIndex || 0;
+  } else if (old.url !== np.url || old.type !== np.type) {
+    // Switching to different media — auto-expand and reset YouTube state
+    expanded.value         = true;
     playerReady.value      = !!(np.resumeOnLoad && np.type !== 'spotify');
     frozenEmbedUrl.value   = ''; // will be set by watch(playerReady) when ready fires
     ytTime.value           = 0;
@@ -232,6 +238,16 @@ const toggleYtShuffle = () => { ytShuffleOn.value = !ytShuffleOn.value; };
 const onIframeLoad = () => {
   if (nowPlaying.value?.type === 'youtube') {
     iframeEl.value?.contentWindow?.postMessage(JSON.stringify({ event: 'listening' }), '*');
+    // Force play — browsers may block autoplay=1 on dynamically created iframes;
+    // the JS API command is more reliable.
+    if (nowPlaying.value?.resumeOnLoad) {
+      setTimeout(() => {
+        iframeEl.value?.contentWindow?.postMessage(
+          JSON.stringify({ event: 'command', func: 'playVideo', args: [] }),
+          '*'
+        );
+      }, 800);
+    }
   }
 };
 
