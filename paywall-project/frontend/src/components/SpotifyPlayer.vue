@@ -722,7 +722,9 @@ onMounted(async () => {
   // Lazy players: show inactive preview card immediately without touching token or SDK.
   // Token + SDK are deferred until the user explicitly clicks Play (connectAndPlay).
   // This prevents N concurrent /api/spotify/token calls when a feed has many players.
-  if (props.lazyConnect && !_shouldAutoPlay) {
+  // Exception: if a live player handoff is waiting (pop-back-in while paused), skip the
+  // inactive card and take the handoff so the device isn't left orphaned.
+  if (props.lazyConnect && !_shouldAutoPlay && !window._spHandoff) {
     if (props.isPlaylist) {
       const cached = loadCachedTracks(props.mediaUrl);
       if (cached?.length) {
@@ -811,6 +813,19 @@ const doConnect = async (shouldAutoPlay = true) => {
     deviceId         = handoff.deviceId;
     if (handoff.token) token = handoff.token;
     const handoffWasPaused = handoff.paused !== false; // true = was paused, false = was playing
+    // Carry over the full track list so the new instance doesn't need a fresh
+    // backend fetch — the list is already loaded from the previous player instance.
+    if (handoff.tracks?.length && !playlistTracks.value.length) {
+      playlistTracks.value = handoff.tracks;
+      fullTracksFetched = true;
+      saveCachedTracks(props.mediaUrl, handoff.tracks);
+      // Seed the preview track info if not already set
+      if (!track.value.name) {
+        const resumeUri = _resumeTrackUri.value;
+        const t = (resumeUri && handoff.tracks.find(t => t.uri === resumeUri)) || handoff.tracks[0];
+        if (t) track.value = { name: t.name, artist: t.artist, album: '', art: t.art };
+      }
+    }
     window._spHandoff = null;
     clearTimeout(connectTimeout);
     state.value = 'ready';
@@ -1101,7 +1116,7 @@ onUnmounted(() => {
     player.removeListener('ready');
     // Hand off the live player to the next SpotifyPlayer mount (e.g. MiniPlayer after pop-out)
     // so it can reuse the already-registered Spotify device without re-authenticating.
-    window._spHandoff = { player, deviceId, token, paused: paused.value };
+    window._spHandoff = { player, deviceId, token, paused: paused.value, tracks: playlistTracks.value };
     _skipDisconnect = false;
   } else {
     player?.disconnect();
