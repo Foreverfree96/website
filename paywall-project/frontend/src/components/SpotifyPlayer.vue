@@ -993,8 +993,9 @@ const doConnect = async (shouldAutoPlay = true) => {
             playlistTracks.value = updated;
           }
         }
-        // Update cache so next page load has more tracks
-        saveCachedTracks(props.mediaUrl, playlistTracks.value);
+        // Do NOT save the SDK-merge result to localStorage — it reflects
+        // the listener's played/buffered queue, not the real playlist order.
+        // Cache writes are reserved for verified API data (applyTracks / handoff).
       }
     }
 
