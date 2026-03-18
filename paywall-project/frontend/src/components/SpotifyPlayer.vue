@@ -7,7 +7,7 @@
       <span class="sp-connect-title">Player unavailable</span>
       <span v-if="!isSecureCtx" class="sp-connect-sub">Spotify Web Player requires HTTPS and a supported browser.</span>
       <span v-else class="sp-connect-sub">Could not connect to Spotify. Check your connection and try again.</span>
-      <button v-if="isSecureCtx" class="sp-connect-btn" @click="retryConnect">Try Again</button>
+      <button v-if="isSecureCtx" class="sp-connect-btn" @click="handleRetry">Try Again</button>
     </div>
 
     <!-- ── Needs Spotify connect — show button instead of auto-redirecting ─── -->
@@ -15,21 +15,20 @@
       <div class="sp-connect-icon">🎵</div>
       <span class="sp-connect-title">Connect Spotify to play</span>
       <span class="sp-connect-sub">Requires a Spotify Premium account</span>
-      <a :href="spotifyConnectUrl" class="sp-connect-btn">Connect Spotify</a>
+      <a :href="sdk.spotifyConnectUrl.value" class="sp-connect-btn">Connect Spotify</a>
     </div>
 
     <!-- ── Inactive (lazyConnect — preview shown, SDK not yet connected) ───── -->
     <div v-else-if="state === 'inactive'" class="sp-card sp-inactive">
       <div class="sp-top">
         <div class="sp-art-wrap">
-          <img v-if="track.art" :src="track.art" class="sp-art" />
+          <img v-if="previewTrack.art" :src="previewTrack.art" class="sp-art" />
           <div v-else class="sp-art sp-art--empty">🎵</div>
         </div>
         <div class="sp-info">
-          <!-- Playlist / album / track name + creator -->
-          <div class="sp-track-name">{{ playlistMeta.name || track.name || 'Spotify' }}</div>
-          <div v-if="playlistMeta.owner" class="sp-meta-owner">by {{ playlistMeta.owner }}</div>
-          <div class="sp-track-artist">{{ track.artist || (isPlaylist ? 'Playlist' : 'Track') }}</div>
+          <div class="sp-track-name">{{ localMeta.name || previewTrack.name || 'Spotify' }}</div>
+          <div v-if="localMeta.owner" class="sp-meta-owner">by {{ localMeta.owner }}</div>
+          <div class="sp-track-artist">{{ previewTrack.artist || (isPlaylist ? 'Playlist' : 'Track') }}</div>
         </div>
         <a :href="mediaUrl" target="_blank" rel="noopener noreferrer" class="sp-open-btn" title="Open on Spotify">
           <svg viewBox="0 0 24 24" fill="currentColor" class="sp-spotify-icon">
@@ -44,7 +43,7 @@
     <!-- ── Loading ──────────────────────────────────────────────────────────── -->
     <div v-else-if="state !== 'ready'" class="sp-card sp-loading">
       <div class="sp-spinner"></div>
-      <span class="sp-status-msg">{{ statusMsg }}</span>
+      <span class="sp-status-msg">{{ sdk.statusMsg.value }}</span>
     </div>
 
     <!-- ── Player ───────────────────────────────────────────────────────────── -->
@@ -53,13 +52,13 @@
       <!-- Album art + track info + open link -->
       <div class="sp-top">
         <div class="sp-art-wrap">
-          <img v-if="track.art" :src="track.art" class="sp-art" />
+          <img v-if="sdk.track.value.art" :src="sdk.track.value.art" class="sp-art" />
           <div v-else class="sp-art sp-art--empty">🎵</div>
         </div>
         <div class="sp-info">
-          <div class="sp-track-name" :title="track.name">{{ track.name || '—' }}</div>
-          <div class="sp-track-artist">{{ track.artist || '—' }}</div>
-          <div class="sp-track-album">{{ track.album }}</div>
+          <div class="sp-track-name" :title="sdk.track.value.name">{{ sdk.track.value.name || '—' }}</div>
+          <div class="sp-track-artist">{{ sdk.track.value.artist || '—' }}</div>
+          <div class="sp-track-album">{{ sdk.track.value.album }}</div>
         </div>
         <a :href="mediaUrl" target="_blank" rel="noopener noreferrer"
           class="sp-open-btn" title="Open on Spotify">
@@ -73,82 +72,82 @@
       <!-- Progress bar -->
       <div class="sp-progress-wrap" @mousedown="startScrub" @touchstart.passive="startScrub">
         <div class="sp-bar" ref="progressBar">
-          <div class="sp-bar-fill" :style="{ width: progressPct + '%' }"></div>
-          <div class="sp-bar-thumb" :style="{ left: progressPct + '%' }"></div>
+          <div class="sp-bar-fill" :style="{ width: sdk.progressPct.value + '%' }"></div>
+          <div class="sp-bar-thumb" :style="{ left: sdk.progressPct.value + '%' }"></div>
         </div>
         <div class="sp-times">
-          <span>{{ fmtMs(position) }}</span>
-          <span>{{ fmtMs(duration) }}</span>
+          <span>{{ sdk.fmtMs(sdk.position.value) }}</span>
+          <span>{{ sdk.fmtMs(sdk.duration.value) }}</span>
         </div>
       </div>
 
       <!-- Playback controls -->
       <div class="sp-controls">
-        <button class="sp-btn sp-btn--skip" @click="prevTrack" title="Previous">⏮</button>
-        <button class="sp-btn sp-btn--play" @click="togglePlay" :title="paused ? 'Play' : 'Pause'">
-          {{ paused ? '▶' : '⏸' }}
+        <button class="sp-btn sp-btn--skip" @click="sdk.prev()" title="Previous">⏮</button>
+        <button class="sp-btn sp-btn--play" @click="sdk.togglePlay()" :title="sdk.paused.value ? 'Play' : 'Pause'">
+          {{ sdk.paused.value ? '▶' : '⏸' }}
         </button>
-        <button class="sp-btn sp-btn--skip" @click="nextTrack" title="Next">⏭</button>
+        <button class="sp-btn sp-btn--skip" @click="sdk.next()" title="Next">⏭</button>
       </div>
 
       <!-- Shuffle + Volume row -->
       <div class="sp-extra-row">
-        <button class="sp-shuffle-pill" :class="{ 'sp-shuffle-pill--on': shuffleOn }" @click="toggleShuffle">
-          🔀 Shuffle{{ shuffleOn ? ': On' : ': Off' }}
+        <button class="sp-shuffle-pill" :class="{ 'sp-shuffle-pill--on': sdk.shuffleOn.value }" @click="sdk.toggleShuffle()">
+          🔀 Shuffle{{ sdk.shuffleOn.value ? ': On' : ': Off' }}
         </button>
         <div class="sp-vol-group">
-          <button class="sp-btn sp-vol-icon" @click="toggleMute" :title="muted ? 'Unmute' : 'Mute'">
-            {{ muted || displayVolume === 0 ? '🔇' : displayVolume < 50 ? '🔉' : '🔊' }}
+          <button class="sp-btn sp-vol-icon" @click="sdk.toggleMute()" :title="sdk.muted.value ? 'Unmute' : 'Mute'">
+            {{ sdk.muted.value || sdk.displayVolume.value === 0 ? '🔇' : sdk.displayVolume.value < 50 ? '🔉' : '🔊' }}
           </button>
           <div class="sp-vol-track" ref="volTrack"
             @mousedown="startVolScrub" @touchstart.passive="startVolScrub">
-            <div class="sp-vol-fill" :style="{ width: displayVolume + '%' }"></div>
-            <div class="sp-vol-thumb" :style="{ left: displayVolume + '%' }"></div>
+            <div class="sp-vol-fill" :style="{ width: sdk.displayVolume.value + '%' }"></div>
+            <div class="sp-vol-thumb" :style="{ left: sdk.displayVolume.value + '%' }"></div>
           </div>
-          <span class="sp-vol-pct">{{ displayVolume }}%</span>
+          <span class="sp-vol-pct">{{ sdk.displayVolume.value }}%</span>
         </div>
       </div>
 
       <!-- ── Reconnect nudge (missing playlist scope) ────────────────────── -->
-      <div v-if="needsReconnect" class="sp-reconnect-banner">
+      <div v-if="sdk.needsReconnect.value" class="sp-reconnect-banner">
         <div class="sp-reconnect-body">
           <span class="sp-reconnect-title">⚠ Playlist queue unavailable</span>
           <span class="sp-reconnect-desc">
             Spotify now requires a new permission (<em>playlist-read-private</em>) to load track lists.
             Reconnecting takes ~5 seconds and only needs to be done once — after that your full queue loads automatically.
           </span>
-          <a :href="spotifyReconnectUrl" class="sp-reconnect-btn">Reconnect Spotify →</a>
+          <a :href="sdk.spotifyConnectUrl.value" class="sp-reconnect-btn">Reconnect Spotify →</a>
         </div>
-        <button class="sp-reconnect-dismiss" @click="needsReconnect = false" title="Dismiss">✕</button>
+        <button class="sp-reconnect-dismiss" @click="sdk.needsReconnect.value = false" title="Dismiss">✕</button>
       </div>
 
       <!-- ── Scrollable playlist track list ───────────────────────────────── -->
-      <div v-if="isPlaylist && playlistTracks.length" class="sp-tracklist" ref="tracklistEl">
-        <div class="sp-tracklist-header" @click="listOpen = !listOpen">
-          <span>Queue ({{ playlistTracks.length }})</span>
-          <span class="sp-tracklist-arrow">{{ listOpen ? '▲' : '▼' }}</span>
+      <div v-if="isPlaylist && sdk.playlistTracks.value.length" class="sp-tracklist" ref="tracklistEl">
+        <div class="sp-tracklist-header" @click="sdk.listOpen.value = !sdk.listOpen.value">
+          <span>Queue ({{ sdk.playlistTracks.value.length }})</span>
+          <span class="sp-tracklist-arrow">{{ sdk.listOpen.value ? '▲' : '▼' }}</span>
         </div>
-        <div v-show="listOpen">
+        <div v-show="sdk.listOpen.value">
           <div
-            v-for="(t, i) in playlistTracks"
+            v-for="(t, i) in sdk.playlistTracks.value"
             :key="t.uri"
             class="sp-track-row"
-            :class="{ 'sp-track-row--active': t.uri === currentTrackUri }"
-            @click="playTrackFromList(t)"
+            :class="{ 'sp-track-row--active': t.uri === sdk.currentTrackUri.value }"
+            @click="sdk.playTrackFromList(t)"
           >
             <span class="sp-track-row-num">{{ i + 1 }}</span>
             <div class="sp-track-row-info">
               <span class="sp-track-row-name">{{ t.name }}</span>
               <span class="sp-track-row-artist">{{ t.artist }}</span>
             </div>
-            <span class="sp-track-row-dur">{{ fmtMs(t.duration) }}</span>
+            <span class="sp-track-row-dur">{{ sdk.fmtMs(t.duration) }}</span>
           </div>
         </div>
       </div>
 
       <div class="sp-footer">
         <span class="sp-brand">Powered by Spotify</span>
-        <button class="sp-disconnect-btn" @click="disconnectSpotify">⏏ Disconnect</button>
+        <button class="sp-disconnect-btn" @click="sdk.disconnect()">⏏ Disconnect</button>
       </div>
     </div>
 
@@ -156,497 +155,97 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { ref, computed, watch, onMounted, nextTick } from 'vue';
+import { useSpotifySDK } from '../composables/useSpotifySDK.js';
 
 const props = defineProps({
   mediaUrl:        { type: String,  default: '' },
   isPlaylist:      { type: Boolean, default: false },
   autoPlay:        { type: Boolean, default: false },
   defaultListOpen: { type: Boolean, default: true  },
-  startPosition:   { type: Number,  default: 0     }, // ms — resume from this position
-  startTrackUri:   { type: String,  default: ''    }, // track URI to resume playlist at
-  lazyConnect:     { type: Boolean, default: false }, // show preview card, only connect SDK on user click
+  startPosition:   { type: Number,  default: 0     },
+  startTrackUri:   { type: String,  default: ''    },
+  lazyConnect:     { type: Boolean, default: false },
 });
 
 const emit = defineEmits(['will-connect']);
+const sdk = useSpotifySDK();
 
-const API    = import.meta.env.VITE_API_URL;
-const route  = useRoute();
-const router = useRouter();
+const progressBar = ref(null);
+const volTrack    = ref(null);
+const tracklistEl = ref(null);
 
-// ── True module-level shared state (window.*) ─────────────────────────────────
-// <script setup> runs per-instance, so these use window to share across all
-// SpotifyPlayer instances on the same page — essential for deduplication.
-if (!window._sp) window._sp = {
-  tokenCache:           null,   // { token, expiresAt }
-  tokenFetchPromise:    null,   // deduplicates concurrent fetchToken calls
-  oauthRedirecting:     false,  // prevents multiple players triggering OAuth redirect
-  reconnectAttempted:   false,
-  fetchingPlaylists:    new Map(), // playlistKey → Promise
-  playlistBackoffUntil: 0,     // timestamp — skip backend calls while rate-limited
-};
-const _w = window._sp;
-
-// ── Persisted prefs (volume + shuffle survive page reloads) ───────────────────
-const _savedVol     = parseFloat(localStorage.getItem('sp_volume')  ?? '70');
-const _savedShuffle = localStorage.getItem('sp_shuffle') === 'true';
-
-// ── Playlist track cache helpers ───────────────────────────────────────────────
-const TRACK_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
-
-const _playlistCacheKey = (url) => {
-  const m = url.match(/open\.spotify\.com\/(playlist|album)\/([a-zA-Z0-9]+)/);
-  return m ? `sp_tracks_${m[2]}` : null;
-};
-
-const loadCachedTracks = (url) => {
-  try {
-    const key = _playlistCacheKey(url);
-    if (!key) return null;
-    const raw = localStorage.getItem(key);
-    if (!raw) return null;
-    const { tracks, savedAt } = JSON.parse(raw);
-    if (Date.now() - savedAt > TRACK_CACHE_TTL) { localStorage.removeItem(key); return null; }
-    // Discard tiny caches from old SDK-merge saves — force a fresh API fetch
-    if (tracks.length < 20) { localStorage.removeItem(key); return null; }
-    return tracks;
-  } catch { return null; }
-};
-
-const saveCachedTracks = (url, tracks) => {
-  try {
-    const key = _playlistCacheKey(url);
-    if (key) localStorage.setItem(key, JSON.stringify({ tracks, savedAt: Date.now() }));
-  } catch { /* localStorage full — ignore */ }
-};
-
-// ── Playback position cache (survive page refresh) ────────────────────────────
-const _posCacheKey = (url) => {
-  const m = url.match(/open\.spotify\.com\/(track|playlist|album|artist)\/([a-zA-Z0-9]+)/);
-  return m ? `sp_pos_${m[2]}` : null;
-};
-
-const loadSavedPosition = (url) => {
-  try {
-    const key = _posCacheKey(url);
-    if (!key) return null;
-    const raw = localStorage.getItem(key);
-    if (!raw) return null;
-    const { trackUri, positionMs, paused, savedAt } = JSON.parse(raw);
-    // Discard if older than 7 days
-    if (Date.now() - savedAt > 7 * 24 * 60 * 60 * 1000) { localStorage.removeItem(key); return null; }
-    return { trackUri, positionMs, paused };
-  } catch { return null; }
-};
-
-const saveCurrentPosition = () => {
-  try {
-    const key = _posCacheKey(props.mediaUrl);
-    if (!key || !currentTrackUri.value) return;
-    localStorage.setItem(key, JSON.stringify({
-      trackUri:   currentTrackUri.value,
-      positionMs: position.value,
-      paused:     paused.value,
-      savedAt:    Date.now(),
-    }));
-  } catch { /* ignore */ }
-};
-
-// ── State ──────────────────────────────────────────────────────────────────────
-const state           = ref('loading');
-const statusMsg       = ref('Connecting to Spotify…');
-const paused          = ref(true);
-const position        = ref(0);
-const duration        = ref(0);
-const volume          = ref(_savedVol);
-const muted           = ref(false);
-const shuffleOn       = ref(_savedShuffle);
-const track           = ref({ name: '', artist: '', album: '', art: '' });
-const currentTrackUri = ref('');
-const playlistTracks  = ref([]);
-const listOpen        = ref(props.defaultListOpen); // tracklist collapsed/expanded
-const needsReconnect  = ref(false); // true when old token is missing playlist scopes
-const playlistMeta    = ref({ name: '', owner: '' }); // display name + creator for inactive card
-
-const progressBar  = ref(null);
-const volTrack     = ref(null);
-const tracklistEl  = ref(null);
-
-let player         = null;
-let deviceId       = null;
-let ticker         = null;
-let token          = null;
-let connectTimeout = null;
-let tokenRefresher = null;
-let posSaver       = null;
-let prevVol        = _savedVol;
-let firstStateReceived = false;
-let fullTracksFetched  = false; // true once the API returns the full 100-track list
-let _skipDisconnect    = false; // set via setHandOffMode() before a pop-out unmount
-let _myStepDown        = null;  // reference to this instance's step-down fn (for ownership check)
-
-// Internal resume refs — seeded from saved position (page refresh) or props (mini-player pop-out)
-// Props take priority so MiniPlayer's saved state wins over the on-disk position.
-const _resumePosition = ref(0);
-const _resumeTrackUri = ref('');
-
-// ── Computed ───────────────────────────────────────────────────────────────────
 const isSecureCtx = window.isSecureContext;
-const progressPct        = computed(() =>
-  duration.value > 0 ? Math.min(100, (position.value / duration.value) * 100) : 0
-);
-const displayVolume      = computed(() => muted.value ? 0 : volume.value);
-const spotifyConnectUrl = computed(() => {
-  const jwt = localStorage.getItem('jwtToken');
-  const returnTo = encodeURIComponent(window.location.href);
-  return `${API}/api/spotify/login?token=${jwt}&returnTo=${returnTo}`;
-});
-// Alias used by reconnect banner
-const spotifyReconnectUrl = spotifyConnectUrl;
 
-// ── Auto-scroll active track into view when song changes ───────────────────────
-watch(currentTrackUri, async () => {
+// Is THIS component's URL the one currently playing in the singleton?
+const isActive = computed(() => sdk.currentMediaUrl.value === props.mediaUrl);
+
+// Derive display state
+const state = computed(() => {
+  if (isActive.value) {
+    // Our URL is the active one — show singleton state
+    const s = sdk.sdkState.value;
+    if (s === 'idle') return 'inactive';
+    return s; // connecting | ready | unavailable | needs-connect
+  }
+  // Not our URL — check for global errors
+  if (sdk.sdkState.value === 'needs-connect') return 'needs-connect';
+  if (sdk.sdkState.value === 'unavailable' && !sdk.currentMediaUrl.value) return 'unavailable';
+  return 'inactive';
+});
+
+// ── Preview track info for inactive card ─────────────────────────────────────
+const localTracks = ref([]);
+const localMeta   = ref({ name: '', owner: '' });
+const previewTrack = ref({ name: '', artist: '', art: '' });
+
+onMounted(() => {
+  if (props.isPlaylist) {
+    const cached = sdk.loadCachedTracks(props.mediaUrl);
+    if (cached?.length) {
+      localTracks.value = cached;
+      const t = (props.startTrackUri && cached.find(t => t.uri === props.startTrackUri)) || cached[0];
+      if (t) previewTrack.value = { name: t.name, artist: t.artist, art: t.art };
+    }
+    // Background fetch for preview
+    sdk.preloadTracks(props.mediaUrl);
+  }
+
+  // Auto-play on mount if requested
+  if (props.autoPlay) {
+    connectAndPlay();
+  }
+});
+
+// ── Auto-scroll active track ─────────────────────────────────────────────────
+watch(() => sdk.currentTrackUri.value, async () => {
   if (!tracklistEl.value) return;
   await nextTick();
   const active = tracklistEl.value.querySelector('.sp-track-row--active');
   if (active) active.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 });
 
-// ── Helpers ────────────────────────────────────────────────────────────────────
-const fmtMs = (ms) => {
-  const s = Math.floor((ms || 0) / 1000);
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
-};
-
-const getSpotifyUri = (url) => {
-  const m = url.match(/open\.spotify\.com\/(track|playlist|album|artist)\/([a-zA-Z0-9]+)/);
-  return m ? `spotify:${m[1]}:${m[2]}` : null;
-};
-
-const spotifyFetch = (method, path, body) =>
-  fetch(`https://api.spotify.com/v1${path}`, {
-    method,
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: body ? JSON.stringify(body) : undefined,
+// ── Connect and play ─────────────────────────────────────────────────────────
+const connectAndPlay = () => {
+  emit('will-connect');
+  sdk.play(props.mediaUrl, {
+    isPlaylist:    props.isPlaylist,
+    autoPlay:      true,
+    startPosition: props.startPosition,
+    startTrackUri: props.startTrackUri,
   });
-
-// ── Token ──────────────────────────────────────────────────────────────────────
-// Returns { token } on success, { needsConnect: true } if not linked/premium,
-// { unavailable: true } on other errors.
-// Uses a module-level cache + in-flight deduplication so all SpotifyPlayer
-// instances on a page share a single backend request — one OAuth authenticates all.
-const fetchToken = async () => {
-  const jwt = localStorage.getItem('jwtToken');
-  if (!jwt) return { needsConnect: true };
-
-  // Return cached token if still valid (5 min safety buffer before real expiry)
-  if (_w.tokenCache && Date.now() < _w.tokenCache.expiresAt - 5 * 60 * 1000) {
-    return { token: _w.tokenCache.token };
-  }
-
-  // If another instance is already fetching, wait for that request instead of
-  // firing a second one — prevents N parallel /api/spotify/token calls on page load
-  if (_w.tokenFetchPromise) return _w.tokenFetchPromise;
-
-  _w.tokenFetchPromise = (async () => {
-    try {
-      const res = await fetch(`${API}/api/spotify/token`, {
-        headers: { Authorization: `Bearer ${jwt}` },
-      });
-      if (res.status === 403 || res.status === 404) return { needsConnect: true };
-      if (!res.ok) return { unavailable: true };
-      const data = await res.json();
-      const expiresAt = data.expiresAt ? new Date(data.expiresAt).getTime() : Date.now() + 55 * 60 * 1000;
-      _w.tokenCache = { token: data.accessToken, expiresAt };
-      // Token fetch succeeded — mark OAuth as done so account_error handlers
-      // never trigger a false redirect for any player on this page.
-      if (!localStorage.getItem('sp_oauth_done')) localStorage.setItem('sp_oauth_done', '1');
-      return { token: data.accessToken };
-    } finally {
-      _w.tokenFetchPromise = null;
-    }
-  })();
-
-  return _w.tokenFetchPromise;
 };
 
-// ── SDK loader ─────────────────────────────────────────────────────────────────
-const loadSDK = () => new Promise((resolve, reject) => {
-  if (window.Spotify?.Player) { resolve(); return; }
-  // If script is already in DOM but SDK not ready yet, wait for callback
-  const timer = setTimeout(() => reject(new Error('SDK load timeout')), 8000);
-  const prev = window.onSpotifyWebPlaybackSDKReady;
-  window.onSpotifyWebPlaybackSDKReady = () => {
-    clearTimeout(timer);
-    prev?.();
-    resolve();
-  };
-  if (!document.querySelector('script[src*="spotify-player"]')) {
-    const s = document.createElement('script');
-    s.src = 'https://sdk.scdn.co/spotify-player.js';
-    s.onerror = () => { clearTimeout(timer); reject(new Error('SDK load failed')); };
-    document.head.appendChild(s);
-  }
-});
-
-// ── Wait until our device appears in Spotify's Connect device list ────────────
-const waitForDevice = async (maxWaitMs = 8000) => {
-  const start = Date.now();
-  while (Date.now() - start < maxWaitMs) {
-    try {
-      const abort = new AbortController();
-      const timer = setTimeout(() => abort.abort(), 3000);
-      const res = await fetch('https://api.spotify.com/v1/me/player/devices', {
-        headers: { Authorization: `Bearer ${token}` },
-        signal: abort.signal,
-      });
-      clearTimeout(timer);
-      if (res.ok) {
-        const data = await res.json();
-        if ((data.devices || []).some(d => d.id === deviceId)) return true;
-      }
-    } catch { /* keep polling */ }
-    await new Promise(r => setTimeout(r, 300));
-  }
-  return false;
+const handleRetry = () => {
+  sdk.retryConnect(props.mediaUrl, {
+    isPlaylist:    props.isPlaylist,
+    autoPlay:      true,
+    startPosition: props.startPosition,
+    startTrackUri: props.startTrackUri,
+  });
 };
 
-// ── Start playback context ─────────────────────────────────────────────────────
-// skipDeviceSetup=true: device is already active (handoff) — skip poll + transfer
-const startPlayback = async (shouldPlay = true, skipDeviceSetup = false) => {
-  if (!shouldPlay) return;
-
-  const uri = getSpotifyUri(props.mediaUrl);
-  if (!uri) return;
-
-  if (!skipDeviceSetup) {
-    const found = await waitForDevice();
-    if (!found) { state.value = 'needs-connect'; return; }
-  }
-
-  const isTrack  = uri.startsWith('spotify:track:');
-  const resumeMs = _resumePosition.value || 0;
-  const offset   = _resumeTrackUri.value ? { uri: _resumeTrackUri.value } : { position: 0 };
-  const body     = isTrack
-    ? { uris: [uri], position_ms: resumeMs }
-    : { context_uri: uri, offset, position_ms: resumeMs };
-
-  // Step 2: send the play command, retrying on 404/503 (device not ready yet)
-  for (let attempt = 0; attempt < 3; attempt++) {
-    try {
-      const res = await spotifyFetch('PUT', `/me/player/play?device_id=${deviceId}`, body);
-      if (res.ok || res.status === 204) break;
-      if ((res.status === 404 || res.status === 503) && attempt < 2) {
-        await new Promise(r => setTimeout(r, 600 * (attempt + 1)));
-        continue;
-      }
-      break;
-    } catch {
-      if (attempt < 2) await new Promise(r => setTimeout(r, 600 * (attempt + 1)));
-    }
-  }
-
-  shuffleOn.value = false;
-  await spotifyFetch('PUT', `/me/player/shuffle?state=false&device_id=${deviceId}`).catch(() => {});
-};
-
-// ── Fetch all playlist / album tracks ─────────────────────────────────────────
-const fetchPlaylistTracks = async () => {
-  const playlistMatch = props.mediaUrl.match(/open\.spotify\.com\/playlist\/([a-zA-Z0-9]+)/);
-  const albumMatch    = props.mediaUrl.match(/open\.spotify\.com\/album\/([a-zA-Z0-9]+)/);
-  if (!playlistMatch && !albumMatch) return;
-
-  const isAlbum = !!albumMatch;
-  const id      = (playlistMatch ?? albumMatch)[1];
-  const cacheKey = `${isAlbum ? 'album' : 'playlist'}:${id}`;
-
-  // Apply fetched tracks to this component instance's state
-  const applyTracks = (tracks) => {
-    if (!tracks?.length) return false;
-    playlistTracks.value = tracks;
-    fullTracksFetched = true;
-    saveCachedTracks(props.mediaUrl, tracks);
-    localStorage.setItem('sp_playlist_ok', '1');
-    // One successful fetch means Spotify is connected — suppress needsReconnect
-    // banners on all other SpotifyPlayer instances sharing the same _w object.
-    _w.reconnectAttempted = true;
-    if (!currentTrackUri.value) {
-      const t = (props.startTrackUri && tracks.find(t => t.uri === props.startTrackUri)) || tracks[0];
-      if (t) track.value = { name: t.name, artist: t.artist, album: '', art: t.art };
-    }
-    return true;
-  };
-
-  // If another instance is already fetching this same playlist, wait for it and reuse the result.
-  // This prevents N SpotifyPlayer instances on a feed from all calling Spotify/backend at once.
-  if (_w.fetchingPlaylists.has(cacheKey)) {
-    try {
-      const tracks = await _w.fetchingPlaylists.get(cacheKey);
-      applyTracks(tracks);
-    } catch { /* ignore — the first instance will have logged the error */ }
-    return;
-  }
-
-  const parsePlaylist = (data) =>
-    (data.items || [])
-      .filter(item => item?.track?.uri)
-      .map((item, index) => ({
-        name:     item.track.name || '',
-        uri:      item.track.uri,
-        artist:   item.track.artists?.map(a => a.name).join(', ') || '',
-        duration: item.track.duration_ms || 0,
-        art:      item.track.album?.images?.[0]?.url || '',
-        index,    // original playlist position — used for offset: { position } on click
-      }));
-
-  const parseAlbum = (data, art) =>
-    (data.items || [])
-      .filter(item => item?.uri)
-      .map((item, index) => ({
-        name:     item.name || '',
-        uri:      item.uri,
-        artist:   item.artists?.map(a => a.name).join(', ') || '',
-        duration: item.duration_ms || 0,
-        art,
-        index,
-      }));
-
-  // doFetch: performs the actual API calls and returns a tracks array (or null)
-  const doFetch = async () => {
-    // Albums: direct Spotify API (no backend endpoint for albums)
-    if (isAlbum) {
-      if (!token) return null;
-      try {
-        const headers = { Authorization: `Bearer ${token}` };
-        const arRes = await fetch(`https://api.spotify.com/v1/albums/${id}`, { headers }).catch(() => null);
-        const albumArt = arRes?.ok ? (await arRes.json()).images?.[0]?.url || '' : '';
-        // Paginate — albums can exceed 50 tracks
-        let allItems = [];
-        let nextUrl = `https://api.spotify.com/v1/albums/${id}/tracks?limit=50`;
-        while (nextUrl) {
-          const trRes = await fetch(nextUrl, { headers });
-          if (!trRes.ok) break;
-          const data = await trRes.json();
-          allItems = allItems.concat(data.items || []);
-          nextUrl = data.next || null;
-        }
-        if (allItems.length) {
-          const tracks = parseAlbum({ items: allItems }, albumArt);
-          if (tracks.length) return tracks;
-        }
-      } catch { /* ignore */ }
-      return null;
-    }
-
-    // Playlists: always use backend proxy — it has a 1-hour server-side cache,
-    // in-flight deduplication, and rate-limit protection. Never call api.spotify.com
-    // directly for playlists — that exhausts the app-wide rate limit fast.
-    if (Date.now() < _w.playlistBackoffUntil) return null; // still rate-limited
-    const jwt = localStorage.getItem('jwtToken');
-    if (jwt) {
-      const res = await fetch(`${API}/api/spotify/playlist/${id}/tracks`, {
-        headers: { Authorization: `Bearer ${jwt}` },
-      });
-      if (res.ok) return parsePlaylist(await res.json());
-      if (res.status === 429) _w.playlistBackoffUntil = Date.now() + 60 * 1000;
-      else console.error('[Spotify] Backend playlist fetch failed:', res.status);
-    }
-    return null;
-  };
-
-  // Register in-flight promise so concurrent instances share this fetch
-  const promise = doFetch();
-  _w.fetchingPlaylists.set(cacheKey, promise);
-  try {
-    const tracks = await promise;
-    _w.fetchingPlaylists.delete(cacheKey);
-    if (!applyTracks(tracks)) {
-      if (!_w.reconnectAttempted && !localStorage.getItem('sp_playlist_ok')) needsReconnect.value = true;
-    }
-  } catch (err) {
-    _w.fetchingPlaylists.delete(cacheKey);
-    console.error('[Spotify] fetchPlaylistTracks error:', err);
-    if (!_w.reconnectAttempted && !localStorage.getItem('sp_playlist_ok')) needsReconnect.value = true;
-  }
-};
-
-// ── Play a specific track from the queue list ─────────────────────────────────
-// Uses offset: { position } (index-based) when we know the track's position in
-// the playlist — this works for every track regardless of whether Spotify has
-// buffered it yet. offset: { uri } only works for the SDK's active track_window.
-const playTrackFromList = async (track) => {
-  const contextUri = getSpotifyUri(props.mediaUrl);
-  if (!contextUri) {
-    await spotifyFetch('PUT', `/me/player/play?device_id=${deviceId}`, { uris: [track.uri] }).catch(() => {});
-    return;
-  }
-  // Prefer the stored backend index; fall back to the current array position
-  const position = track.index ?? playlistTracks.value.findIndex(t => t.uri === track.uri);
-  const body = position >= 0
-    ? { context_uri: contextUri, offset: { position }, position_ms: 0 }
-    : { context_uri: contextUri, offset: { uri: track.uri }, position_ms: 0 };
-  const res = await spotifyFetch('PUT', `/me/player/play?device_id=${deviceId}`, body);
-  if (res && !res.ok) console.error('[Spotify] playTrackFromList failed:', res.status);
-};
-
-// ── Ticker ─────────────────────────────────────────────────────────────────────
-const startTicker = () => {
-  if (ticker) return;
-  ticker = setInterval(() => {
-    if (!paused.value && duration.value > 0)
-      position.value = Math.min(position.value + 500, duration.value);
-  }, 500);
-};
-const stopTicker = () => { clearInterval(ticker); ticker = null; };
-
-// ── Controls ───────────────────────────────────────────────────────────────────
-const togglePlay = async () => {
-  // If the SDK hasn't reported any state yet, nothing is loaded — start fresh
-  if (!firstStateReceived) {
-    await startPlayback(true);
-  } else {
-    player?.togglePlay();
-  }
-};
-
-const nextTrack = () => player?.nextTrack();
-
-// ⏮ always restarts current song on first press.
-// Double-tap within 700 ms while near the start → go to previous track.
-let _lastPrevAt = 0;
-const prevTrack = async () => {
-  const now = Date.now();
-  const doubleTap = now - _lastPrevAt < 700;
-  _lastPrevAt = now;
-  if (doubleTap && position.value < 2000) {
-    player?.previousTrack();
-  } else {
-    position.value = 0;
-    await spotifyFetch('PUT', `/me/player/seek?position_ms=0&device_id=${deviceId}`).catch(() => {});
-  }
-};
-
-const toggleShuffle = async () => {
-  shuffleOn.value = !shuffleOn.value;
-  localStorage.setItem('sp_shuffle', shuffleOn.value);
-  await spotifyFetch('PUT', `/me/player/shuffle?state=${shuffleOn.value}&device_id=${deviceId}`).catch(() => {});
-};
-
-const toggleMute = () => {
-  muted.value = !muted.value;
-  if (muted.value) { prevVol = volume.value; player?.setVolume(0); }
-  else             { player?.setVolume(prevVol / 100); }
-};
-
-const applyVolume = (val) => {
-  volume.value = Math.round(val);
-  muted.value  = false;
-  localStorage.setItem('sp_volume', volume.value);
-  player?.setVolume(volume.value / 100);
-};
-
-// ── Progress scrubbing ────────────────────────────────────────────────────────
+// ── Progress scrubbing ───────────────────────────────────────────────────────
 const startScrub = (e) => {
   e.preventDefault();
   const bar = progressBar.value;
@@ -654,8 +253,7 @@ const startScrub = (e) => {
   const doScrub = (x) => {
     const rect = bar.getBoundingClientRect();
     const pct  = Math.max(0, Math.min(1, (x - rect.left) / rect.width));
-    position.value = Math.floor(pct * duration.value);
-    player?.seek(position.value);
+    sdk.seek(Math.floor(pct * sdk.duration.value));
   };
   const onMove = (ev) => doScrub(ev.touches ? ev.touches[0].clientX : ev.clientX);
   const onUp   = (ev) => {
@@ -672,14 +270,14 @@ const startScrub = (e) => {
   window.addEventListener('touchend',  onUp);
 };
 
-// ── Volume scrubbing ──────────────────────────────────────────────────────────
+// ── Volume scrubbing ─────────────────────────────────────────────────────────
 const startVolScrub = (e) => {
   e.preventDefault();
   const vt = volTrack.value;
   if (!vt) return;
   const doVol = (x) => {
     const rect = vt.getBoundingClientRect();
-    applyVolume(Math.round(Math.max(0, Math.min(1, (x - rect.left) / rect.width)) * 100));
+    sdk.setVolume(Math.round(Math.max(0, Math.min(1, (x - rect.left) / rect.width)) * 100));
   };
   const onMove = (ev) => doVol(ev.touches ? ev.touches[0].clientX : ev.clientX);
   const onUp   = (ev) => {
@@ -696,579 +294,13 @@ const startVolScrub = (e) => {
   window.addEventListener('touchend',  onUp);
 };
 
-// ── Disconnect ─────────────────────────────────────────────────────────────────
-const disconnectSpotify = async () => {
-  try {
-    const jwt = localStorage.getItem('jwtToken');
-    await fetch(`${API}/api/spotify/disconnect`, {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${jwt}` },
-    });
-  } catch { /* ignore network errors */ }
-
-  // Clear all local Spotify state
-  _w.tokenCache = null;
-  sessionStorage.removeItem('sp_oauth_done');
-  localStorage.removeItem('sp_oauth_done');
-  localStorage.removeItem('sp_playlist_ok');
-  localStorage.removeItem('sp_shuffle');
-  localStorage.removeItem('sp_volume');
-
-  // Release step-down slot so other players don't try to step down a dead player
-  if (window._spStepDown === _myStepDown) window._spStepDown = null;
-  _myStepDown = null;
-  player?.disconnect();
-  player = null;
-  state.value = 'unavailable';
-};
-
-// ── Mount ──────────────────────────────────────────────────────────────────────
-onMounted(async () => {
-  // Web Playback SDK requires a secure context — HTTPS in prod, localhost is fine in dev
-  if (!window.isSecureContext) {
-    state.value = 'unavailable';
-    return;
-  }
-
-  // Seed resume position first — needed whether lazy or not
-  const savedPos = loadSavedPosition(props.mediaUrl);
-  _resumePosition.value = props.startPosition || savedPos?.positionMs || 0;
-  _resumeTrackUri.value = props.startTrackUri  || savedPos?.trackUri  || '';
-  if (_resumePosition.value > 0) position.value = _resumePosition.value;
-
-  const _shouldAutoPlay = props.autoPlay || (!props.startPosition && savedPos?.paused === false);
-
-  // Process OAuth return BEFORE the lazy early-return so ALL player instances
-  // (lazy and non-lazy) clear the oauthRedirecting flag and set reconnectAttempted.
-  // Without this, lazy players (all MediaEmbed players) never see the ?spotify=connected
-  // query param and keep showing "needs-connect" banners after OAuth completes.
-  if (route.query.spotify === 'connected') {
-    _w.tokenCache        = null;
-    _w.tokenFetchPromise = null;
-    _w.reconnectAttempted = true;
-    _w.oauthRedirecting   = false;
-    // Persist in both localStorage (survives browser restart, shared across tabs)
-    // and sessionStorage (legacy path, kept for safety).
-    localStorage.setItem('sp_oauth_done', '1');
-    sessionStorage.setItem('sp_oauth_done', '1');
-  }
-  if (localStorage.getItem('sp_oauth_done') || sessionStorage.getItem('sp_oauth_done')) _w.reconnectAttempted = true;
-
-  // Lazy players: show inactive preview card immediately without touching token or SDK.
-  // Token + SDK are deferred until the user explicitly clicks Play (connectAndPlay).
-  // This prevents N concurrent /api/spotify/token calls when a feed has many players.
-  // Exception: if a live player handoff is waiting (pop-back-in while paused), skip the
-  // inactive card and take the handoff so the device isn't left orphaned.
-  if (props.lazyConnect && !_shouldAutoPlay && !window._spHandoff) {
-    if (props.isPlaylist) {
-      const cached = loadCachedTracks(props.mediaUrl);
-      if (cached?.length) {
-        playlistTracks.value = cached;
-        fullTracksFetched = true;
-        const resumeUri = _resumeTrackUri.value;
-        const t = (resumeUri && cached.find(t => t.uri === resumeUri)) || cached[0];
-        if (t) {
-          track.value = { name: t.name, artist: t.artist, album: '', art: t.art };
-          if (!currentTrackUri.value) currentTrackUri.value = t.uri;
-          if (t.duration > 0) duration.value = t.duration;
-        }
-      }
-      // Background playlist fetch via backend — deduplicated + cached server-side.
-      // No direct Spotify API calls here; token only needed if album (not playlist).
-      fetchPlaylistTracks();
-    }
-    state.value = 'inactive';
-    return;
-  }
-
-  // Global fallback: if SDK never connects, fall back to iframe embed after 15s
-  connectTimeout = setTimeout(() => {
-    if (state.value !== 'ready') state.value = 'unavailable';
-  }, 15000);
-
-  try {
-    // Kick off token fetch and SDK load in parallel — they're independent
-    statusMsg.value = 'Connecting…';
-    const [tokenResult] = await Promise.all([fetchToken(), loadSDK()]);
-
-    if (tokenResult.needsConnect) {
-      clearTimeout(connectTimeout);
-      const alreadyDone = localStorage.getItem('sp_oauth_done') || sessionStorage.getItem('sp_oauth_done');
-      if (alreadyDone) { state.value = 'unavailable'; return; }
-      const jwt = localStorage.getItem('jwtToken');
-      if (jwt && !_w.oauthRedirecting) {
-        _w.oauthRedirecting = true;
-        window.location.href = spotifyConnectUrl.value;
-        return;
-      }
-      // Another instance is already redirecting — stay inactive so we don't show
-      // a second "Connect Spotify" button that triggers a duplicate OAuth redirect.
-      state.value = _w.oauthRedirecting ? 'inactive' : 'needs-connect';
-      return;
-    }
-    if (tokenResult.unavailable)  { clearTimeout(connectTimeout); state.value = 'unavailable'; return; }
-    token = tokenResult.token;
-
-    // Load tracks as early as possible — in parallel with SDK connecting.
-    if (props.isPlaylist) {
-      const cached = loadCachedTracks(props.mediaUrl);
-      if (cached?.length) {
-        playlistTracks.value = cached;
-        fullTracksFetched = true;
-        const resumeUri = _resumeTrackUri.value || props.startTrackUri;
-        const t = (resumeUri && cached.find(t => t.uri === resumeUri)) || cached[0];
-        if (t) {
-          track.value = { name: t.name, artist: t.artist, album: '', art: t.art };
-          if (!currentTrackUri.value) currentTrackUri.value = t.uri;
-          if (t.duration > 0) duration.value = t.duration;
-        }
-      }
-      fetchPlaylistTracks();
-    }
-
-    await doConnect(_shouldAutoPlay);
-  } catch {
-    state.value = 'unavailable';
-  }
+// ── Expose for parent components (backward compatible) ───────────────────────
+defineExpose({
+  position:        sdk.position,
+  currentTrackUri: sdk.currentTrackUri,
+  paused:          sdk.paused,
+  setHandOffMode:  () => {}, // no-op — singleton player stays alive
 });
-
-// ── Extracted SDK connection — called either from onMounted or connectAndPlay ─
-const doConnect = async (shouldAutoPlay = true) => {
-  // Reuse a live player from a step-down or pop-out — the device is already
-  // registered with Spotify so we just take ownership and start playing.
-  if (window._spHandoff) {
-    const handoff    = window._spHandoff;
-    player           = handoff.player;
-    deviceId         = handoff.deviceId;
-    if (handoff.token) token = handoff.token;
-    const handoffWasPaused = handoff.paused !== false; // true = was paused, false = was playing
-    // Carry over the full track list only when the handoff is for the SAME
-    // playlist — a different-URL handoff (e.g. mini player closed then user
-    // opens a different post) must NOT populate this instance's track list
-    // or overwrite the wrong playlist's localStorage cache.
-    const sameUrl = handoff.mediaUrl === props.mediaUrl;
-    if (handoff.tracks?.length && !playlistTracks.value.length && sameUrl) {
-      playlistTracks.value = handoff.tracks;
-      fullTracksFetched = true;
-      saveCachedTracks(props.mediaUrl, handoff.tracks);
-      // Seed the preview track info if not already set
-      if (!track.value.name) {
-        const resumeUri = _resumeTrackUri.value;
-        const t = (resumeUri && handoff.tracks.find(t => t.uri === resumeUri)) || handoff.tracks[0];
-        if (t) track.value = { name: t.name, artist: t.artist, album: '', art: t.art };
-      }
-    }
-    window._spHandoff = null;
-    clearTimeout(connectTimeout);
-    state.value = 'ready';
-
-    // Remove ALL old listeners before re-attaching — Spotify SDK's addListener
-    // appends, so without this the old closure (from the previous component
-    // instance) still fires alongside the new one, causing double state updates
-    // and stale account_error handlers that can trigger false OAuth redirects.
-    player.removeListener('player_state_changed');
-    player.removeListener('not_ready');
-    player.removeListener('ready');
-    player.removeListener('account_error');
-    player.removeListener('authentication_error');
-    player.removeListener('initialization_error');
-
-    // Refresh token — handoff may carry a stale token from before a redirect
-    const freshResult = await fetchToken();
-    if (freshResult.token) token = freshResult.token;
-
-    // Re-attach state listener — filter out stale events from the previous
-    // playlist that fire immediately when the listener is added to a reused player.
-    const _expectedCtx = getSpotifyUri(props.mediaUrl);
-    player.addListener('player_state_changed', async (s) => {
-      if (!s) return;
-      // Ignore events whose context doesn't match this component's playlist yet.
-      // Spotify fires the old context state immediately upon listener re-attach.
-      if (_expectedCtx && s.context?.uri && s.context.uri !== _expectedCtx) return;
-      firstStateReceived = true;
-      paused.value    = s.paused;
-      position.value  = s.position;
-      duration.value  = s.duration;
-      shuffleOn.value = s.shuffle;
-      const t = s.track_window?.current_track;
-      if (t) {
-        currentTrackUri.value = t.uri;
-        track.value = { name: t.name, artist: t.artists?.map(a => a.name).join(', ') || '', album: t.album?.name || '', art: t.album?.images?.[0]?.url || '' };
-      }
-      if (!s.paused) { startTicker(); if (!posSaver) posSaver = setInterval(saveCurrentPosition, 5000); }
-      else { stopTicker(); clearInterval(posSaver); posSaver = null; saveCurrentPosition(); }
-    });
-    // Re-add device status and error listeners with THIS component's closure
-    player.addListener('not_ready', () => {
-      if (state.value === 'ready') state.value = 'connecting';
-    });
-    player.addListener('initialization_error', () => { state.value = 'unavailable'; });
-    player.addListener('authentication_error', () => {
-      if (state.value !== 'ready') state.value = 'unavailable';
-    });
-    player.addListener('account_error', () => {
-      if (state.value !== 'ready') {
-        const alreadyConnected = localStorage.getItem('sp_oauth_done') || sessionStorage.getItem('sp_oauth_done') || localStorage.getItem('sp_playlist_ok');
-        if (alreadyConnected) { state.value = 'unavailable'; return; }
-        state.value = 'needs-connect';
-      }
-    });
-    if (sameUrl) {
-      // Same playlist — device is already playing the right context.
-      // Don't re-issue a play command (causes stutter). Just resume if paused.
-      if (shouldAutoPlay && handoffWasPaused) {
-        player.resume().catch(() => {});
-      }
-    } else {
-      // Different playlist — tell Spotify to switch context on this device.
-      // The device is already registered so startPlayback can skip the
-      // device-poll step (skipDeviceSetup=true).
-      if (shouldAutoPlay) {
-        // Reset resume state — clear stale position/track from the previous
-        // playlist so we start fresh at track 0, position 0.
-        _resumePosition.value = 0;
-        _resumeTrackUri.value = '';
-        fullTracksFetched = false;
-        if (props.isPlaylist) fetchPlaylistTracks();
-        startPlayback(true, true).catch(() => {});
-      }
-    }
-    tokenRefresher = setInterval(async () => {
-      _w.tokenCache = null;
-      const result = await fetchToken();
-      if (result.token) token = result.token;
-    }, 45 * 60 * 1000);
-
-    // Register step-down so a later player can cleanly take over this device.
-    // Instead of disconnecting the SDK player (which forces the next player to
-    // create a new one from scratch — slow, and causes account_error races),
-    // we hand off the live player object via window._spHandoff. The next player
-    // picks it up instantly in its doConnect handoff path.
-    _myStepDown = () => {
-      stopTicker();
-      clearInterval(posSaver); posSaver = null;
-      clearInterval(tokenRefresher); tokenRefresher = null;
-      saveCurrentPosition();
-      if (currentTrackUri.value) _resumeTrackUri.value = currentTrackUri.value;
-      if (position.value > 0)    _resumePosition.value = position.value;
-      player?.removeListener('player_state_changed');
-      player?.removeListener('not_ready');
-      player?.removeListener('ready');
-      player?.removeListener('account_error');
-      player?.removeListener('authentication_error');
-      player?.removeListener('initialization_error');
-      // Hand off the live player instead of disconnecting — the next player
-      // reuses this device instantly, no new SDK connection needed.
-      window._spHandoff = { player, deviceId, token, paused: paused.value, tracks: playlistTracks.value, mediaUrl: props.mediaUrl };
-      player = null;
-      deviceId = null;
-      firstStateReceived = false;
-      state.value = 'inactive';
-    };
-    window._spStepDown = _myStepDown;
-    return;
-  }
-
-  // Step down any other in-page Spotify player before we connect.
-  // This prevents two SDK players fighting over the same Spotify device.
-  // The stepped-down player resets to its inactive preview card and puts
-  // its live SDK player into window._spHandoff for instant reuse.
-  if (window._spStepDown) {
-    window._spStepDown();
-    window._spStepDown = null;
-  }
-
-  // After step-down, a handoff may now be available — reuse the live player
-  // instead of creating a new one from scratch (which causes account_error).
-  if (window._spHandoff) {
-    // Recursively enter the handoff path at the top of doConnect
-    return doConnect(shouldAutoPlay);
-  }
-
-  state.value = 'connecting';
-
-  // Start a fresh timeout for this connection attempt
-  clearTimeout(connectTimeout);
-  connectTimeout = setTimeout(() => {
-    if (state.value !== 'ready') state.value = 'unavailable';
-  }, 15000);
-
-  player = new window.Spotify.Player({
-    name: 'Site Player',
-    // Always use fetchToken so the SDK never gets a stale/expired token
-    getOAuthToken: async (cb) => {
-      const result = await fetchToken();
-      if (result.token) { token = result.token; cb(result.token); }
-    },
-    volume: volume.value / 100,
-  });
-
-  player.addListener('ready', async ({ device_id }) => {
-    deviceId = device_id;
-    clearTimeout(connectTimeout);
-    state.value = 'ready';
-
-    // Clean OAuth query params if returning from Spotify reconnect
-    if (route.query.spotify === 'connected') {
-      router.replace({ query: { ...route.query, spotify: undefined, premium: undefined } });
-    }
-    startPlayback(shouldAutoPlay).catch(() => {});
-
-    // Register step-down so a later player can cleanly take over this device.
-    // Hand off the live player instead of disconnecting — avoids the
-    // account_error race that occurs when two SDK players connect/disconnect
-    // in quick succession.
-    _myStepDown = () => {
-      stopTicker();
-      clearInterval(posSaver); posSaver = null;
-      clearInterval(tokenRefresher); tokenRefresher = null;
-      saveCurrentPosition();
-      if (currentTrackUri.value) _resumeTrackUri.value = currentTrackUri.value;
-      if (position.value > 0)    _resumePosition.value = position.value;
-      player?.removeListener('player_state_changed');
-      player?.removeListener('not_ready');
-      player?.removeListener('ready');
-      player?.removeListener('account_error');
-      player?.removeListener('authentication_error');
-      player?.removeListener('initialization_error');
-      window._spHandoff = { player, deviceId, token, paused: paused.value, tracks: playlistTracks.value, mediaUrl: props.mediaUrl };
-      player = null;
-      deviceId = null;
-      firstStateReceived = false;
-      state.value = 'inactive';
-    };
-    window._spStepDown = _myStepDown;
-  });
-
-  player.addListener('not_ready', () => {
-    if (state.value === 'ready') state.value = 'connecting';
-  });
-
-  player.addListener('player_state_changed', async (s) => {
-    if (!s) return;
-
-    firstStateReceived = true;
-
-    paused.value    = s.paused;
-    position.value  = s.position;
-    duration.value  = s.duration;
-    shuffleOn.value = s.shuffle;
-
-    const t = s.track_window?.current_track;
-    if (t) {
-      currentTrackUri.value = t.uri;
-      track.value = {
-        name:   t.name,
-        artist: t.artists?.map(a => a.name).join(', ') || '',
-        album:  t.album?.name || '',
-        art:    t.album?.images?.[0]?.url || '',
-      };
-    }
-
-    // SDK track_window fallback — merges newly visible tracks into the list
-    // so the queue grows as the user listens instead of staying at 3.
-    // Guard: only merge if the player context matches THIS playlist — Spotify fires
-    // transitional state events with the previous playlist's tracks during a switch.
-    const expectedUri = getSpotifyUri(props.mediaUrl);
-    // Require explicit context match when we know the expected URI — null-context
-    // events must NOT be allowed to merge tracks from a different playlist.
-    const contextMatch = expectedUri ? (s.context?.uri === expectedUri) : true;
-    if (props.isPlaylist && s.track_window && !fullTracksFetched && expectedUri && contextMatch) {
-      const windowTracks = [
-        ...(s.track_window.previous_tracks || []),
-        ...(t ? [t] : []),
-        ...(s.track_window.next_tracks || []),
-      ].filter(Boolean).map(tr => ({
-        name:     tr.name     || '',
-        uri:      tr.uri,
-        artist:   tr.artists?.map(a => a.name).join(', ') || '',
-        duration: tr.duration_ms || 0,
-        art:      tr.album?.images?.[0]?.url || '',
-      }));
-
-      if (windowTracks.length) {
-        // Merge: keep existing tracks, insert new ones relative to current track
-        const existing    = playlistTracks.value;
-        const existingMap = new Map(existing.map(tr => [tr.uri, tr]));
-        // Preserve the `index` field from API-sourced tracks — SDK tracks don't
-        // carry index, so a blind overwrite would break position-based playback.
-        windowTracks.forEach(tr => {
-          const prev = existingMap.get(tr.uri);
-          existingMap.set(tr.uri, (prev?.index != null && tr.index == null) ? { ...tr, index: prev.index } : tr);
-        });
-
-        // Rebuild ordered list: existing order first, then any new entries
-        const merged = Array.from(existingMap.values());
-        // Move current track to correct relative position if list is small
-        if (existing.length < 5 || !existing.length) {
-          playlistTracks.value = merged;
-        } else {
-          // Insert only new tracks near the current position to preserve order
-          const curIdx = existing.findIndex(tr => tr.uri === (t?.uri));
-          const newEntries = windowTracks.filter(tr => !existing.some(e => e.uri === tr.uri));
-          if (newEntries.length) {
-            const insertAt = curIdx >= 0 ? curIdx : existing.length;
-            const updated  = [...existing];
-            updated.splice(insertAt, 0, ...newEntries);
-            playlistTracks.value = updated;
-          }
-        }
-        // Do NOT save the SDK-merge result to localStorage — it reflects
-        // the listener's played/buffered queue, not the real playlist order.
-        // Cache writes are reserved for verified API data (applyTracks / handoff).
-      }
-    }
-
-    if (!s.paused) {
-      startTicker();
-      // Save position every 5s while playing so page refresh can resume
-      if (!posSaver) posSaver = setInterval(saveCurrentPosition, 5000);
-    } else {
-      stopTicker();
-      clearInterval(posSaver); posSaver = null;
-      saveCurrentPosition(); // save immediately on pause too
-    }
-  });
-
-  player.addListener('initialization_error', () => { clearTimeout(connectTimeout); state.value = 'unavailable'; });
-  // Only fall back on auth errors during init — once ready, let getOAuthToken handle token refreshes
-  // so a mid-session token re-check doesn't kick the player back to the iframe
-  player.addListener('authentication_error', () => {
-    if (state.value !== 'ready') { clearTimeout(connectTimeout); state.value = 'unavailable'; }
-  });
-  // account_error fires when premium is absent OR token is stale — only act
-  // on it once so it doesn't keep resetting a player that was already ready.
-  player.addListener('account_error', () => {
-    if (state.value !== 'ready') {
-      clearTimeout(connectTimeout);
-      // If OAuth was already completed this session (or in a prior session), don't
-      // redirect again — the error may be transient (Spotify Premium check race).
-      // Let the user retry via the "Try Again" button instead.
-      const alreadyConnected = localStorage.getItem('sp_oauth_done') || sessionStorage.getItem('sp_oauth_done') || localStorage.getItem('sp_playlist_ok');
-      if (alreadyConnected) { state.value = 'unavailable'; return; }
-      const jwt = localStorage.getItem('jwtToken');
-      if (jwt && !_w.oauthRedirecting) { _w.oauthRedirecting = true; window.location.href = spotifyConnectUrl.value; return; }
-      state.value = 'needs-connect';
-    }
-  });
-
-  await player.connect();
-
-  // Refresh the token every 45 min so it never expires mid-session
-  tokenRefresher = setInterval(async () => {
-    _w.tokenCache = null; // force a real backend fetch
-    const result = await fetchToken();
-    if (result.token) token = result.token;
-  }, 45 * 60 * 1000);
-};
-
-// ── Lazy connect — called when user clicks Play on the inactive preview card ──
-const connectAndPlay = async () => {
-  if (state.value !== 'inactive') return;
-  emit('will-connect');
-  // Lazy players skip loadSDK() at mount — load it now before connecting.
-  // Also fetch token here so doConnect has everything it needs.
-  connectTimeout = setTimeout(() => {
-    if (state.value !== 'ready') state.value = 'unavailable';
-  }, 15000);
-  try {
-    const [tokenResult] = await Promise.all([fetchToken(), loadSDK()]);
-    if (tokenResult.needsConnect) {
-      clearTimeout(connectTimeout);
-      const alreadyDone = localStorage.getItem('sp_oauth_done') || sessionStorage.getItem('sp_oauth_done');
-      if (alreadyDone) { state.value = 'unavailable'; return; }
-      const jwt = localStorage.getItem('jwtToken');
-      if (jwt && !_w.oauthRedirecting) { _w.oauthRedirecting = true; window.location.href = spotifyConnectUrl.value; return; }
-      state.value = _w.oauthRedirecting ? 'inactive' : 'needs-connect'; return;
-    }
-    if (tokenResult.unavailable) { clearTimeout(connectTimeout); state.value = 'unavailable'; return; }
-    token = tokenResult.token;
-    // Retry the playlist fetch if the background fetch at mount failed (403/rate-limited)
-    if (props.isPlaylist && !fullTracksFetched) fetchPlaylistTracks();
-    await doConnect(true); // always autoplay on explicit user click
-  } catch {
-    clearTimeout(connectTimeout);
-    state.value = 'unavailable';
-  }
-};
-
-// ── Retry connection after an unavailable/error state ─────────────────────────
-const retryConnect = async () => {
-  if (!window.isSecureContext) return;
-  // Clear stale caches so a fresh attempt is made
-  _w.tokenCache = null;
-  _w.oauthRedirecting = false;
-
-  if (props.lazyConnect) {
-    // Lazy path: reset to inactive, then let connectAndPlay run the full flow
-    state.value = 'inactive';
-    await connectAndPlay();
-    return;
-  }
-
-  // Non-lazy path: re-run the full connect flow
-  statusMsg.value = 'Reconnecting…';
-  state.value = 'loading';
-  connectTimeout = setTimeout(() => {
-    if (state.value !== 'ready') state.value = 'unavailable';
-  }, 15000);
-  try {
-    const [tokenResult] = await Promise.all([fetchToken(), loadSDK()]);
-    if (tokenResult.needsConnect) {
-      clearTimeout(connectTimeout);
-      const alreadyDone = localStorage.getItem('sp_oauth_done') || sessionStorage.getItem('sp_oauth_done');
-      if (alreadyDone) { state.value = 'unavailable'; return; }
-      const jwt = localStorage.getItem('jwtToken');
-      if (jwt && !_w.oauthRedirecting) { _w.oauthRedirecting = true; window.location.href = spotifyConnectUrl.value; return; }
-      state.value = _w.oauthRedirecting ? 'inactive' : 'needs-connect'; return;
-    }
-    if (tokenResult.unavailable) { clearTimeout(connectTimeout); state.value = 'unavailable'; return; }
-    token = tokenResult.token;
-    // Re-fetch playlist tracks — the initial fetch may have failed before the retry
-    if (props.isPlaylist && !fullTracksFetched) fetchPlaylistTracks();
-    await doConnect(true);
-  } catch {
-    clearTimeout(connectTimeout);
-    state.value = 'unavailable';
-  }
-};
-
-onUnmounted(() => {
-  // Release global step-down slot only if we own it (another player may have taken it)
-  if (window._spStepDown === _myStepDown) window._spStepDown = null;
-  _myStepDown = null;
-
-  clearTimeout(connectTimeout);
-  clearInterval(tokenRefresher);
-  clearInterval(posSaver);
-  saveCurrentPosition(); // persist position on unmount
-  stopTicker();
-  if (_skipDisconnect && player) {
-    // Clear ALL event listeners from this component's closures before handing off.
-    // Without this, the old component's handlers keep firing on the shared player
-    // object — stale account_error can trigger false OAuth redirects, and
-    // player_state_changed can corrupt the next playlist's track cache.
-    player.removeListener('player_state_changed');
-    player.removeListener('not_ready');
-    player.removeListener('ready');
-    player.removeListener('account_error');
-    player.removeListener('authentication_error');
-    player.removeListener('initialization_error');
-    // Hand off the live player to the next SpotifyPlayer mount (e.g. MiniPlayer after pop-out)
-    // so it can reuse the already-registered Spotify device without re-authenticating.
-    window._spHandoff = { player, deviceId, token, paused: paused.value, tracks: playlistTracks.value, mediaUrl: props.mediaUrl };
-    _skipDisconnect = false;
-  } else {
-    player?.disconnect();
-  }
-  player = null;
-});
-
-// Expose state so MiniPlayer can persist position, track, and paused state.
-// setHandOffMode() tells this instance to NOT disconnect on unmount, handing
-// the live Spotify player object to the next SpotifyPlayer that mounts.
-const setHandOffMode = () => { _skipDisconnect = true; };
-defineExpose({ position, currentTrackUri, paused, setHandOffMode });
 </script>
 
 <style scoped>
@@ -1288,7 +320,6 @@ defineExpose({ position, currentTrackUri, paused, setHandOffMode });
   min-width: 0;
   overflow: hidden;
 }
-
 
 /* ── Unavailable card ── */
 .sp-unavail { align-items: center; justify-content: center; text-align: center; gap: 10px; padding: 28px 24px; }

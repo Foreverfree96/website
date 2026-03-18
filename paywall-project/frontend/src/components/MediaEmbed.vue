@@ -81,7 +81,7 @@ const props = defineProps({
   embedType: { type: String, default: '' },
 });
 
-const { nowPlaying, popOut, close: closeMiniPlayer, lastPosition, popIn, requestCloseWithHandoff } = useNowPlaying();
+const { nowPlaying, popOut, close: closeMiniPlayer, lastPosition, popIn } = useNowPlaying();
 
 const active            = ref(false);
 const embedKey          = ref(0);
@@ -233,11 +233,11 @@ const activate = () => { active.value = true; };
 
 // ── Spotify conflict guard ─────────────────────────────────────────────────────
 // Fired by SpotifyPlayer just before it connects the SDK.
-// If MiniPlayer is running a different Spotify URL, close it first so only
-// one SDK player is ever active at a time.
+// If MiniPlayer is running a different Spotify URL, close it so the UI updates.
+// The singleton SDK player stays alive — no handoff needed.
 const onSpotifyWillConnect = () => {
   if (nowPlaying.value?.type === 'spotify' && nowPlaying.value?.url !== props.mediaUrl) {
-    requestCloseWithHandoff();
+    closeMiniPlayer();
   }
 };
 
@@ -252,9 +252,7 @@ const popOutEmbed = () => {
   } else if (props.embedType === 'spotify' && spotifyPlayerRef.value) {
     posMs    = spotifyPlayerRef.value.position?.value       || 0;
     trackUri = spotifyPlayerRef.value.currentTrackUri?.value || '';
-    // Signal SpotifyPlayer not to disconnect on unmount — MiniPlayer's SpotifyPlayer
-    // will reuse the live device so there's no re-authentication gap.
-    spotifyPlayerRef.value.setHandOffMode?.();
+    // No setHandOffMode needed — singleton player stays alive
   }
   const wasPlaying = props.embedType === 'spotify'
     ? !(spotifyPlayerRef.value?.paused?.value ?? true)

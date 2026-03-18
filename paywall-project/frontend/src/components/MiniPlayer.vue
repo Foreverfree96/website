@@ -111,9 +111,11 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, watchEffect } from 'vue';
 import { useNowPlaying } from '../composables/useNowPlaying.js';
+import { useSpotifySDK } from '../composables/useSpotifySDK.js';
 import SpotifyPlayer from './SpotifyPlayer.vue';
 
-const { nowPlaying, close, popInRequested, closeWithHandoff } = useNowPlaying();
+const { nowPlaying, close, popInRequested } = useNowPlaying();
+const spotifySDK = useSpotifySDK();
 
 // Auto-expand and resume if there was something playing before the page refreshed
 const expanded          = ref(!!nowPlaying.value);
@@ -296,17 +298,17 @@ onUnmounted(() => window.removeEventListener('message', onMessage));
 let positionSaver = null;
 watchEffect(() => {
   clearInterval(positionSaver);
-  if (nowPlaying.value?.type === 'spotify' && spotifyPlayerRef.value) {
+  if (nowPlaying.value?.type === 'spotify') {
     positionSaver = setInterval(() => {
-      const pos    = spotifyPlayerRef.value?.position?.value;
-      const uri    = spotifyPlayerRef.value?.currentTrackUri?.value;
-      const paused = spotifyPlayerRef.value?.paused?.value ?? true;
+      const pos    = spotifySDK.position.value;
+      const uri    = spotifySDK.currentTrackUri.value;
+      const isPaused = spotifySDK.paused.value;
       if (nowPlaying.value) {
         nowPlaying.value = {
           ...nowPlaying.value,
           ...(pos > 0 ? { position: pos } : {}),
-          resumeOnLoad: !paused, // only auto-resume if was playing
-          paused,
+          resumeOnLoad: !isPaused,
+          paused: isPaused,
           ...(uri ? { trackUri: uri } : {}),
         };
       }
@@ -343,18 +345,16 @@ const savePositionAndClose = () => {
     };
   }
   if (nowPlaying.value?.type === 'spotify') {
-    const pos    = spotifyPlayerRef.value?.position?.value;
-    const uri    = spotifyPlayerRef.value?.currentTrackUri?.value;
-    const paused = spotifyPlayerRef.value?.paused?.value ?? true;
+    const pos    = spotifySDK.position.value;
+    const uri    = spotifySDK.currentTrackUri.value;
+    const isPaused = spotifySDK.paused.value;
     nowPlaying.value = {
       ...nowPlaying.value,
       ...(pos > 0 ? { position: pos } : {}),
-      resumeOnLoad: !paused,
-      paused,
+      resumeOnLoad: !isPaused,
+      paused: isPaused,
       ...(uri ? { trackUri: uri } : {}),
     };
-    // Hand off the live Spotify player so the post embed reuses the device
-    spotifyPlayerRef.value?.setHandOffMode?.();
   }
   playerReady.value = false;
   expanded.value    = false;
@@ -363,30 +363,11 @@ const savePositionAndClose = () => {
 
 const handleClose = savePositionAndClose;
 
-// Guard: prevent both watchers from firing close() on the same tick
-let _closing = false;
-
 // "Pop back in" requested by the in-post embed button
 watch(popInRequested, (requested) => {
-  if (!requested || _closing) return;
+  if (!requested) return;
   popInRequested.value = false;
-  _closing = true;
   savePositionAndClose();
-  _closing = false;
-});
-
-// Post player wants the MiniPlayer to close via handoff (preserve SDK player)
-watch(closeWithHandoff, (requested) => {
-  if (!requested || _closing) return;
-  closeWithHandoff.value = false;
-  _closing = true;
-  if (nowPlaying.value?.type === 'spotify' && spotifyPlayerRef.value) {
-    spotifyPlayerRef.value.setHandOffMode?.();
-  }
-  playerReady.value = false;
-  expanded.value    = false;
-  close();
-  _closing = false;
 });
 
 
