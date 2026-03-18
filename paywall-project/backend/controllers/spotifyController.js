@@ -526,44 +526,54 @@ export const generatePlaylist = async (req, res) => {
     }
 
     // Build diverse search queries
+    // Spotify search supports: artist:Name, year:YYYY, but NOT genre: filter.
+    // Use genre words as plain text mixed with artist names for variety.
     const queries = [];
 
     // Artist-based queries
     seedArtists.forEach((artist) => {
-      queries.push(`artist:"${artist}"`);
-      genres.forEach((g) => queries.push(`artist:"${artist}" genre:"${g}"`));
+      queries.push(artist);
+      genres.forEach((g) => queries.push(`${artist} ${g}`));
     });
 
-    // Genre-only queries
-    genres.forEach((g) => queries.push(`genre:"${g}"`));
+    // Genre-only queries (plain text — Spotify matches against track/artist/album metadata)
+    genres.forEach((g) => {
+      queries.push(g);
+      queries.push(`${g} music`);
+      queries.push(`${g} hits`);
+    });
 
-    // If we still need more variety, add year-based queries
+    // Add cross-pollination queries for more variety
+    if (seedArtists.length >= 2) {
+      queries.push(`${seedArtists[0]} ${seedArtists[1]}`);
+    }
     if (queries.length < 4 && seedArtists.length) {
       const years = ['2023', '2024', '2025'];
       seedArtists.slice(0, 2).forEach((artist) => {
         const yr = years[Math.floor(Math.random() * years.length)];
-        queries.push(`artist:"${artist}" year:${yr}`);
+        queries.push(`${artist} ${yr}`);
       });
     }
 
-    // Shuffle queries for variety
-    queries.sort(() => Math.random() - 0.5);
+    // Deduplicate and shuffle for variety
+    const uniqueQueries = [...new Set(queries)];
+    uniqueQueries.sort(() => Math.random() - 0.5);
 
     // Search in batches until we have enough tracks
     const seenIds = new Set(uniqueIds); // exclude seed tracks from results
     const collected = [];
-    const perQuery = Math.ceil(limit / Math.max(queries.length, 1));
+    const perQuery = Math.ceil((limit + 10) / Math.max(uniqueQueries.length, 1));
 
-    for (const q of queries) {
+    for (const q of uniqueQueries) {
       if (collected.length >= limit) break;
       try {
-        // Randomize offset for variety (Spotify allows up to 1000)
-        const offset = Math.floor(Math.random() * 50);
+        const offset = Math.floor(Math.random() * 20);
         const r = await axios.get("https://api.spotify.com/v1/search", {
           params: { q, type: "track", limit: Math.min(perQuery + 5, 50), offset },
           headers: auth,
         });
-        for (const t of (r.data.tracks?.items || [])) {
+        const items = r.data.tracks?.items || [];
+        for (const t of items) {
           if (collected.length >= limit) break;
           if (seenIds.has(t.id)) continue;
           seenIds.add(t.id);
@@ -577,12 +587,15 @@ export const generatePlaylist = async (req, res) => {
             duration_ms: t.duration_ms,
           });
         }
-      } catch { /* skip failed query, continue */ }
+      } catch (e) {
+        console.error(`❌ Spotify search query "${q}" failed:`, e.response?.status || e.message);
+      }
     }
 
     // Shuffle final results so tracks from different queries are mixed
     collected.sort(() => Math.random() - 0.5);
 
+    console.log(`✅ Generate: ${uniqueQueries.length} queries → ${collected.length} tracks (requested ${limit})`);
     res.json({ tracks: collected });
   } catch (err) {
     console.error("❌ Spotify generate error:", err.response?.data || err.message);
