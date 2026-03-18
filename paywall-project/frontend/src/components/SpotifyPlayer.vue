@@ -754,6 +754,49 @@ onMounted(async () => {
     return;
   }
 
+  // Seed resume position first — needed whether lazy or not
+  const savedPos = loadSavedPosition(props.mediaUrl);
+  _resumePosition.value = props.startPosition || savedPos?.positionMs || 0;
+  _resumeTrackUri.value = props.startTrackUri  || savedPos?.trackUri  || '';
+  if (_resumePosition.value > 0) position.value = _resumePosition.value;
+
+  const _shouldAutoPlay = props.autoPlay || (!props.startPosition && savedPos?.paused === false);
+
+  // Lazy players: show inactive preview card immediately without touching token or SDK.
+  // Token + SDK are deferred until the user explicitly clicks Play (connectAndPlay).
+  // This prevents N concurrent /api/spotify/token calls when a feed has many players.
+  if (props.lazyConnect && !_shouldAutoPlay) {
+    if (props.isPlaylist) {
+      const cached = loadCachedTracks(props.mediaUrl);
+      if (cached?.length) {
+        playlistTracks.value = cached;
+        fullTracksFetched = true;
+        const resumeUri = _resumeTrackUri.value;
+        const t = (resumeUri && cached.find(t => t.uri === resumeUri)) || cached[0];
+        if (t) {
+          track.value = { name: t.name, artist: t.artist, album: '', art: t.art };
+          if (!currentTrackUri.value) currentTrackUri.value = t.uri;
+          if (t.duration > 0) duration.value = t.duration;
+        }
+      }
+      // Background playlist/metadata fetch — uses cached token if available, skips if not yet authed
+      fetchToken().then(tr => {
+        if (!tr?.token) return;
+        token = tr.token;
+        fetchPlaylistTracks();
+        fetchMetadata();
+      }).catch(() => {});
+    } else {
+      fetchToken().then(tr => {
+        if (!tr?.token) return;
+        token = tr.token;
+        fetchMetadata();
+      }).catch(() => {});
+    }
+    state.value = 'inactive';
+    return;
+  }
+
   // Global fallback: if SDK never connects, fall back to iframe embed after 15s
   connectTimeout = setTimeout(() => {
     if (state.value !== 'ready') state.value = 'unavailable';
@@ -765,21 +808,10 @@ onMounted(async () => {
       _w.tokenCache = null;
       _w.tokenFetchPromise = null;
       _w.reconnectAttempted = true;
-      _w.oauthRedirecting   = false; // allow future reconnects if needed
-      sessionStorage.setItem('sp_oauth_done', '1'); // persist across remounts
+      _w.oauthRedirecting   = false;
+      sessionStorage.setItem('sp_oauth_done', '1');
     }
-    // Also honour the sessionStorage flag set by a previous mount this session
     if (sessionStorage.getItem('sp_oauth_done')) _w.reconnectAttempted = true;
-
-    // Seed resume position: props take priority (MiniPlayer pop-out), then localStorage (page refresh)
-    const savedPos = loadSavedPosition(props.mediaUrl);
-    _resumePosition.value = props.startPosition || savedPos?.positionMs || 0;
-    _resumeTrackUri.value = props.startTrackUri  || savedPos?.trackUri  || '';
-    // Pre-seed progress bar so it shows the correct position immediately (before SDK fires)
-    if (_resumePosition.value > 0) position.value = _resumePosition.value;
-
-    // Auto-play: explicit prop wins (mini-player pop-out), otherwise resume if was playing before refresh
-    const _shouldAutoPlay = props.autoPlay || (!props.startPosition && savedPos?.paused === false);
 
     // Kick off token fetch and SDK load in parallel — they're independent
     statusMsg.value = 'Connecting…';
@@ -787,9 +819,6 @@ onMounted(async () => {
 
     if (tokenResult.needsConnect) {
       clearTimeout(connectTimeout);
-      // Auto-redirect to Spotify OAuth if user is logged in but Spotify isn't connected/authorized.
-      // _w.oauthRedirecting ensures only the first of N concurrent players triggers the redirect —
-      // after OAuth the shared token cache means all players authenticate from a single flow.
       const jwt = localStorage.getItem('jwtToken');
       if (jwt && !_w.oauthRedirecting) {
         _w.oauthRedirecting = true;
@@ -803,33 +832,20 @@ onMounted(async () => {
     token = tokenResult.token;
 
     // Load tracks as early as possible — in parallel with SDK connecting.
-    // Cache is applied immediately; API fetch runs in background.
     if (props.isPlaylist) {
       const cached = loadCachedTracks(props.mediaUrl);
       if (cached?.length) {
         playlistTracks.value = cached;
         fullTracksFetched = true;
-        // Always pre-populate track info so the UI isn't blank before SDK connects
         const resumeUri = _resumeTrackUri.value || props.startTrackUri;
         const t = (resumeUri && cached.find(t => t.uri === resumeUri)) || cached[0];
         if (t) {
           track.value = { name: t.name, artist: t.artist, album: '', art: t.art };
-          // Seed currentTrackUri immediately so position saver persists it before SDK fires
           if (!currentTrackUri.value) currentTrackUri.value = t.uri;
-          // Pre-seed duration so the progress bar shows correctly before SDK fires
           if (t.duration > 0) duration.value = t.duration;
         }
       }
-      fetchPlaylistTracks(); // background — doesn't block SDK init
-    }
-
-    // If lazyConnect and not auto-playing: show preview card, defer SDK until user clicks Play.
-    // Skip lazy mode when autoPlay=true (pop-in resume) so it connects and plays immediately.
-    if (props.lazyConnect && !_shouldAutoPlay) {
-      clearTimeout(connectTimeout); // no connection in progress — don't timeout
-      fetchMetadata(); // populate name/creator/art for the inactive card (background)
-      state.value = 'inactive';
-      return;
+      fetchPlaylistTracks();
     }
 
     await doConnect(_shouldAutoPlay);

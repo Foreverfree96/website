@@ -115,7 +115,7 @@ const moderateImage = async (imageUrl) => {
  */
 export const getPosts = async (req, res) => {
   try {
-    const { category, page = 1, limit = 20, q, sort } = req.query;
+    const { category, page = 1, limit = 20, q, sort, author: authorUsername } = req.query;
 
     // Base filter: exclude flagged posts and explicitly private posts
     const filter = { moderationStatus: { $ne: "flagged" }, isPrivate: { $ne: true } };
@@ -124,10 +124,17 @@ export const getPosts = async (req, res) => {
     // Dynamically import User to avoid circular dependency issues
     const User = (await import("../models/userModel.js")).default;
 
-    // Exclude posts whose authors have set their account to private
-    const privateUsers = await User.find({ isPrivateAccount: true }).select("_id").lean();
-    if (privateUsers.length > 0) {
-      filter.author = { $nin: privateUsers.map(u => u._id) };
+    // Filter by specific author username (used by CreatorProfile)
+    if (authorUsername) {
+      const authorDoc = await User.findOne({ username: authorUsername }).select("_id").lean();
+      if (!authorDoc) return res.json({ posts: [], total: 0, page: 1, pages: 0 });
+      filter.author = authorDoc._id;
+    } else {
+      // Exclude posts whose authors have set their account to private
+      const privateUsers = await User.find({ isPrivateAccount: true }).select("_id").lean();
+      if (privateUsers.length > 0) {
+        filter.author = { $nin: privateUsers.map(u => u._id) };
+      }
     }
 
     // Full-text search: match title, body, category (regex), or author username

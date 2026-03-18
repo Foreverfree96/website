@@ -75,6 +75,13 @@
         </div>
       </div>
     </div>
+
+    <!-- Pagination -->
+    <div v-if="totalPages > 1" class="pagination">
+      <button class="auth-button pag-btn" :disabled="page === 1" @click="changePage(page - 1)">← Prev</button>
+      <span class="page-info">{{ page }} / {{ totalPages }}</span>
+      <button class="auth-button pag-btn" :disabled="page === totalPages" @click="changePage(page + 1)">Next →</button>
+    </div>
     </template>
   </div>
 
@@ -170,10 +177,10 @@ const router = useRouter();
 
 // ─── COMPOSABLES ─────────────────────────────────────────────────────────────
 
-// `posts`      — reactive array; populated with the creator's posts after fetch.
-// `loading`    — true while posts are being fetched.
-// `fetchPosts` — loads all posts then we filter to just this creator's.
-const { posts, loading, fetchPosts, toggleLike } = usePosts();
+const { posts, loading, fetchCreatorPosts, toggleLike } = usePosts();
+
+const page       = ref(1);
+const totalPages = ref(1);
 
 // `user` — the currently logged-in visitor (may be empty for guests).
 const { user } = useAuth();
@@ -244,6 +251,7 @@ const loadCreator = async (username) => {
   creator.value = null;
   pageLoading.value = true;
   showModal.value = false;
+  page.value = 1;
   try {
     const res = await axios.get(`${API_USERS}/creator/${username}`);
     creator.value = res.data;
@@ -253,13 +261,20 @@ const loadCreator = async (username) => {
       isFollowing.value = res.data.followers?.some(f => f._id === user.value.id);
     }
 
-    await fetchPosts('', 1);
-    posts.value = posts.value.filter(p => p.author.username === username);
+    const data = await fetchCreatorPosts(username, 1);
+    if (data) totalPages.value = data.pages ?? 1;
   } catch {
     creator.value = null;
   } finally {
     pageLoading.value = false;
   }
+};
+
+const changePage = async (p) => {
+  page.value = p;
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+  const data = await fetchCreatorPosts(route.params.username, p);
+  if (data) totalPages.value = data.pages ?? 1;
 };
 
 onMounted(() => loadCreator(route.params.username));

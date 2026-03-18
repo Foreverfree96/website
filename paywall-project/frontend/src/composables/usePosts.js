@@ -71,6 +71,20 @@ export function usePosts() {
     }
   };
 
+  const fetchCreatorPosts = async (username, page = 1) => {
+    loading.value = true;
+    error.value = "";
+    try {
+      const res = await axios.get(API_URL, { params: { author: username, page, limit: 20 } });
+      posts.value = res.data.posts;
+      return res.data;
+    } catch {
+      error.value = "Failed to load posts.";
+    } finally {
+      loading.value = false;
+    }
+  };
+
   /**
    * Fetches a single post by its MongoDB ObjectId.
    * Populates the `post` ref, which PostPage uses to render the full detail view.
@@ -186,5 +200,5 @@ export function usePosts() {
 
   // ── Public API ──────────────────────────────────────────────────────────────
 
-  return { posts, post, loading, error, fetchPosts, fetchMyPosts, fetchPost, createPost, updatePost, deletePost, toggleLike, addComment, deleteComment };
+  return { posts, post, loading, error, fetchPosts, fetchCreatorPosts, fetchMyPosts, fetchPost, createPost, updatePost, deletePost, toggleLike, addComment, deleteComment };
 }
