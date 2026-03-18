@@ -178,11 +178,12 @@ const router = useRouter();
 // <script setup> runs per-instance, so these use window to share across all
 // SpotifyPlayer instances on the same page — essential for deduplication.
 if (!window._sp) window._sp = {
-  tokenCache:        null,   // { token, expiresAt }
-  tokenFetchPromise: null,   // deduplicates concurrent fetchToken calls
-  oauthRedirecting:  false,  // prevents multiple players triggering OAuth redirect
-  reconnectAttempted:false,
-  fetchingPlaylists: new Map(), // playlistKey → Promise
+  tokenCache:           null,   // { token, expiresAt }
+  tokenFetchPromise:    null,   // deduplicates concurrent fetchToken calls
+  oauthRedirecting:     false,  // prevents multiple players triggering OAuth redirect
+  reconnectAttempted:   false,
+  fetchingPlaylists:    new Map(), // playlistKey → Promise
+  playlistBackoffUntil: 0,     // timestamp — skip backend calls while rate-limited
 };
 const _w = window._sp;
 
@@ -283,10 +284,6 @@ let firstStateReceived = false;
 let fullTracksFetched  = false; // true once the API returns the full 100-track list
 let _skipDisconnect    = false; // set via setHandOffMode() before a pop-out unmount
 let _myStepDown        = null;  // reference to this instance's step-down fn (for ownership check)
-
-// Module-level handoff slot — when a player is handed off (not disconnected),
-// the next mount picks it up and reuses the already-registered Spotify device.
-let _handoffState = null; // { player, deviceId, token }
 
 // Internal resume refs — seeded from saved position (page refresh) or props (mini-player pop-out)
 // Props take priority so MiniPlayer's saved state wins over the on-disk position.
@@ -527,13 +524,15 @@ const fetchPlaylistTracks = async () => {
     // Playlists: always use backend proxy — it has a 1-hour server-side cache,
     // in-flight deduplication, and rate-limit protection. Never call api.spotify.com
     // directly for playlists — that exhausts the app-wide rate limit fast.
+    if (Date.now() < _w.playlistBackoffUntil) return null; // still rate-limited
     const jwt = localStorage.getItem('jwtToken');
     if (jwt) {
       const res = await fetch(`${API}/api/spotify/playlist/${id}/tracks`, {
         headers: { Authorization: `Bearer ${jwt}` },
       });
       if (res.ok) return parsePlaylist(await res.json());
-      console.error('[Spotify] Backend playlist fetch failed:', res.status);
+      if (res.status === 429) _w.playlistBackoffUntil = Date.now() + 60 * 1000;
+      else console.error('[Spotify] Backend playlist fetch failed:', res.status);
     }
     return null;
   };
@@ -1045,7 +1044,26 @@ const doConnect = async (shouldAutoPlay = true) => {
 const connectAndPlay = async () => {
   if (state.value !== 'inactive') return;
   emit('will-connect');
-  await doConnect(true); // always autoplay on explicit user click
+  // Lazy players skip loadSDK() at mount — load it now before connecting.
+  // Also fetch token here so doConnect has everything it needs.
+  connectTimeout = setTimeout(() => {
+    if (state.value !== 'ready') state.value = 'unavailable';
+  }, 15000);
+  try {
+    const [tokenResult] = await Promise.all([fetchToken(), loadSDK()]);
+    if (tokenResult.needsConnect) {
+      clearTimeout(connectTimeout);
+      const jwt = localStorage.getItem('jwtToken');
+      if (jwt && !_w.oauthRedirecting) { _w.oauthRedirecting = true; window.location.href = spotifyConnectUrl.value; return; }
+      state.value = 'needs-connect'; return;
+    }
+    if (tokenResult.unavailable) { clearTimeout(connectTimeout); state.value = 'unavailable'; return; }
+    token = tokenResult.token;
+    await doConnect(true); // always autoplay on explicit user click
+  } catch {
+    clearTimeout(connectTimeout);
+    state.value = 'unavailable';
+  }
 };
 
 onUnmounted(() => {
