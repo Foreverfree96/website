@@ -174,20 +174,17 @@ const API    = import.meta.env.VITE_API_URL;
 const route  = useRoute();
 const router = useRouter();
 
-// ── Module-level token cache — persists across mounts/route changes ────────────
-// This prevents re-fetching the token every time the component mounts and
-// ensures getOAuthToken always hands Spotify a fresh token when it asks.
-let _tokenCache         = null; // { token, expiresAt }
-let _tokenFetchPromise  = null; // deduplicates concurrent fetchToken calls across instances
-let _reconnectAttempted = false; // true after user has gone through OAuth reconnect this session
-let _oauthRedirecting   = false; // true once any instance has triggered the OAuth redirect this session
-                                 // prevents multiple players on the same page each redirecting
-
-// ── Module-level playlist fetch deduplication ─────────────────────────────────
-// If multiple SpotifyPlayer instances on the same page (feed) call fetchPlaylistTracks
-// for the same URL simultaneously, only the first fires the backend request.
-// All others wait for its result and reuse it — preventing 429s from Spotify.
-const _fetchingPlaylists = new Map(); // playlistKey → Promise
+// ── True module-level shared state (window.*) ─────────────────────────────────
+// <script setup> runs per-instance, so these use window to share across all
+// SpotifyPlayer instances on the same page — essential for deduplication.
+if (!window._sp) window._sp = {
+  tokenCache:        null,   // { token, expiresAt }
+  tokenFetchPromise: null,   // deduplicates concurrent fetchToken calls
+  oauthRedirecting:  false,  // prevents multiple players triggering OAuth redirect
+  reconnectAttempted:false,
+  fetchingPlaylists: new Map(), // playlistKey → Promise
+};
+const _w = window._sp;
 
 // ── Persisted prefs (volume + shuffle survive page reloads) ───────────────────
 const _savedVol     = parseFloat(localStorage.getItem('sp_volume')  ?? '70');
@@ -345,15 +342,15 @@ const fetchToken = async () => {
   if (!jwt) return { needsConnect: true };
 
   // Return cached token if still valid (5 min safety buffer before real expiry)
-  if (_tokenCache && Date.now() < _tokenCache.expiresAt - 5 * 60 * 1000) {
-    return { token: _tokenCache.token };
+  if (_w.tokenCache && Date.now() < _w.tokenCache.expiresAt - 5 * 60 * 1000) {
+    return { token: _w.tokenCache.token };
   }
 
   // If another instance is already fetching, wait for that request instead of
   // firing a second one — prevents N parallel /api/spotify/token calls on page load
-  if (_tokenFetchPromise) return _tokenFetchPromise;
+  if (_w.tokenFetchPromise) return _w.tokenFetchPromise;
 
-  _tokenFetchPromise = (async () => {
+  _w.tokenFetchPromise = (async () => {
     try {
       const res = await fetch(`${API}/api/spotify/token`, {
         headers: { Authorization: `Bearer ${jwt}` },
@@ -362,14 +359,14 @@ const fetchToken = async () => {
       if (!res.ok) return { unavailable: true };
       const data = await res.json();
       const expiresAt = data.expiresAt ? new Date(data.expiresAt).getTime() : Date.now() + 55 * 60 * 1000;
-      _tokenCache = { token: data.accessToken, expiresAt };
+      _w.tokenCache = { token: data.accessToken, expiresAt };
       return { token: data.accessToken };
     } finally {
-      _tokenFetchPromise = null;
+      _w.tokenFetchPromise = null;
     }
   })();
 
-  return _tokenFetchPromise;
+  return _w.tokenFetchPromise;
 };
 
 // ── SDK loader ─────────────────────────────────────────────────────────────────
@@ -478,9 +475,9 @@ const fetchPlaylistTracks = async () => {
 
   // If another instance is already fetching this same playlist, wait for it and reuse the result.
   // This prevents N SpotifyPlayer instances on a feed from all calling Spotify/backend at once.
-  if (_fetchingPlaylists.has(cacheKey)) {
+  if (_w.fetchingPlaylists.has(cacheKey)) {
     try {
-      const tracks = await _fetchingPlaylists.get(cacheKey);
+      const tracks = await _w.fetchingPlaylists.get(cacheKey);
       applyTracks(tracks);
     } catch { /* ignore — the first instance will have logged the error */ }
     return;
@@ -564,17 +561,17 @@ const fetchPlaylistTracks = async () => {
 
   // Register in-flight promise so concurrent instances share this fetch
   const promise = doFetch();
-  _fetchingPlaylists.set(cacheKey, promise);
+  _w.fetchingPlaylists.set(cacheKey, promise);
   try {
     const tracks = await promise;
-    _fetchingPlaylists.delete(cacheKey);
+    _w.fetchingPlaylists.delete(cacheKey);
     if (!applyTracks(tracks)) {
-      if (!_reconnectAttempted && !localStorage.getItem('sp_playlist_ok')) needsReconnect.value = true;
+      if (!_w.reconnectAttempted && !localStorage.getItem('sp_playlist_ok')) needsReconnect.value = true;
     }
   } catch (err) {
-    _fetchingPlaylists.delete(cacheKey);
+    _w.fetchingPlaylists.delete(cacheKey);
     console.error('[Spotify] fetchPlaylistTracks error:', err);
-    if (!_reconnectAttempted && !localStorage.getItem('sp_playlist_ok')) needsReconnect.value = true;
+    if (!_w.reconnectAttempted && !localStorage.getItem('sp_playlist_ok')) needsReconnect.value = true;
   }
 };
 
@@ -738,7 +735,7 @@ const disconnectSpotify = async () => {
   } catch { /* ignore network errors */ }
 
   // Clear all local Spotify state
-  _tokenCache = null;
+  _w.tokenCache = null;
   sessionStorage.removeItem('sp_oauth_done');
   localStorage.removeItem('sp_playlist_ok');
   localStorage.removeItem('sp_shuffle');
@@ -765,14 +762,14 @@ onMounted(async () => {
   try {
     // If returning from Spotify OAuth, force a fresh token so the new scopes are picked up
     if (route.query.spotify === 'connected') {
-      _tokenCache = null;
-      _tokenFetchPromise = null;
-      _reconnectAttempted = true;
-      _oauthRedirecting   = false; // allow future reconnects if needed
+      _w.tokenCache = null;
+      _w.tokenFetchPromise = null;
+      _w.reconnectAttempted = true;
+      _w.oauthRedirecting   = false; // allow future reconnects if needed
       sessionStorage.setItem('sp_oauth_done', '1'); // persist across remounts
     }
     // Also honour the sessionStorage flag set by a previous mount this session
-    if (sessionStorage.getItem('sp_oauth_done')) _reconnectAttempted = true;
+    if (sessionStorage.getItem('sp_oauth_done')) _w.reconnectAttempted = true;
 
     // Seed resume position: props take priority (MiniPlayer pop-out), then localStorage (page refresh)
     const savedPos = loadSavedPosition(props.mediaUrl);
@@ -791,11 +788,11 @@ onMounted(async () => {
     if (tokenResult.needsConnect) {
       clearTimeout(connectTimeout);
       // Auto-redirect to Spotify OAuth if user is logged in but Spotify isn't connected/authorized.
-      // _oauthRedirecting ensures only the first of N concurrent players triggers the redirect —
+      // _w.oauthRedirecting ensures only the first of N concurrent players triggers the redirect —
       // after OAuth the shared token cache means all players authenticate from a single flow.
       const jwt = localStorage.getItem('jwtToken');
-      if (jwt && !_oauthRedirecting) {
-        _oauthRedirecting = true;
+      if (jwt && !_w.oauthRedirecting) {
+        _w.oauthRedirecting = true;
         window.location.href = spotifyConnectUrl.value;
         return;
       }
@@ -884,7 +881,7 @@ const doConnect = async (shouldAutoPlay = true) => {
       player.resume().catch(() => {});
     }
     tokenRefresher = setInterval(async () => {
-      _tokenCache = null;
+      _w.tokenCache = null;
       const result = await fetchToken();
       if (result.token) token = result.token;
     }, 45 * 60 * 1000);
@@ -1053,7 +1050,7 @@ const doConnect = async (shouldAutoPlay = true) => {
 
   // Refresh the token every 45 min so it never expires mid-session
   tokenRefresher = setInterval(async () => {
-    _tokenCache = null; // force a real backend fetch
+    _w.tokenCache = null; // force a real backend fetch
     const result = await fetchToken();
     if (result.token) token = result.token;
   }, 45 * 60 * 1000);
