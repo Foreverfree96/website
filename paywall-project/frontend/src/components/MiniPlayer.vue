@@ -21,7 +21,7 @@
             :mediaUrl="nowPlaying.url"
             :isPlaylist="nowPlaying.isPlaylist || false"
             :autoPlay="!!(nowPlaying.resumeOnLoad)"
-            :defaultListOpen="false"
+            :defaultListOpen="true"
             :startPosition="nowPlaying.position || 0"
             :startTrackUri="nowPlaying.trackUri || ''"
           />
@@ -499,7 +499,7 @@ const previewLabel = computed(() => {
 .mp-spotify-wrap { overflow: hidden; }
 .mp-spotify-wrap :deep(.sp-wrap)          { margin-top: 0; }
 .mp-spotify-wrap :deep(.sp-card)          { border: none; border-radius: 0; padding: 14px; gap: 12px; }
-.mp-spotify-wrap :deep(.sp-tracklist)     { max-height: 200px; }
+.mp-spotify-wrap :deep(.sp-tracklist)     { max-height: 300px; }
 .mp-spotify-wrap :deep(.sp-brand)         { display: none; }
 .mp-spotify-wrap :deep(.sp-vol-pct)       { display: none; }
 .mp-spotify-wrap :deep(.sp-art)           { width: 56px; height: 56px; }

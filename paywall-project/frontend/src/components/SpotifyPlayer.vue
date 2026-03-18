@@ -971,10 +971,18 @@ const doConnect = async (shouldAutoPlay = true) => {
 
   // Step down any other in-page Spotify player before we connect.
   // This prevents two SDK players fighting over the same Spotify device.
-  // The stepped-down player resets to its inactive preview card.
+  // The stepped-down player resets to its inactive preview card and puts
+  // its live SDK player into window._spHandoff for instant reuse.
   if (window._spStepDown) {
     window._spStepDown();
     window._spStepDown = null;
+  }
+
+  // After step-down, a handoff may now be available — reuse the live player
+  // instead of creating a new one from scratch (which causes account_error).
+  if (window._spHandoff) {
+    // Recursively enter the handoff path at the top of doConnect
+    return doConnect(shouldAutoPlay);
   }
 
   state.value = 'connecting';
