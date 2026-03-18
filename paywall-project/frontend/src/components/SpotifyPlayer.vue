@@ -465,6 +465,9 @@ const fetchPlaylistTracks = async () => {
     fullTracksFetched = true;
     saveCachedTracks(props.mediaUrl, tracks);
     localStorage.setItem('sp_playlist_ok', '1');
+    // One successful fetch means Spotify is connected — suppress needsReconnect
+    // banners on all other SpotifyPlayer instances sharing the same _w object.
+    _w.reconnectAttempted = true;
     if (!currentTrackUri.value) {
       const t = (props.startTrackUri && tracks.find(t => t.uri === props.startTrackUri)) || tracks[0];
       if (t) track.value = { name: t.name, artist: t.artist, album: '', art: t.art };
@@ -723,6 +726,19 @@ onMounted(async () => {
 
   const _shouldAutoPlay = props.autoPlay || (!props.startPosition && savedPos?.paused === false);
 
+  // Process OAuth return BEFORE the lazy early-return so ALL player instances
+  // (lazy and non-lazy) clear the oauthRedirecting flag and set reconnectAttempted.
+  // Without this, lazy players (all MediaEmbed players) never see the ?spotify=connected
+  // query param and keep showing "needs-connect" banners after OAuth completes.
+  if (route.query.spotify === 'connected') {
+    _w.tokenCache        = null;
+    _w.tokenFetchPromise = null;
+    _w.reconnectAttempted = true;
+    _w.oauthRedirecting   = false;
+    sessionStorage.setItem('sp_oauth_done', '1');
+  }
+  if (sessionStorage.getItem('sp_oauth_done')) _w.reconnectAttempted = true;
+
   // Lazy players: show inactive preview card immediately without touching token or SDK.
   // Token + SDK are deferred until the user explicitly clicks Play (connectAndPlay).
   // This prevents N concurrent /api/spotify/token calls when a feed has many players.
@@ -756,16 +772,6 @@ onMounted(async () => {
   }, 15000);
 
   try {
-    // If returning from Spotify OAuth, force a fresh token so the new scopes are picked up
-    if (route.query.spotify === 'connected') {
-      _w.tokenCache = null;
-      _w.tokenFetchPromise = null;
-      _w.reconnectAttempted = true;
-      _w.oauthRedirecting   = false;
-      sessionStorage.setItem('sp_oauth_done', '1');
-    }
-    if (sessionStorage.getItem('sp_oauth_done')) _w.reconnectAttempted = true;
-
     // Kick off token fetch and SDK load in parallel — they're independent
     statusMsg.value = 'Connecting…';
     const [tokenResult] = await Promise.all([fetchToken(), loadSDK()]);
@@ -778,7 +784,9 @@ onMounted(async () => {
         window.location.href = spotifyConnectUrl.value;
         return;
       }
-      state.value = 'needs-connect';
+      // Another instance is already redirecting — stay inactive so we don't show
+      // a second "Connect Spotify" button that triggers a duplicate OAuth redirect.
+      state.value = _w.oauthRedirecting ? 'inactive' : 'needs-connect';
       return;
     }
     if (tokenResult.unavailable)  { clearTimeout(connectTimeout); state.value = 'unavailable'; return; }
@@ -1056,7 +1064,7 @@ const connectAndPlay = async () => {
       clearTimeout(connectTimeout);
       const jwt = localStorage.getItem('jwtToken');
       if (jwt && !_w.oauthRedirecting) { _w.oauthRedirecting = true; window.location.href = spotifyConnectUrl.value; return; }
-      state.value = 'needs-connect'; return;
+      state.value = _w.oauthRedirecting ? 'inactive' : 'needs-connect'; return;
     }
     if (tokenResult.unavailable) { clearTimeout(connectTimeout); state.value = 'unavailable'; return; }
     token = tokenResult.token;
@@ -1095,7 +1103,7 @@ const retryConnect = async () => {
       clearTimeout(connectTimeout);
       const jwt = localStorage.getItem('jwtToken');
       if (jwt && !_w.oauthRedirecting) { _w.oauthRedirecting = true; window.location.href = spotifyConnectUrl.value; return; }
-      state.value = 'needs-connect'; return;
+      state.value = _w.oauthRedirecting ? 'inactive' : 'needs-connect'; return;
     }
     if (tokenResult.unavailable) { clearTimeout(connectTimeout); state.value = 'unavailable'; return; }
     token = tokenResult.token;
