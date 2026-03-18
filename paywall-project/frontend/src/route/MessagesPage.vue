@@ -132,31 +132,19 @@
               </button>
             </div>
 
-            <!-- Report mode: snapshot + live merged into one list -->
+            <!-- Report mode: single unified list (snapshot + live, deduplicated) -->
             <template v-if="reportMode">
 
-              <div v-for="m in snapshotMsgs" :key="'snap-' + (m._id || m.sentAt)" class="bubble-wrap" :class="[
-                m.sender?.toString() === user.id?.toString() ? 'mine' : 'theirs',
+              <div v-for="m in reportMessages" :key="'rpt-' + reportKey(m)" class="bubble-wrap" :class="[
+                (m.sender?._id || m.sender?.toString()) === user.id?.toString() ? 'mine' : 'theirs',
                 'reportable'
               ]" @click="toggleReportSelect(m)">
                 <div class="bubble-row">
-                  <div class="bubble" :class="{ selected: reportSelected.has(m._id?.toString() || m.sentAt?.toString()) }"
+                  <div class="bubble" :class="{ selected: reportSelected.has(reportKey(m)) }"
                     v-html="linkify(m.body)">
                   </div>
                 </div>
-                <span class="bubble-time">{{ formatTime(m.sentAt) }}</span>
-              </div>
-
-              <div v-for="m in messages" :key="m._id" class="bubble-wrap" :class="[
-                m.sender._id === user.id ? 'mine' : 'theirs',
-                'reportable'
-              ]" @click="toggleReportSelect(m)">
-                <div class="bubble-row">
-                  <div class="bubble" :class="{ selected: reportSelected.has(m._id?.toString()) }"
-                    v-html="linkify(m.body)">
-                  </div>
-                </div>
-                <span class="bubble-time">{{ formatTime(m.createdAt) }}</span>
+                <span class="bubble-time">{{ formatTime(m.createdAt || m.sentAt) }}</span>
               </div>
 
             </template>
@@ -189,7 +177,7 @@
         <!-- Report panel -->
         <div v-if="reportMode" class="report-panel">
 
-          <p v-if="reportMode && !messages.length && !snapshotMsgs.length" class="report-no-msgs-notice">
+          <p v-if="reportMode && !reportMessages.length" class="report-no-msgs-notice">
             No messages available to select — you can still submit a report with a written reason.
           </p>
 
@@ -205,7 +193,7 @@
             </span>
 
             <button class="report-select-all-btn" @click="selectAllMessages"
-              v-if="messages.length || snapshotMsgs.length">
+              v-if="reportMessages.length">
               {{ isAllSelected ? 'Deselect All' : 'Select All' }}
             </button>
 
@@ -567,8 +555,7 @@ const toggleReportSelect = (m) => {
 };
 
 const selectAllMessages = () => {
-  const allMsgs = [...snapshotMsgs.value, ...messages.value];
-  const allKeys = allMsgs.map(reportKey).filter(Boolean);
+  const allKeys = reportMessages.value.map(reportKey).filter(Boolean);
   const capped = allKeys.slice(0, 25);
   if (isAllSelected.value) {
     reportSelected.value = new Set();
@@ -578,9 +565,32 @@ const selectAllMessages = () => {
   reportError.value = '';
 };
 
+/**
+ * Merged + deduplicated message list for report mode.
+ * Snapshot messages (unsent/cleared copies from the server) are combined with
+ * live messages into one chronological list. Live messages take priority when
+ * duplicates exist (same _id) because they have richer sender objects.
+ */
+const reportMessages = computed(() => {
+  const seen = new Set();
+  const merged = [];
+  // Live messages first — they have populated sender objects
+  for (const m of messages.value) {
+    const key = reportKey(m);
+    if (key && !seen.has(key)) { seen.add(key); merged.push(m); }
+  }
+  // Add snapshot-only messages (unsent/cleared, not in live list)
+  for (const m of snapshotMsgs.value) {
+    const key = reportKey(m);
+    if (key && !seen.has(key)) { seen.add(key); merged.push(m); }
+  }
+  // Sort chronologically
+  merged.sort((a, b) => new Date(a.createdAt || a.sentAt) - new Date(b.createdAt || b.sentAt));
+  return merged;
+});
+
 const isAllSelected = computed(() => {
-  const allMsgs = [...snapshotMsgs.value, ...messages.value];
-  const allKeys = allMsgs.map(reportKey).filter(Boolean).slice(0, 25);
+  const allKeys = reportMessages.value.map(reportKey).filter(Boolean).slice(0, 25);
   return allKeys.length > 0 && allKeys.every(k => reportSelected.value.has(k));
 });
 
@@ -596,8 +606,7 @@ const submitReport = async () => {
   reportSubmitting.value = true;
   reportError.value = '';
   try {
-    // Merge live and snapshot messages so we can look up any selected key
-    const allMsgs = [...messages.value, ...snapshotMsgs.value];
+    const allMsgs = reportMessages.value;
     // Build serialised snapshots: normalise sender fields because live messages
     // have a populated sender object while snapshot messages store raw ids/usernames
     const snapshots = allMsgs
