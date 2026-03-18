@@ -375,6 +375,13 @@ const onReady = async ({ device_id }) => {
       isPlaylist:    pp.isPlaylist,
       waitForDev:    true,
     });
+  } else if (_pendingUris) {
+    const pu = _pendingUris;
+    _pendingUris = null;
+    const found = await waitForDevice();
+    if (found) {
+      await spotifyFetch('PUT', `/me/player/play?device_id=${deviceId}`, { uris: pu.uris }).catch(() => {});
+    }
   }
 
   // Start token refresher
@@ -660,6 +667,40 @@ const playTrackFromList = async (t) => {
   await spotifyFetch('PUT', `/me/player/play?device_id=${deviceId}`, body).catch(() => {});
 };
 
+// ── Play an array of track URIs (no playlist/album context) ──────────────────
+let _pendingUris = null;
+const playUris = async (uris, trackMeta = []) => {
+  if (!uris?.length) return;
+
+  if (trackMeta.length) {
+    playlistTracks.value = trackMeta.map((t, i) => ({
+      name: t.name || '', uri: t.uri || uris[i],
+      artist: t.artist || '', duration: t.duration_ms || 0,
+      art: t.art || '', index: i,
+    }));
+    fullTracksFetched = true;
+  }
+  _isPlaylist = true;
+  currentMediaUrl.value = `custom:uris:${Date.now()}`;
+  position.value = 0;
+
+  if (!player || sdkState.value !== 'ready') {
+    if (!player) {
+      const result = await fetchToken();
+      if (!result.token) { sdkState.value = 'unavailable'; return; }
+      token = result.token;
+      await loadSDK();
+      await createPlayer();
+    }
+    _pendingUris = { uris, trackMeta };
+    return;
+  }
+
+  const found = await waitForDevice();
+  if (!found) { sdkState.value = 'unavailable'; return; }
+  await spotifyFetch('PUT', `/me/player/play?device_id=${deviceId}`, { uris }).catch(() => {});
+};
+
 // ── Disconnect ───────────────────────────────────────────────────────────────
 const disconnect = async () => {
   try {
@@ -729,7 +770,7 @@ export function useSpotifySDK() {
     // Computed
     progressPct, displayVolume, spotifyConnectUrl,
     // Methods
-    play, togglePlay, next, prev, seek, setVolume, toggleMute, toggleShuffle,
+    play, playUris, togglePlay, next, prev, seek, setVolume, toggleMute, toggleShuffle,
     playTrackFromList, disconnect, retryConnect, preloadTracks,
     fmtMs, loadCachedTracks, loadSavedPosition, saveCurrentPosition,
   };

@@ -29,6 +29,7 @@ import adminRoutes from "./routes/adminRoutes.js";
 import messageRoutes from "./routes/messageRoutes.js";
 import trackRoutes from "./routes/trackRoutes.js";
 import spotifyRoutes from "./routes/spotifyRoutes.js";
+import youtubeRoutes from "./routes/youtubeRoutes.js";
 import { onlineUsers } from "./utils/onlineUsers.js";
 import cors from "cors";
 import helmet from "helmet";
@@ -200,6 +201,7 @@ app.use("/api/admin", authLimiter, adminRoutes);
 app.use("/api/messages", authLimiter, messageRoutes);
 app.use("/api/track",   authLimiter, trackRoutes);
 app.use("/api/spotify", authLimiter, spotifyRoutes);
+app.use("/api/youtube", authLimiter, youtubeRoutes);
 
 // Simple health-check endpoint to confirm the server is alive
 app.get("/", (req, res) => res.send("Backend is running!"));

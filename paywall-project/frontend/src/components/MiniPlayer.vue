@@ -8,6 +8,7 @@
         <div class="mp-header">
           <span class="mp-label">♫ Now Playing</span>
           <div class="mp-header-btns">
+            <button class="mp-hbtn" @click="openPlaylistTools" title="Playlist Tools">+</button>
             <button class="mp-hbtn" @click="expanded = false" title="Minimize">—</button>
             <button class="mp-hbtn mp-hbtn--close" @click="handleClose" title="Stop & close">✕</button>
           </div>
@@ -112,10 +113,13 @@
 import { ref, computed, watch, onMounted, onUnmounted, watchEffect } from 'vue';
 import { useNowPlaying } from '../composables/useNowPlaying.js';
 import { useSpotifySDK } from '../composables/useSpotifySDK.js';
+import { usePlaylistTools } from '../composables/usePlaylistTools.js';
 import SpotifyPlayer from './SpotifyPlayer.vue';
 
 const { nowPlaying, close, popInRequested } = useNowPlaying();
 const spotifySDK = useSpotifySDK();
+const playlistTools = usePlaylistTools();
+const openPlaylistTools = () => playlistTools.open();
 
 // Auto-expand and resume if there was something playing before the page refreshed
 const expanded          = ref(!!nowPlaying.value);

@@ -70,6 +70,7 @@
             Shares the same badge styling as Notifications but draws from
             a separate counter (dmUnreadCount) that tracks DM threads.
           -->
+          <a v-if="isLoggedIn" class="nav-link" href="#" @click.prevent="playlistTools.open()">Playlists</a>
           <router-link v-if="isLoggedIn" id="messages-btn" to="/messages" class="nav-link notif-link">
             Messages
             <span v-if="dmUnreadCount > 0" class="notif-badge">{{ dmUnreadCount > 99 ? '99+' : dmUnreadCount }}</span>
@@ -98,6 +99,9 @@
 
     <!-- Floating mini player — persists across route changes -->
     <MiniPlayer v-if="isLoggedIn" />
+
+    <!-- Playlist tools modal (generate + convert) -->
+    <PlaylistToolsModal v-if="isLoggedIn" />
   </div>
 </template>
 
@@ -129,6 +133,8 @@ import { useAuth } from "./composables/useAuth.js";
 import { useNotifications } from "./composables/useNotifications.js";
 import ChatWidget from "./components/ChatWidget.vue";
 import MiniPlayer from "./components/MiniPlayer.vue";
+import PlaylistToolsModal from "./components/PlaylistToolsModal.vue";
+import { usePlaylistTools } from "./composables/usePlaylistTools.js";
 
 const router = useRouter();
 
@@ -142,6 +148,7 @@ const router = useRouter();
  *            the reactive user state, and resolves when done.
  */
 const { user, logout } = useAuth();
+const playlistTools = usePlaylistTools();
 
 // ─── NOTIFICATIONS ───────────────────────────────────────────────────────────
 

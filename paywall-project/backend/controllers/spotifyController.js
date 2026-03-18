@@ -10,6 +10,8 @@ const SCOPES = [
   "streaming",
   "playlist-read-private",
   "playlist-read-collaborative",
+  "playlist-modify-public",
+  "playlist-modify-private",
 ].join(" ");
 
 // ─── CLIENT CREDENTIALS TOKEN (app-level, no user scopes needed) ──────────────
@@ -410,5 +412,271 @@ export const spotifyDisconnect = async (req, res) => {
     res.json({ message: "Spotify disconnected" });
   } catch {
     res.status(500).json({ message: "Server error" });
+  }
+};
+
+// ─── SPOTIFY SEARCH TRACKS ──────────────────────────────────────────────────
+// GET /api/spotify/search?q=...&limit=10
+export const searchTracks = async (req, res) => {
+  try {
+    const { q, limit = 10 } = req.query;
+    if (!q) return res.status(400).json({ message: "Missing query parameter q" });
+
+    let token;
+    const result = await getValidToken(req.user.id, false);
+    token = result.error ? await getClientCredToken() : result.accessToken;
+
+    const r = await axios.get("https://api.spotify.com/v1/search", {
+      params: { q, type: "track", limit: Math.min(Number(limit), 50) },
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    const tracks = (r.data.tracks?.items || []).map((t) => ({
+      id:          t.id,
+      uri:         t.uri,
+      name:        t.name,
+      artist:      t.artists?.map((a) => a.name).join(", ") || "",
+      album:       t.album?.name || "",
+      art:         t.album?.images?.[0]?.url || "",
+      duration_ms: t.duration_ms,
+    }));
+
+    res.json({ tracks });
+  } catch (err) {
+    console.error("❌ Spotify search error:", err.response?.data || err.message);
+    res.status(err.response?.status || 500).json({ message: "Search failed" });
+  }
+};
+
+// ─── SPOTIFY GENERATE PLAYLIST ──────────────────────────────────────────────
+// POST /api/spotify/generate
+// Body: { seedTrackIds: [], seedPlaylistId?, genres: [], limit: 30 }
+export const generatePlaylist = async (req, res) => {
+  try {
+    let { seedTrackIds = [], seedPlaylistId, genres = [], limit = 30 } = req.body;
+    limit = Math.max(1, Math.min(Number(limit) || 30, 100));
+
+    // If a reference playlist is provided, pull random seed tracks from it
+    if (seedPlaylistId) {
+      const cached = getCachedPlaylist(seedPlaylistId);
+      let items = cached?.items;
+      if (!items) {
+        let plToken;
+        const plResult = await getValidToken(req.user.id, false);
+        plToken = plResult.error ? await getClientCredToken() : plResult.accessToken;
+        try {
+          const r = await axios.get(
+            `https://api.spotify.com/v1/playlists/${seedPlaylistId}/tracks?limit=100`,
+            { headers: { Authorization: `Bearer ${plToken}` } }
+          );
+          items = (r.data.items || []).filter((i) => i?.track?.id);
+        } catch { items = []; }
+      }
+      if (items?.length) {
+        const shuffled = items.sort(() => Math.random() - 0.5);
+        const extraIds = shuffled.slice(0, 2).map((i) => i.track.id);
+        seedTrackIds = [...seedTrackIds, ...extraIds];
+      }
+    }
+
+    // Spotify allows max 5 total seeds (tracks + genres combined)
+    seedTrackIds = [...new Set(seedTrackIds)].slice(0, 5);
+    genres = genres.slice(0, 5 - seedTrackIds.length);
+
+    if (!seedTrackIds.length && !genres.length) {
+      return res.status(400).json({ message: "Provide at least one seed track or genre" });
+    }
+
+    let token;
+    const result = await getValidToken(req.user.id, false);
+    token = result.error ? await getClientCredToken() : result.accessToken;
+
+    const params = { limit };
+    if (seedTrackIds.length) params.seed_tracks = seedTrackIds.join(",");
+    if (genres.length) params.seed_genres = genres.join(",");
+
+    const r = await axios.get("https://api.spotify.com/v1/recommendations", {
+      params,
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    const tracks = (r.data.tracks || []).map((t) => ({
+      id:          t.id,
+      uri:         t.uri,
+      name:        t.name,
+      artist:      t.artists?.map((a) => a.name).join(", ") || "",
+      album:       t.album?.name || "",
+      art:         t.album?.images?.[0]?.url || "",
+      duration_ms: t.duration_ms,
+    }));
+
+    res.json({ tracks });
+  } catch (err) {
+    console.error("❌ Spotify generate error:", err.response?.data || err.message);
+    res.status(err.response?.status || 500).json({ message: "Generation failed" });
+  }
+};
+
+// ─── SPOTIFY CREATE PLAYLIST ────────────────────────────────────────────────
+// POST /api/spotify/playlist
+// Body: { name, description?, trackUris: ["spotify:track:xxx", ...] }
+export const createPlaylist = async (req, res) => {
+  try {
+    const { name, description = "", trackUris = [] } = req.body;
+    if (!name) return res.status(400).json({ message: "Playlist name is required" });
+    if (!trackUris.length) return res.status(400).json({ message: "No tracks provided" });
+
+    const result = await getValidToken(req.user.id, false);
+    if (result.error) return res.status(result.error).json({ message: result.message });
+
+    const auth = { Authorization: `Bearer ${result.accessToken}` };
+
+    // Get Spotify user ID
+    const user = await User.findById(req.user.id).select("spotifyId");
+    if (!user?.spotifyId) return res.status(400).json({ message: "Spotify not connected" });
+
+    // Create the playlist
+    let playlistId;
+    try {
+      const r = await axios.post(
+        `https://api.spotify.com/v1/users/${user.spotifyId}/playlists`,
+        { name, description, public: false },
+        { headers: { ...auth, "Content-Type": "application/json" } }
+      );
+      playlistId = r.data.id;
+    } catch (err) {
+      if (err.response?.status === 403) {
+        return res.status(403).json({
+          error: "scope_missing",
+          message: "Reconnect Spotify to enable playlist creation",
+        });
+      }
+      throw err;
+    }
+
+    // Add tracks in batches of 100
+    for (let i = 0; i < trackUris.length; i += 100) {
+      const batch = trackUris.slice(i, i + 100);
+      await axios.post(
+        `https://api.spotify.com/v1/playlists/${playlistId}/tracks`,
+        { uris: batch },
+        { headers: { ...auth, "Content-Type": "application/json" } }
+      );
+    }
+
+    res.json({
+      playlistId,
+      playlistUrl: `https://open.spotify.com/playlist/${playlistId}`,
+      name,
+    });
+  } catch (err) {
+    console.error("❌ Spotify create playlist error:", err.response?.data || err.message);
+    res.status(err.response?.status || 500).json({ message: "Failed to create playlist" });
+  }
+};
+
+// ─── SPOTIFY MATCH TRACKS ───────────────────────────────────────────────────
+// POST /api/spotify/match
+// Body: { tracks: [{ title, artist, duration_ms? }] }
+
+const cleanTitle = (title) =>
+  title
+    .replace(/\s*[\(\[](official\s*(video|audio|music\s*video|lyric\s*video)|lyrics?|audio|hd|hq|remaster(ed)?|live|visuali[sz]er|explicit|clean|mv|m\/v|4k|video\s*oficial)[\)\]]/gi, "")
+    .replace(/\s*[\(\[]feat\.?[^\)\]]*[\)\]]/gi, "")
+    .replace(/\s*-\s*topic$/i, "")
+    .replace(/\|.*$/, "")
+    .trim();
+
+const levenshtein = (a, b) => {
+  const m = a.length, n = b.length;
+  if (!m) return n;
+  if (!n) return m;
+  const dp = Array.from({ length: m + 1 }, (_, i) => {
+    const row = new Array(n + 1);
+    row[0] = i;
+    return row;
+  });
+  for (let j = 1; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] = a[i - 1] === b[j - 1]
+        ? dp[i - 1][j - 1]
+        : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+    }
+  }
+  return dp[m][n];
+};
+
+const similarity = (a, b) => {
+  if (!a || !b) return 0;
+  const al = a.toLowerCase().trim();
+  const bl = b.toLowerCase().trim();
+  if (al === bl) return 1;
+  const maxLen = Math.max(al.length, bl.length);
+  return maxLen ? 1 - levenshtein(al, bl) / maxLen : 0;
+};
+
+export const matchTracks = async (req, res) => {
+  try {
+    const { tracks = [] } = req.body;
+    if (!tracks.length) return res.status(400).json({ message: "No tracks provided" });
+
+    let token;
+    const result = await getValidToken(req.user.id, false);
+    token = result.error ? await getClientCredToken() : result.accessToken;
+
+    const auth = { Authorization: `Bearer ${token}` };
+    const matches = [];
+
+    for (const src of tracks) {
+      const cleaned = cleanTitle(src.title || "");
+      const query = `${cleaned} ${src.artist || ""}`.trim();
+
+      try {
+        const r = await axios.get("https://api.spotify.com/v1/search", {
+          params: { q: query, type: "track", limit: 5 },
+          headers: auth,
+        });
+
+        const candidates = (r.data.tracks?.items || []).map((t) => {
+          const titleSim  = similarity(cleaned, t.name);
+          const artistSim = similarity(src.artist || "", t.artists?.[0]?.name || "");
+          let durationBonus = 0;
+          if (src.duration_ms && t.duration_ms) {
+            const diff = Math.abs(src.duration_ms - t.duration_ms);
+            durationBonus = diff < 5000 ? 1 : diff < 15000 ? 0.5 : 0;
+          }
+          const score = titleSim * 0.5 + artistSim * 0.4 + durationBonus * 0.1;
+          return {
+            id:          t.id,
+            uri:         t.uri,
+            name:        t.name,
+            artist:      t.artists?.map((a) => a.name).join(", ") || "",
+            album:       t.album?.name || "",
+            art:         t.album?.images?.[0]?.url || "",
+            duration_ms: t.duration_ms,
+            score,
+          };
+        });
+
+        candidates.sort((a, b) => b.score - a.score);
+        const best = candidates[0] || null;
+        const confidence = !best ? "none" : best.score >= 0.85 ? "exact" : best.score >= 0.55 ? "close" : "none";
+
+        matches.push({
+          source: src,
+          bestMatch: best,
+          confidence,
+          alternatives: candidates.slice(1, 4),
+        });
+      } catch {
+        matches.push({ source: src, bestMatch: null, confidence: "none", alternatives: [] });
+      }
+    }
+
+    res.json({ matches });
+  } catch (err) {
+    console.error("❌ Spotify match error:", err.response?.data || err.message);
+    res.status(500).json({ message: "Matching failed" });
   }
 };
