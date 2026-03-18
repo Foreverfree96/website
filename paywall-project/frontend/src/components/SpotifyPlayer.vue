@@ -507,47 +507,26 @@ const fetchPlaylistTracks = async () => {
 
   // doFetch: performs the actual API calls and returns a tracks array (or null)
   const doFetch = async () => {
-    // 1️⃣ Direct Spotify API calls (uses the in-instance token)
-    if (token) {
+    // Albums: direct Spotify API (no backend endpoint for albums)
+    if (isAlbum) {
+      if (!token) return null;
       try {
-        if (isAlbum) {
-          const [arRes, trRes] = await Promise.all([
-            fetch(`https://api.spotify.com/v1/albums/${id}`, { headers: { Authorization: `Bearer ${token}` } }).catch(() => null),
-            fetch(`https://api.spotify.com/v1/albums/${id}/tracks?limit=50`, { headers: { Authorization: `Bearer ${token}` } }),
-          ]);
-          const albumArt = arRes?.ok ? (await arRes.json()).images?.[0]?.url || '' : '';
-          if (trRes.ok) {
-            const tracks = parseAlbum(await trRes.json(), albumArt);
-            if (tracks.length) return tracks;
-          }
-        } else {
-          const auth = { Authorization: `Bearer ${token}` };
-          let nextUrl = `https://api.spotify.com/v1/playlists/${id}/tracks?limit=100`;
-          let allItems = [];
-          let paginationOk = true;
-          while (nextUrl) {
-            const r = await fetch(nextUrl, { headers: auth });
-            if (!r.ok) { paginationOk = r.status !== 403; nextUrl = null; break; }
-            const page = await r.json();
-            allItems = allItems.concat(page.items || []);
-            nextUrl = page.next || null;
-          }
-          if (allItems.length) return parsePlaylist({ items: allItems });
-          if (!paginationOk) {
-            const pRes = await fetch(`https://api.spotify.com/v1/playlists/${id}`, { headers: auth });
-            if (pRes.ok) {
-              const pData = await pRes.json();
-              const tracks = parsePlaylist(pData.tracks || {});
-              if (tracks.length) return tracks;
-            }
-          }
+        const [arRes, trRes] = await Promise.all([
+          fetch(`https://api.spotify.com/v1/albums/${id}`, { headers: { Authorization: `Bearer ${token}` } }).catch(() => null),
+          fetch(`https://api.spotify.com/v1/albums/${id}/tracks?limit=50`, { headers: { Authorization: `Bearer ${token}` } }),
+        ]);
+        const albumArt = arRes?.ok ? (await arRes.json()).images?.[0]?.url || '' : '';
+        if (trRes.ok) {
+          const tracks = parseAlbum(await trRes.json(), albumArt);
+          if (tracks.length) return tracks;
         }
-      } catch { /* fall through */ }
+      } catch { /* ignore */ }
+      return null;
     }
 
-    if (isAlbum) return null; // albums need no backend proxy
-
-    // 2️⃣ Backend proxy fallback for playlists
+    // Playlists: always use backend proxy — it has a 1-hour server-side cache,
+    // in-flight deduplication, and rate-limit protection. Never call api.spotify.com
+    // directly for playlists — that exhausts the app-wide rate limit fast.
     const jwt = localStorage.getItem('jwtToken');
     if (jwt) {
       const res = await fetch(`${API}/api/spotify/playlist/${id}/tracks`, {
@@ -779,19 +758,9 @@ onMounted(async () => {
           if (t.duration > 0) duration.value = t.duration;
         }
       }
-      // Background playlist/metadata fetch — uses cached token if available, skips if not yet authed
-      fetchToken().then(tr => {
-        if (!tr?.token) return;
-        token = tr.token;
-        fetchPlaylistTracks();
-        fetchMetadata();
-      }).catch(() => {});
-    } else {
-      fetchToken().then(tr => {
-        if (!tr?.token) return;
-        token = tr.token;
-        fetchMetadata();
-      }).catch(() => {});
+      // Background playlist fetch via backend — deduplicated + cached server-side.
+      // No direct Spotify API calls here; token only needed if album (not playlist).
+      fetchPlaylistTracks();
     }
     state.value = 'inactive';
     return;
