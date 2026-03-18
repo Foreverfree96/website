@@ -359,6 +359,9 @@ const fetchToken = async () => {
       const data = await res.json();
       const expiresAt = data.expiresAt ? new Date(data.expiresAt).getTime() : Date.now() + 55 * 60 * 1000;
       _w.tokenCache = { token: data.accessToken, expiresAt };
+      // Token fetch succeeded — mark OAuth as done so account_error handlers
+      // never trigger a false redirect for any player on this page.
+      if (!localStorage.getItem('sp_oauth_done')) localStorage.setItem('sp_oauth_done', '1');
       return { token: data.accessToken };
     } finally {
       _w.tokenFetchPromise = null;
@@ -515,13 +518,21 @@ const fetchPlaylistTracks = async () => {
     if (isAlbum) {
       if (!token) return null;
       try {
-        const [arRes, trRes] = await Promise.all([
-          fetch(`https://api.spotify.com/v1/albums/${id}`, { headers: { Authorization: `Bearer ${token}` } }).catch(() => null),
-          fetch(`https://api.spotify.com/v1/albums/${id}/tracks?limit=50`, { headers: { Authorization: `Bearer ${token}` } }),
-        ]);
+        const headers = { Authorization: `Bearer ${token}` };
+        const arRes = await fetch(`https://api.spotify.com/v1/albums/${id}`, { headers }).catch(() => null);
         const albumArt = arRes?.ok ? (await arRes.json()).images?.[0]?.url || '' : '';
-        if (trRes.ok) {
-          const tracks = parseAlbum(await trRes.json(), albumArt);
+        // Paginate — albums can exceed 50 tracks
+        let allItems = [];
+        let nextUrl = `https://api.spotify.com/v1/albums/${id}/tracks?limit=50`;
+        while (nextUrl) {
+          const trRes = await fetch(nextUrl, { headers });
+          if (!trRes.ok) break;
+          const data = await trRes.json();
+          allItems = allItems.concat(data.items || []);
+          nextUrl = data.next || null;
+        }
+        if (allItems.length) {
+          const tracks = parseAlbum({ items: allItems }, albumArt);
           if (tracks.length) return tracks;
         }
       } catch { /* ignore */ }
@@ -782,6 +793,8 @@ onMounted(async () => {
 
     if (tokenResult.needsConnect) {
       clearTimeout(connectTimeout);
+      const alreadyDone = localStorage.getItem('sp_oauth_done') || sessionStorage.getItem('sp_oauth_done');
+      if (alreadyDone) { state.value = 'unavailable'; return; }
       const jwt = localStorage.getItem('jwtToken');
       if (jwt && !_w.oauthRedirecting) {
         _w.oauthRedirecting = true;
@@ -847,6 +860,22 @@ const doConnect = async (shouldAutoPlay = true) => {
     window._spHandoff = null;
     clearTimeout(connectTimeout);
     state.value = 'ready';
+
+    // Remove ALL old listeners before re-attaching — Spotify SDK's addListener
+    // appends, so without this the old closure (from the previous component
+    // instance) still fires alongside the new one, causing double state updates
+    // and stale account_error handlers that can trigger false OAuth redirects.
+    player.removeListener('player_state_changed');
+    player.removeListener('not_ready');
+    player.removeListener('ready');
+    player.removeListener('account_error');
+    player.removeListener('authentication_error');
+    player.removeListener('initialization_error');
+
+    // Refresh token — handoff may carry a stale token from before a redirect
+    const freshResult = await fetchToken();
+    if (freshResult.token) token = freshResult.token;
+
     // Re-attach state listener — filter out stale events from the previous
     // playlist that fire immediately when the listener is added to a reused player.
     const _expectedCtx = getSpotifyUri(props.mediaUrl);
@@ -867,6 +896,21 @@ const doConnect = async (shouldAutoPlay = true) => {
       }
       if (!s.paused) { startTicker(); if (!posSaver) posSaver = setInterval(saveCurrentPosition, 5000); }
       else { stopTicker(); clearInterval(posSaver); posSaver = null; saveCurrentPosition(); }
+    });
+    // Re-add device status and error listeners with THIS component's closure
+    player.addListener('not_ready', () => {
+      if (state.value === 'ready') state.value = 'connecting';
+    });
+    player.addListener('initialization_error', () => { state.value = 'unavailable'; });
+    player.addListener('authentication_error', () => {
+      if (state.value !== 'ready') state.value = 'unavailable';
+    });
+    player.addListener('account_error', () => {
+      if (state.value !== 'ready') {
+        const alreadyConnected = localStorage.getItem('sp_oauth_done') || sessionStorage.getItem('sp_oauth_done') || localStorage.getItem('sp_playlist_ok');
+        if (alreadyConnected) { state.value = 'unavailable'; return; }
+        state.value = 'needs-connect';
+      }
     });
     // Device is already active — do NOT re-issue a play/seek command.
     // Seeking to a saved position_ms that is already slightly stale causes
@@ -889,6 +933,7 @@ const doConnect = async (shouldAutoPlay = true) => {
     _myStepDown = () => {
       stopTicker();
       clearInterval(posSaver); posSaver = null;
+      clearInterval(tokenRefresher); tokenRefresher = null;
       saveCurrentPosition();
       if (currentTrackUri.value) _resumeTrackUri.value = currentTrackUri.value;
       if (position.value > 0)    _resumePosition.value = position.value;
@@ -950,6 +995,7 @@ const doConnect = async (shouldAutoPlay = true) => {
     _myStepDown = () => {
       stopTicker();
       clearInterval(posSaver); posSaver = null;
+      clearInterval(tokenRefresher); tokenRefresher = null;
       saveCurrentPosition();
       if (currentTrackUri.value) _resumeTrackUri.value = currentTrackUri.value;
       if (position.value > 0)    _resumePosition.value = position.value;
@@ -1001,7 +1047,7 @@ const doConnect = async (shouldAutoPlay = true) => {
     // Require explicit context match when we know the expected URI — null-context
     // events must NOT be allowed to merge tracks from a different playlist.
     const contextMatch = expectedUri ? (s.context?.uri === expectedUri) : true;
-    if (props.isPlaylist && s.track_window && !fullTracksFetched && contextMatch) {
+    if (props.isPlaylist && s.track_window && !fullTracksFetched && expectedUri && contextMatch) {
       const windowTracks = [
         ...(s.track_window.previous_tracks || []),
         ...(t ? [t] : []),
@@ -1018,7 +1064,12 @@ const doConnect = async (shouldAutoPlay = true) => {
         // Merge: keep existing tracks, insert new ones relative to current track
         const existing    = playlistTracks.value;
         const existingMap = new Map(existing.map(tr => [tr.uri, tr]));
-        windowTracks.forEach(tr => existingMap.set(tr.uri, tr));
+        // Preserve the `index` field from API-sourced tracks — SDK tracks don't
+        // carry index, so a blind overwrite would break position-based playback.
+        windowTracks.forEach(tr => {
+          const prev = existingMap.get(tr.uri);
+          existingMap.set(tr.uri, (prev?.index != null && tr.index == null) ? { ...tr, index: prev.index } : tr);
+        });
 
         // Rebuild ordered list: existing order first, then any new entries
         const merged = Array.from(existingMap.values());
@@ -1098,6 +1149,8 @@ const connectAndPlay = async () => {
     const [tokenResult] = await Promise.all([fetchToken(), loadSDK()]);
     if (tokenResult.needsConnect) {
       clearTimeout(connectTimeout);
+      const alreadyDone = localStorage.getItem('sp_oauth_done') || sessionStorage.getItem('sp_oauth_done');
+      if (alreadyDone) { state.value = 'unavailable'; return; }
       const jwt = localStorage.getItem('jwtToken');
       if (jwt && !_w.oauthRedirecting) { _w.oauthRedirecting = true; window.location.href = spotifyConnectUrl.value; return; }
       state.value = _w.oauthRedirecting ? 'inactive' : 'needs-connect'; return;
@@ -1164,11 +1217,15 @@ onUnmounted(() => {
   stopTicker();
   if (_skipDisconnect && player) {
     // Clear ALL event listeners from this component's closures before handing off.
-    // Without this, the old component's player_state_changed handler would keep
-    // firing and corrupt the next playlist's track cache with the wrong tracks.
+    // Without this, the old component's handlers keep firing on the shared player
+    // object — stale account_error can trigger false OAuth redirects, and
+    // player_state_changed can corrupt the next playlist's track cache.
     player.removeListener('player_state_changed');
     player.removeListener('not_ready');
     player.removeListener('ready');
+    player.removeListener('account_error');
+    player.removeListener('authentication_error');
+    player.removeListener('initialization_error');
     // Hand off the live player to the next SpotifyPlayer mount (e.g. MiniPlayer after pop-out)
     // so it can reuse the already-registered Spotify device without re-authenticating.
     window._spHandoff = { player, deviceId, token, paused: paused.value, tracks: playlistTracks.value, mediaUrl: props.mediaUrl };
