@@ -257,8 +257,15 @@ export const spotifyShuffleOff = async (req, res) => {
 // is cached here for 1 hour so everyone else benefits without needing the scope.
 const _playlistCache    = new Map(); // playlistId → { data, cachedAt }
 const _inflight         = new Map(); // playlistId → Promise — deduplicates concurrent requests
-const _rateLimitedUntil = new Map(); // playlistId → timestamp — backoff after 429
+let _rateLimitedUntil   = 0;         // app-wide timestamp — Spotify rate limits are per-app, not per-playlist
+const MAX_BACKOFF_MS    = 60 * 1000; // cap at 60s regardless of Retry-After
 const PLAYLIST_CACHE_TTL = 60 * 60 * 1000; // 1 hour
+
+const setRateLimit = (retryAfterHeader) => {
+  const secs = Math.min(parseInt(retryAfterHeader || '10', 10), 60); // cap at 60s
+  _rateLimitedUntil = Date.now() + secs * 1000;
+  return secs;
+};
 
 const getCachedPlaylist = (id) => {
   const entry = _playlistCache.get(id);
@@ -276,9 +283,8 @@ export const getPlaylistTracks = async (req, res) => {
   if (cached && (cached.items?.length ?? 0) >= 20) return res.json(cached);
   if (cached) _playlistCache.delete(playlistId); // stale partial — re-fetch
 
-  // Respect Spotify 429 backoff — don't hammer after a rate-limit response
-  const rlUntil = _rateLimitedUntil.get(playlistId);
-  if (rlUntil && Date.now() < rlUntil) {
+  // Respect app-wide Spotify 429 backoff
+  if (Date.now() < _rateLimitedUntil) {
     return res.status(429).json({ message: 'Rate limited — try again shortly' });
   }
 
@@ -332,9 +338,8 @@ export const getPlaylistTracks = async (req, res) => {
         if (items.length) return cacheAndReturn(items);
       } catch (err) {
         if (err.response?.status === 429) {
-          const retryAfter = parseInt(err.response.headers?.['retry-after'] || '60', 10);
-          _rateLimitedUntil.set(playlistId, Date.now() + retryAfter * 1000);
-          console.error(`❌ Spotify GET /tracks failed: 429 — backing off ${retryAfter}s`);
+          const secs = setRateLimit(err.response.headers?.['retry-after']);
+          console.error(`❌ Spotify GET /tracks failed: 429 — backing off ${secs}s`);
           throw err;
         }
         if (err.response?.status !== 403) {
@@ -350,10 +355,7 @@ export const getPlaylistTracks = async (req, res) => {
         const items = parseItems(r.data.tracks || {});
         if (items.length) return cacheAndReturn(items);
       } catch (err) {
-        if (err.response?.status === 429) {
-          const retryAfter = parseInt(err.response.headers?.['retry-after'] || '60', 10);
-          _rateLimitedUntil.set(playlistId, Date.now() + retryAfter * 1000);
-        }
+        if (err.response?.status === 429) setRateLimit(err.response.headers?.['retry-after']);
         if (err.response?.status !== 403) console.error("❌ Spotify GET playlist failed:", err.response?.status);
       }
     }
@@ -368,9 +370,8 @@ export const getPlaylistTracks = async (req, res) => {
       if (items.length) return cacheAndReturn(items);
     } catch (err) {
       if (err.response?.status === 429) {
-        const retryAfter = parseInt(err.response.headers?.['retry-after'] || '60', 10);
-        _rateLimitedUntil.set(playlistId, Date.now() + retryAfter * 1000);
-        console.error(`❌ Spotify client-cred playlist fetch failed: 429 — backing off ${retryAfter}s`);
+        const secs = setRateLimit(err.response.headers?.['retry-after']);
+        console.error(`❌ Spotify client-cred playlist fetch failed: 429 — backing off ${secs}s`);
       } else {
         console.error("❌ Spotify client-cred playlist fetch failed:", err.response?.status);
       }
