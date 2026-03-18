@@ -451,66 +451,126 @@ export const searchTracks = async (req, res) => {
 // ─── SPOTIFY GENERATE PLAYLIST ──────────────────────────────────────────────
 // POST /api/spotify/generate
 // Body: { seedTrackIds: [], seedPlaylistId?, genres: [], limit: 30 }
+//
+// Spotify deprecated /recommendations in Nov 2024. This uses a search-based
+// approach: fetch seed track artists, build varied search queries from
+// artist names + genres, collect and deduplicate results.
 export const generatePlaylist = async (req, res) => {
   try {
     let { seedTrackIds = [], seedPlaylistId, genres = [], limit = 30 } = req.body;
     limit = Math.max(1, Math.min(Number(limit) || 30, 100));
 
-    // If a reference playlist is provided, pull random seed tracks from it
+    let token;
+    const result = await getValidToken(req.user.id, false);
+    token = result.error ? await getClientCredToken() : result.accessToken;
+    const auth = { Authorization: `Bearer ${token}` };
+
+    // Collect artist names from seed tracks
+    const seedArtists = [];
+    const seedTrackUris = new Set();
+
+    // If a reference playlist is provided, pull tracks from it
     if (seedPlaylistId) {
       const cached = getCachedPlaylist(seedPlaylistId);
       let items = cached?.items;
       if (!items) {
-        let plToken;
-        const plResult = await getValidToken(req.user.id, false);
-        plToken = plResult.error ? await getClientCredToken() : plResult.accessToken;
         try {
           const r = await axios.get(
             `https://api.spotify.com/v1/playlists/${seedPlaylistId}/tracks?limit=100`,
-            { headers: { Authorization: `Bearer ${plToken}` } }
+            { headers: auth }
           );
           items = (r.data.items || []).filter((i) => i?.track?.id);
         } catch { items = []; }
       }
       if (items?.length) {
         const shuffled = items.sort(() => Math.random() - 0.5);
-        const extraIds = shuffled.slice(0, 2).map((i) => i.track.id);
-        seedTrackIds = [...seedTrackIds, ...extraIds];
+        shuffled.slice(0, 3).forEach((i) => {
+          const artist = i.track?.artists?.[0]?.name;
+          if (artist && !seedArtists.includes(artist)) seedArtists.push(artist);
+          if (i.track?.id) seedTrackIds.push(i.track.id);
+        });
       }
     }
 
-    // Spotify allows max 5 total seeds (tracks + genres combined)
-    seedTrackIds = [...new Set(seedTrackIds)].slice(0, 5);
-    genres = genres.slice(0, 5 - seedTrackIds.length);
+    // Fetch artist info from seed track IDs
+    const uniqueIds = [...new Set(seedTrackIds)].slice(0, 5);
+    if (uniqueIds.length) {
+      try {
+        const r = await axios.get(`https://api.spotify.com/v1/tracks`, {
+          params: { ids: uniqueIds.join(",") },
+          headers: auth,
+        });
+        (r.data.tracks || []).forEach((t) => {
+          seedTrackUris.add(t.uri);
+          const artist = t.artists?.[0]?.name;
+          if (artist && !seedArtists.includes(artist)) seedArtists.push(artist);
+        });
+      } catch { /* proceed with what we have */ }
+    }
 
-    if (!seedTrackIds.length && !genres.length) {
+    if (!seedArtists.length && !genres.length) {
       return res.status(400).json({ message: "Provide at least one seed track or genre" });
     }
 
-    let token;
-    const result = await getValidToken(req.user.id, false);
-    token = result.error ? await getClientCredToken() : result.accessToken;
+    // Build diverse search queries
+    const queries = [];
 
-    const params = { limit };
-    if (seedTrackIds.length) params.seed_tracks = seedTrackIds.join(",");
-    if (genres.length) params.seed_genres = genres.join(",");
-
-    const r = await axios.get("https://api.spotify.com/v1/recommendations", {
-      params,
-      headers: { Authorization: `Bearer ${token}` },
+    // Artist-based queries
+    seedArtists.forEach((artist) => {
+      queries.push(`artist:"${artist}"`);
+      genres.forEach((g) => queries.push(`artist:"${artist}" genre:"${g}"`));
     });
 
-    const tracks = (r.data.tracks || []).map((t) => ({
-      id:          t.id,
-      uri:         t.uri,
-      name:        t.name,
-      artist:      t.artists?.map((a) => a.name).join(", ") || "",
-      album:       t.album?.name || "",
-      art:         t.album?.images?.[0]?.url || "",
-      duration_ms: t.duration_ms,
-    }));
+    // Genre-only queries
+    genres.forEach((g) => queries.push(`genre:"${g}"`));
 
-    res.json({ tracks });
+    // If we still need more variety, add year-based queries
+    if (queries.length < 4 && seedArtists.length) {
+      const years = ['2023', '2024', '2025'];
+      seedArtists.slice(0, 2).forEach((artist) => {
+        const yr = years[Math.floor(Math.random() * years.length)];
+        queries.push(`artist:"${artist}" year:${yr}`);
+      });
+    }
+
+    // Shuffle queries for variety
+    queries.sort(() => Math.random() - 0.5);
+
+    // Search in batches until we have enough tracks
+    const seenIds = new Set(uniqueIds); // exclude seed tracks from results
+    const collected = [];
+    const perQuery = Math.ceil(limit / Math.max(queries.length, 1));
+
+    for (const q of queries) {
+      if (collected.length >= limit) break;
+      try {
+        // Randomize offset for variety (Spotify allows up to 1000)
+        const offset = Math.floor(Math.random() * 50);
+        const r = await axios.get("https://api.spotify.com/v1/search", {
+          params: { q, type: "track", limit: Math.min(perQuery + 5, 50), offset },
+          headers: auth,
+        });
+        for (const t of (r.data.tracks?.items || [])) {
+          if (collected.length >= limit) break;
+          if (seenIds.has(t.id)) continue;
+          seenIds.add(t.id);
+          collected.push({
+            id:          t.id,
+            uri:         t.uri,
+            name:        t.name,
+            artist:      t.artists?.map((a) => a.name).join(", ") || "",
+            album:       t.album?.name || "",
+            art:         t.album?.images?.[0]?.url || "",
+            duration_ms: t.duration_ms,
+          });
+        }
+      } catch { /* skip failed query, continue */ }
+    }
+
+    // Shuffle final results so tracks from different queries are mixed
+    collected.sort(() => Math.random() - 0.5);
+
+    res.json({ tracks: collected });
   } catch (err) {
     console.error("❌ Spotify generate error:", err.response?.data || err.message);
     res.status(err.response?.status || 500).json({ message: "Generation failed" });
