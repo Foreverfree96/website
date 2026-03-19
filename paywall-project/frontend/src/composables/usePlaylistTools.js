@@ -267,10 +267,16 @@ export function usePlaylistTools() {
         const plId = extractSpotifyPlaylistId(convertUrl.value);
         if (!plId) throw new Error('Could not find playlist ID in URL');
 
-        // Fetch Spotify tracks
-        const spRes = await fetch(`${API}/api/spotify/playlist/${plId}/tracks`, {
+        // Fetch Spotify tracks (retry once on 429 after short delay)
+        let spRes = await fetch(`${API}/api/spotify/playlist/${plId}/tracks`, {
           headers: headers(),
         });
+        if (spRes.status === 429) {
+          await new Promise(r => setTimeout(r, 3000));
+          spRes = await fetch(`${API}/api/spotify/playlist/${plId}/tracks`, {
+            headers: headers(),
+          });
+        }
         const spData = await spRes.json();
         if (!spRes.ok) throw new Error(spData.message || 'Failed to fetch Spotify playlist');
         sourceTracks.value = (spData.items || []).map((i) => ({

@@ -291,9 +291,13 @@ export const getPlaylistTracks = async (req, res) => {
   if (cached && (cached.items?.length ?? 0) >= 20) return res.json(cached);
   if (cached) _playlistCache.delete(playlistId); // stale partial — re-fetch
 
-  // Respect app-wide Spotify 429 backoff
+  // Respect app-wide Spotify 429 backoff — wait it out if under 10s
   if (Date.now() < _rateLimitedUntil) {
-    return res.status(429).json({ message: 'Rate limited — try again shortly' });
+    const waitMs = _rateLimitedUntil - Date.now();
+    if (waitMs > 10000) {
+      return res.status(429).json({ message: 'Rate limited — try again shortly' });
+    }
+    await new Promise(r => setTimeout(r, waitMs + 200));
   }
 
   // Deduplicate concurrent requests for the same playlist.
@@ -752,54 +756,104 @@ export const matchTracks = async (req, res) => {
     // Cap at 100 tracks to avoid timeout
     const capped = tracks.slice(0, 100);
 
-    let token;
+    // Prefer user token (avoids explicit content 400s from client creds)
     const result = await getValidToken(req.user.id, false);
-    token = result.error ? await getClientCredToken() : result.accessToken;
-
+    let token = result.error ? null : result.accessToken;
+    if (!token) token = await getClientCredToken();
     const auth = { Authorization: `Bearer ${token}` };
 
     console.log(`🔍 Matching ${capped.length} tracks to Spotify...`);
 
-    const matchOne = async (src) => {
-      const cleaned = cleanTitle(src.title || "");
-      const query = `${cleaned} ${src.artist || ""}`.trim();
-      if (!query) return { source: src, bestMatch: null, confidence: "none", alternatives: [] };
-
+    const searchSpotify = async (query) => {
       try {
         const r = await axios.get("https://api.spotify.com/v1/search", {
-          params: { q: query, type: "track", limit: 5 },
+          params: { q: query, type: "track", limit: 8 },
           headers: auth,
         });
-
-        const candidates = (r.data.tracks?.items || []).map((t) => {
-          const titleSim  = similarity(cleaned, t.name);
-          const artistSim = similarity(src.artist || "", t.artists?.[0]?.name || "");
-          let durationBonus = 0;
-          if (src.duration_ms && t.duration_ms) {
-            const diff = Math.abs(src.duration_ms - t.duration_ms);
-            durationBonus = diff < 5000 ? 1 : diff < 15000 ? 0.5 : 0;
+        return r.data.tracks?.items || [];
+      } catch (e) {
+        if (e.response?.status === 400) {
+          // Retry with cleaned query (explicit content blocked by client creds)
+          const clean = query.replace(/[^\w\s'-]/g, '').trim();
+          if (clean && clean !== query) {
+            try {
+              const r2 = await axios.get("https://api.spotify.com/v1/search", {
+                params: { q: clean, type: "track", limit: 8 },
+                headers: auth,
+              });
+              return r2.data.tracks?.items || [];
+            } catch { return []; }
           }
-          const score = titleSim * 0.5 + artistSim * 0.4 + durationBonus * 0.1;
-          return {
-            id:          t.id,
-            uri:         t.uri,
-            name:        t.name,
-            artist:      t.artists?.map((a) => a.name).join(", ") || "",
-            album:       t.album?.name || "",
-            art:         t.album?.images?.[0]?.url || "",
-            duration_ms: t.duration_ms,
-            score,
-          };
-        });
-
-        candidates.sort((a, b) => b.score - a.score);
-        const best = candidates[0] || null;
-        const confidence = !best ? "none" : best.score >= 0.85 ? "exact" : best.score >= 0.55 ? "close" : "none";
-
-        return { source: src, bestMatch: best, confidence, alternatives: candidates.slice(1, 4) };
-      } catch {
-        return { source: src, bestMatch: null, confidence: "none", alternatives: [] };
+          return [];
+        }
+        if (e.response?.status === 429) setRateLimit(e.response.headers?.['retry-after']);
+        console.error(`❌ Match search failed for "${query}":`, e.response?.status || e.message);
+        return [];
       }
+    };
+
+    // Clean YouTube channel names that aren't real artist names
+    const cleanArtist = (artist) => {
+      if (!artist) return "";
+      return artist
+        .replace(/\s*-\s*topic$/i, "")
+        .replace(/\s*VEVO$/i, "")
+        .replace(/\s*Official$/i, "")
+        .trim();
+    };
+
+    const matchOne = async (src) => {
+      const cleaned = cleanTitle(src.title || "");
+      const artist = cleanArtist(src.artist || "");
+
+      // Try multiple query strategies
+      const queries = [];
+      if (cleaned && artist) queries.push(`${cleaned} ${artist}`);
+      if (cleaned) queries.push(cleaned); // title-only fallback
+      if (!queries.length) return { source: src, bestMatch: null, confidence: "none", alternatives: [] };
+
+      let allCandidates = [];
+
+      for (const query of queries) {
+        const items = await searchSpotify(query);
+        if (items.length) {
+          const candidates = items.map((t) => {
+            const titleSim  = similarity(cleaned, cleanTitle(t.name || ""));
+            const artistSim = artist ? similarity(artist, t.artists?.[0]?.name || "") : 0.5; // neutral if no artist
+            let durationBonus = 0;
+            if (src.duration_ms && t.duration_ms) {
+              const diff = Math.abs(src.duration_ms - t.duration_ms);
+              durationBonus = diff < 5000 ? 1 : diff < 15000 ? 0.5 : 0;
+            }
+            // Weight title higher since YT channel names are unreliable as artist
+            const score = artist
+              ? titleSim * 0.5 + artistSim * 0.4 + durationBonus * 0.1
+              : titleSim * 0.85 + durationBonus * 0.15;
+            return {
+              id:          t.id,
+              uri:         t.uri,
+              name:        t.name,
+              artist:      t.artists?.map((a) => a.name).join(", ") || "",
+              album:       t.album?.name || "",
+              art:         t.album?.images?.[0]?.url || "",
+              duration_ms: t.duration_ms,
+              score,
+            };
+          });
+          allCandidates = allCandidates.concat(candidates);
+          if (candidates[0]?.score >= 0.7) break; // good enough, skip fallback query
+        }
+      }
+
+      // Deduplicate by track ID
+      const seen = new Set();
+      allCandidates = allCandidates.filter(c => { if (seen.has(c.id)) return false; seen.add(c.id); return true; });
+      allCandidates.sort((a, b) => b.score - a.score);
+
+      const best = allCandidates[0] || null;
+      const confidence = !best ? "none" : best.score >= 0.75 ? "exact" : best.score >= 0.4 ? "close" : "none";
+
+      return { source: src, bestMatch: best, confidence, alternatives: allCandidates.slice(1, 4) };
     };
 
     // Check rate limit before starting

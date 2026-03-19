@@ -180,6 +180,13 @@ const similarity = (a, b) => {
   return maxLen ? 1 - levenshtein(al, bl) / maxLen : 0;
 };
 
+// Clean Spotify artist names for better YouTube search
+const cleanArtistForYT = (artist) => {
+  if (!artist) return "";
+  // Take only the first artist from comma-separated list
+  return artist.split(",")[0].trim();
+};
+
 export const matchYoutubeTracks = async (req, res) => {
   try {
     if (!API_KEY()) return res.status(500).json({ message: "YouTube API key not configured" });
@@ -191,10 +198,7 @@ export const matchYoutubeTracks = async (req, res) => {
     const capped = tracks.slice(0, 50);
     console.log(`🔍 Matching ${capped.length} tracks to YouTube...`);
 
-    const matchOne = async (src) => {
-      const query = `${src.title || ""} ${src.artist || ""}`.trim();
-      if (!query) return { source: src, bestMatch: null, confidence: "none", alternatives: [] };
-
+    const searchYT = async (query) => {
       try {
         const r = await axios.get(`${BASE}/search`, {
           params: {
@@ -202,37 +206,65 @@ export const matchYoutubeTracks = async (req, res) => {
             type: "video",
             videoCategoryId: "10",
             q: query,
-            maxResults: 5,
+            maxResults: 8,
             key: API_KEY(),
           },
         });
-
-        const candidates = (r.data.items || []).map((i) => {
-          const ytTitle   = cleanTitle(i.snippet.title || "");
-          const titleSim  = similarity(src.title || "", ytTitle);
-          const artistSim = similarity(src.artist || "", i.snippet.channelTitle || "");
-          const score     = titleSim * 0.6 + artistSim * 0.4;
-          return {
-            title:        i.snippet.title,
-            channelTitle: i.snippet.channelTitle || "",
-            videoId:      i.id?.videoId || "",
-            thumbnail:    i.snippet.thumbnails?.medium?.url || "",
-            url:          `https://www.youtube.com/watch?v=${i.id?.videoId}`,
-            score,
-          };
-        });
-
-        candidates.sort((a, b) => b.score - a.score);
-        const best = candidates[0] || null;
-        const confidence = !best ? "none" : best.score >= 0.85 ? "exact" : best.score >= 0.55 ? "close" : "none";
-
-        return { source: src, bestMatch: best, confidence, alternatives: candidates.slice(1, 4) };
-      } catch {
-        return { source: src, bestMatch: null, confidence: "none", alternatives: [] };
+        return r.data.items || [];
+      } catch (e) {
+        console.error(`❌ YouTube search failed for "${query}":`, e.response?.status || e.message);
+        return [];
       }
     };
 
-    // Process in parallel batches of 3 with 200ms delay (YouTube quota is more expensive)
+    const matchOne = async (src) => {
+      const title = (src.title || "").trim();
+      const artist = cleanArtistForYT(src.artist || "");
+      if (!title && !artist) return { source: src, bestMatch: null, confidence: "none", alternatives: [] };
+
+      // Try multiple query strategies
+      const queries = [];
+      if (title && artist) queries.push(`${title} ${artist}`);
+      if (title) queries.push(`${title} official audio`); // fallback: title + "official audio"
+
+      let allCandidates = [];
+
+      for (const query of queries) {
+        const items = await searchYT(query);
+        if (items.length) {
+          const candidates = items.map((i) => {
+            const ytTitle   = cleanTitle(i.snippet.title || "");
+            const titleSim  = similarity(title, ytTitle);
+            const channelName = (i.snippet.channelTitle || "").replace(/\s*-\s*topic$/i, "").replace(/\s*VEVO$/i, "").trim();
+            const artistSim = artist ? similarity(artist, channelName) : 0.5;
+            // Weight title higher — artist match on YouTube is less reliable
+            const score = artist ? titleSim * 0.65 + artistSim * 0.35 : titleSim * 0.9 + 0.1;
+            return {
+              title:        i.snippet.title,
+              channelTitle: i.snippet.channelTitle || "",
+              videoId:      i.id?.videoId || "",
+              thumbnail:    i.snippet.thumbnails?.medium?.url || "",
+              url:          `https://www.youtube.com/watch?v=${i.id?.videoId}`,
+              score,
+            };
+          });
+          allCandidates = allCandidates.concat(candidates);
+          if (candidates.sort((a, b) => b.score - a.score)[0]?.score >= 0.7) break; // good enough
+        }
+      }
+
+      // Deduplicate by videoId
+      const seen = new Set();
+      allCandidates = allCandidates.filter(c => { if (seen.has(c.videoId)) return false; seen.add(c.videoId); return true; });
+      allCandidates.sort((a, b) => b.score - a.score);
+
+      const best = allCandidates[0] || null;
+      const confidence = !best ? "none" : best.score >= 0.7 ? "exact" : best.score >= 0.35 ? "close" : "none";
+
+      return { source: src, bestMatch: best, confidence, alternatives: allCandidates.slice(1, 4) };
+    };
+
+    // Process in parallel batches of 3 with 500ms delay
     const matches = [];
     const BATCH = 3;
     for (let i = 0; i < capped.length; i += BATCH) {
@@ -242,7 +274,9 @@ export const matchYoutubeTracks = async (req, res) => {
       if (i + BATCH < capped.length) await new Promise(r => setTimeout(r, 500));
     }
 
-    console.log(`✅ YouTube matched ${capped.length} tracks`);
+    const exact = matches.filter(m => m.confidence === 'exact').length;
+    const close = matches.filter(m => m.confidence === 'close').length;
+    console.log(`✅ YouTube matched ${capped.length} tracks: ${exact} exact, ${close} close, ${capped.length - exact - close} none`);
     res.json({ matches });
   } catch (err) {
     console.error("❌ YouTube match error:", err.response?.data || err.message);
