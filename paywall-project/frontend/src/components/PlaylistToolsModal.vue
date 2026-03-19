@@ -222,19 +222,50 @@
                     </div>
                     <span :class="['pt-confidence', m.confidence]">{{ m.confidence }}</span>
 
-                    <!-- Alternatives dropdown -->
-                    <div v-if="m.alternatives?.length" class="pt-alt-wrap">
+                    <!-- Alternatives dropdown + custom search -->
+                    <div class="pt-alt-wrap">
                       <button class="pt-alt-btn" @click="toggleAlt(i)">Swap</button>
                       <div v-if="altOpen === i" class="pt-alt-dropdown">
-                        <div
-                          v-for="alt in m.alternatives"
-                          :key="alt.id || alt.videoId"
-                          class="pt-dropdown-item"
-                          @click="pt.swapMatch(i, alt); altOpen = null"
-                        >
-                          <span class="pt-dropdown-name">{{ alt.name || alt.title }}</span>
-                          <span class="pt-dropdown-artist">{{ alt.artist || alt.channelTitle }}</span>
+                        <!-- Custom search input -->
+                        <div class="pt-alt-search">
+                          <input
+                            class="pt-input pt-alt-search-input"
+                            v-model="swapQuery"
+                            :placeholder="pt.convertDirection.value === 'yt-to-spotify' ? 'Search Spotify...' : 'Search YouTube...'"
+                            @input="debounceSwapSearch(i)"
+                            @click.stop
+                          />
                         </div>
+                        <!-- Custom search results -->
+                        <div v-if="swapSearchLoading" class="pt-alt-loading">Searching...</div>
+                        <template v-if="swapResults.length">
+                          <div class="pt-alt-divider">Search results</div>
+                          <div
+                            v-for="r in swapResults"
+                            :key="r.id || r.videoId"
+                            class="pt-dropdown-item"
+                            @click="pt.swapMatch(i, r); altOpen = null; swapResults = []; swapQuery = ''"
+                          >
+                            <img v-if="r.art || r.thumbnail" :src="r.art || r.thumbnail" class="pt-dropdown-art" alt="" />
+                            <div class="pt-dropdown-info">
+                              <span class="pt-dropdown-name">{{ r.name || r.title }}</span>
+                              <span class="pt-dropdown-artist">{{ r.artist || r.channelTitle }}</span>
+                            </div>
+                          </div>
+                        </template>
+                        <!-- Pre-fetched alternatives -->
+                        <template v-if="m.alternatives?.length">
+                          <div class="pt-alt-divider">Suggestions</div>
+                          <div
+                            v-for="alt in m.alternatives"
+                            :key="alt.id || alt.videoId"
+                            class="pt-dropdown-item"
+                            @click="pt.swapMatch(i, alt); altOpen = null"
+                          >
+                            <span class="pt-dropdown-name">{{ alt.name || alt.title }}</span>
+                            <span class="pt-dropdown-artist">{{ alt.artist || alt.channelTitle }}</span>
+                          </div>
+                        </template>
                       </div>
                     </div>
                   </div>
@@ -379,8 +410,43 @@ const matchStats = computed(() => {
   };
 });
 
+const swapQuery = ref('');
+const swapResults = ref([]);
+const swapSearchLoading = ref(false);
+let _swapDebounce = null;
+
 const toggleAlt = (i) => {
   altOpen.value = altOpen.value === i ? null : i;
+  swapQuery.value = '';
+  swapResults.value = [];
+};
+
+const debounceSwapSearch = () => {
+  clearTimeout(_swapDebounce);
+  const q = swapQuery.value.trim();
+  if (!q) { swapResults.value = []; return; }
+  swapSearchLoading.value = true;
+  _swapDebounce = setTimeout(async () => {
+    try {
+      const isYt = pt.convertDirection.value === 'spotify-to-yt';
+      const endpoint = isYt
+        ? `${API}/api/youtube/search?q=${encodeURIComponent(q)}&limit=5`
+        : `${API}/api/spotify/search?q=${encodeURIComponent(q)}&limit=5`;
+      const res = await fetch(endpoint, {
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('jwtToken')}` },
+      });
+      const data = await res.json();
+      if (isYt) {
+        swapResults.value = (data.items || []).map(t => ({
+          ...t,
+          url: `https://www.youtube.com/watch?v=${t.videoId}`,
+        }));
+      } else {
+        swapResults.value = data.tracks || [];
+      }
+    } catch { swapResults.value = []; }
+    swapSearchLoading.value = false;
+  }, 350);
 };
 
 const handlePlayNow = () => {
@@ -799,9 +865,23 @@ const handleAddToExisting = (playlistId) => {
   background: #1a1a1a;
   border: 1px solid #333;
   border-radius: 8px;
-  min-width: 220px;
+  min-width: 260px;
+  max-height: 320px;
+  overflow-y: auto;
   z-index: 20;
-  overflow: hidden;
+}
+
+.pt-alt-search { padding: 8px; border-bottom: 1px solid #2a2a2a; }
+.pt-alt-search-input { font-size: 12px; padding: 7px 10px; }
+.pt-alt-loading { padding: 8px 12px; font-size: 11px; color: #666; }
+.pt-alt-divider {
+  padding: 4px 12px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #555;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-top: 1px solid #2a2a2a;
 }
 
 .pt-hint { font-size: 12px; color: #888; margin: 0; }
