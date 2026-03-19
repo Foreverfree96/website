@@ -52,6 +52,7 @@ export const getPlaylistTracks = async (req, res) => {
       nextPageToken = r.data.nextPageToken || "";
     } while (nextPageToken);
 
+    console.log(`✅ YouTube playlist ${playlistId}: fetched ${allItems.length} tracks`);
     const data = { items: allItems };
     _cache.set(playlistId, { data, cachedAt: Date.now() });
     return data;

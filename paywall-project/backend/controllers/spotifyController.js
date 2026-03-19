@@ -397,7 +397,11 @@ export const getPlaylistTracks = async (req, res) => {
   try {
     const data = await fetchPromise;
     _inflight.delete(playlistId);
-    if (data) return res.json(data);
+    if (data) {
+      console.log(`✅ Playlist ${playlistId}: returning ${data.items?.length || 0} tracks`);
+      return res.json(data);
+    }
+    console.error(`❌ Playlist ${playlistId}: no tracks found (all methods failed)`);
     res.status(403).json({ message: 'Reconnect Spotify to load playlist tracks (playlist-read-private scope required)' });
   } catch (err) {
     _inflight.delete(playlistId);
@@ -856,16 +860,24 @@ export const matchTracks = async (req, res) => {
       return { source: src, bestMatch: best, confidence, alternatives: allCandidates.slice(1, 4) };
     };
 
-    // Check rate limit before starting
+    // Wait out rate limit if active (up to 10s), otherwise proceed
     if (Date.now() < _rateLimitedUntil) {
-      return res.status(429).json({ message: "Rate limited — try again shortly" });
+      const waitMs = _rateLimitedUntil - Date.now();
+      if (waitMs > 10000) {
+        return res.status(429).json({ message: "Rate limited — try again shortly" });
+      }
+      await new Promise(r => setTimeout(r, waitMs + 200));
     }
 
     // Process in parallel batches of 3 with 500ms delay between batches
     const matches = [];
     const BATCH = 3;
     for (let i = 0; i < capped.length; i += BATCH) {
-      if (Date.now() < _rateLimitedUntil) break;
+      // If rate-limited mid-run, wait it out instead of stopping
+      if (Date.now() < _rateLimitedUntil) {
+        const waitMs = Math.min(_rateLimitedUntil - Date.now(), 10000);
+        await new Promise(r => setTimeout(r, waitMs + 200));
+      }
       const batch = capped.slice(i, i + BATCH);
       const results = await Promise.all(batch.map(matchOne));
       matches.push(...results);
