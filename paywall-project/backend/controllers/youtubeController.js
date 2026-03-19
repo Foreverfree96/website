@@ -6,7 +6,7 @@ const BASE    = "https://www.googleapis.com/youtube/v3";
 // ─── IN-MEMORY CACHE ────────────────────────────────────────────────────────
 const _cache    = new Map(); // playlistId → { data, cachedAt }
 const _inflight = new Map(); // playlistId → Promise
-const CACHE_TTL = 60 * 60 * 1000; // 1 hour
+const CACHE_TTL = 6 * 60 * 60 * 1000; // 6 hours
 
 // ─── GET YOUTUBE PLAYLIST TRACKS ────────────────────────────────────────────
 // GET /api/youtube/playlist/:id/tracks
@@ -239,7 +239,7 @@ export const matchYoutubeTracks = async (req, res) => {
       const batch = capped.slice(i, i + BATCH);
       const results = await Promise.all(batch.map(matchOne));
       matches.push(...results);
-      if (i + BATCH < capped.length) await new Promise(r => setTimeout(r, 200));
+      if (i + BATCH < capped.length) await new Promise(r => setTimeout(r, 500));
     }
 
     console.log(`✅ YouTube matched ${capped.length} tracks`);

@@ -266,11 +266,11 @@ export const spotifyShuffleOff = async (req, res) => {
 const _playlistCache    = new Map(); // playlistId → { data, cachedAt }
 const _inflight         = new Map(); // playlistId → Promise — deduplicates concurrent requests
 let _rateLimitedUntil   = 0;         // app-wide timestamp — Spotify rate limits are per-app, not per-playlist
-const MAX_BACKOFF_MS    = 60 * 1000; // cap at 60s regardless of Retry-After
-const PLAYLIST_CACHE_TTL = 60 * 60 * 1000; // 1 hour
+const MAX_BACKOFF_MS    = 10 * 1000; // cap at 10s regardless of Retry-After
+const PLAYLIST_CACHE_TTL = 6 * 60 * 60 * 1000; // 6 hours
 
 const setRateLimit = (retryAfterHeader) => {
-  const secs = Math.min(parseInt(retryAfterHeader || '10', 10), 60); // cap at 60s
+  const secs = Math.min(parseInt(retryAfterHeader || '5', 10), 10); // cap at 10s
   _rateLimitedUntil = Date.now() + secs * 1000;
   return secs;
 };
@@ -628,9 +628,9 @@ export const generatePlaylist = async (req, res) => {
         console.error(`❌ Spotify search query "${q}" failed:`, e.response?.status || e.message);
       }
 
-      // Small delay between queries to avoid 429s
+      // Delay between queries to avoid 429s
       if (qi < uniqueQueries.length - 1 && collected.length < limit) {
-        await new Promise(r => setTimeout(r, 200));
+        await new Promise(r => setTimeout(r, 500));
       }
     }
 
@@ -807,16 +807,15 @@ export const matchTracks = async (req, res) => {
       return res.status(429).json({ message: "Rate limited — try again shortly" });
     }
 
-    // Process in parallel batches of 5 with 200ms delay between batches
+    // Process in parallel batches of 3 with 500ms delay between batches
     const matches = [];
-    const BATCH = 5;
+    const BATCH = 3;
     for (let i = 0; i < capped.length; i += BATCH) {
       if (Date.now() < _rateLimitedUntil) break;
       const batch = capped.slice(i, i + BATCH);
       const results = await Promise.all(batch.map(matchOne));
       matches.push(...results);
-      // Delay between batches to avoid 429s
-      if (i + BATCH < capped.length) await new Promise(r => setTimeout(r, 200));
+      if (i + BATCH < capped.length) await new Promise(r => setTimeout(r, 500));
     }
 
     const exact = matches.filter(m => m.confidence === 'exact').length;
