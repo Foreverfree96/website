@@ -713,12 +713,25 @@ const disconnect = async () => {
     });
   } catch { /* ignore */ }
 
+  // Clear all window-level caches
   _w.tokenCache = null;
+  _w.tokenFetchPromise = null;
+  _w.oauthRedirecting = false;
+  _w.reconnectAttempted = false;
+  _w.fetchingPlaylists.clear();
+
+  // Clear all sp_* localStorage/sessionStorage
   sessionStorage.removeItem('sp_oauth_done');
   localStorage.removeItem('sp_oauth_done');
   localStorage.removeItem('sp_playlist_ok');
   localStorage.removeItem('sp_shuffle');
   localStorage.removeItem('sp_volume');
+  // Clear cached tracks and positions
+  try {
+    Object.keys(localStorage).forEach(key => {
+      if (key.startsWith('sp_tracks_') || key.startsWith('sp_pos_')) localStorage.removeItem(key);
+    });
+  } catch { /* ignore */ }
 
   clearInterval(tokenRefresher); tokenRefresher = null;
   clearInterval(posSaver); posSaver = null;
@@ -729,10 +742,14 @@ const disconnect = async () => {
   token = null;
   firstStateReceived = false;
   fullTracksFetched = false;
+  _pendingPlay = null;
+  _pendingUris = null;
+  _isPlaylist = false;
   sdkState.value = 'idle';
   currentMediaUrl.value = '';
   currentTrackUri.value = '';
   playlistTracks.value = [];
+  needsReconnect.value = false;
   track.value = { name: '', artist: '', album: '', art: '' };
   paused.value = true;
   position.value = 0;

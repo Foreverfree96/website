@@ -197,6 +197,7 @@ import { ref, computed, onMounted } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import axios from 'axios';
 import { useAuth } from '../composables/useAuth.js';
+import { useSpotifySDK } from '../composables/useSpotifySDK.js';
 
 const API_BASE  = import.meta.env.VITE_API_URL;
 const API_USERS = API_BASE + '/api/users';
@@ -204,6 +205,7 @@ const router = useRouter();
 const route  = useRoute();
 const jwtToken = localStorage.getItem('jwtToken') || '';
 const origin = globalThis.location?.origin || '';
+const sdk = useSpotifySDK();
 
 // ─── AUTH COMPOSABLE ──────────────────────────────────────────────────────────
 
@@ -236,15 +238,16 @@ const fetchSpotifyStatus = async () => {
 
 const handleSpotifyDisconnect = async () => {
     try {
-        await axios.delete(`${API_BASE}/api/spotify/disconnect`, {
-            headers: { Authorization: `Bearer ${jwtToken}` },
-        });
+        // sdk.disconnect() calls DELETE /api/spotify/disconnect, kills the SDK
+        // player, and clears all sp_* localStorage/sessionStorage flags
+        await sdk.disconnect();
         spotifyStatus.value = { connected: false, displayName: null, isPremium: false };
-        // Clear Spotify localStorage flags
-        localStorage.removeItem('sp_oauth_done');
+        // Clear remaining flags not handled by SDK disconnect
         localStorage.removeItem('sp_premium');
-        localStorage.removeItem('sp_playlist_ok');
-        sessionStorage.removeItem('sp_oauth_done');
+        // Clear cached track/position data
+        Object.keys(localStorage).forEach(key => {
+            if (key.startsWith('sp_tracks_') || key.startsWith('sp_pos_')) localStorage.removeItem(key);
+        });
         errorMessage.value = 'Spotify disconnected.';
     } catch {
         errorMessage.value = 'Failed to disconnect Spotify.';
@@ -378,10 +381,18 @@ onMounted(async () => {
         // Fetch Spotify connection status
         await fetchSpotifyStatus();
 
-        // Handle return from Spotify OAuth
+        // Handle return from Spotify OAuth (connect or reconnect)
         if (route.query.spotify === 'connected') {
             localStorage.setItem('sp_oauth_done', '1');
             if (spotifyStatus.value.isPremium) localStorage.setItem('sp_premium', '1');
+            // Invalidate cached SDK token so it fetches the new one with fresh scopes
+            if (window._sp) {
+                window._sp.tokenCache = null;
+                window._sp.tokenFetchPromise = null;
+                window._sp.reconnectAttempted = true;
+                window._sp.oauthRedirecting = false;
+            }
+            sdk.needsReconnect.value = false;
             errorMessage.value = `Spotify connected${spotifyStatus.value.isPremium ? ' (Premium)' : ''}!`;
         } else if (route.query.spotify === 'error') {
             errorMessage.value = 'Spotify connection failed. Please try again.';
