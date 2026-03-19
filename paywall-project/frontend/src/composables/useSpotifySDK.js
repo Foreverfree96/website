@@ -171,7 +171,7 @@ const loadCachedTracks = (url) => {
     if (!raw) return null;
     const { tracks, savedAt } = JSON.parse(raw);
     if (Date.now() - savedAt > TRACK_CACHE_TTL) { localStorage.removeItem(key); return null; }
-    if (tracks.length < 20) { localStorage.removeItem(key); return null; }
+    if (tracks.length < 2) { localStorage.removeItem(key); return null; }
     return tracks;
   } catch { return null; }
 };
@@ -302,11 +302,42 @@ const fetchPlaylistTracks = async (mediaUrl) => {
     if (Date.now() < _w.playlistBackoffUntil) return null;
     const jwt = localStorage.getItem('jwtToken');
     if (jwt) {
-      const res = await fetch(`${API}/api/spotify/playlist/${id}/tracks`, {
-        headers: { Authorization: `Bearer ${jwt}` },
-      });
-      if (res.ok) return parsePlaylist(await res.json());
-      if (res.status === 429) _w.playlistBackoffUntil = Date.now() + 60 * 1000;
+      try {
+        const res = await fetch(`${API}/api/spotify/playlist/${id}/tracks`, {
+          headers: { Authorization: `Bearer ${jwt}` },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const tracks = parsePlaylist(data);
+          if (tracks.length) return tracks;
+        }
+        if (res.status === 429) _w.playlistBackoffUntil = Date.now() + 60 * 1000;
+      } catch (e) {
+        console.error('Playlist tracks fetch failed:', e.message);
+      }
+    }
+    // Fallback: try direct Spotify API with user token
+    if (token) {
+      try {
+        const headers = { Authorization: `Bearer ${token}` };
+        let allItems = [];
+        let nextUrl = `https://api.spotify.com/v1/playlists/${id}/tracks?limit=100`;
+        while (nextUrl) {
+          const r = await fetch(nextUrl, { headers });
+          if (!r.ok) break;
+          const data = await r.json();
+          allItems = allItems.concat((data.items || []).filter(item => item?.track?.uri));
+          nextUrl = data.next || null;
+        }
+        if (allItems.length) {
+          return allItems.map((item, index) => ({
+            name: item.track.name || '', uri: item.track.uri,
+            artist: item.track.artists?.map(a => a.name).join(', ') || '',
+            duration: item.track.duration_ms || 0,
+            art: item.track.album?.images?.[0]?.url || '', index,
+          }));
+        }
+      } catch { /* fallback failed */ }
     }
     return null;
   };
