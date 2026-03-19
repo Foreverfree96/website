@@ -423,8 +423,16 @@ export function usePlaylistTools() {
     playlistsLoading.value = true;
     try {
       const res = await fetch(`${API}/api/spotify/playlists`, { headers: headers() });
-      const data = await res.json();
-      userPlaylists.value = data.playlists || [];
+      if (!res.ok) {
+        if (res.status === 403 || res.status === 401 || res.status === 404) {
+          scopeMissing.value = true;
+          error.value = 'Reconnect Spotify to access your playlists';
+        }
+        userPlaylists.value = [];
+      } else {
+        const data = await res.json();
+        userPlaylists.value = data.playlists || [];
+      }
     } catch { userPlaylists.value = []; }
     playlistsLoading.value = false;
   };
@@ -440,8 +448,12 @@ export function usePlaylistTools() {
         headers: headers(),
         body: JSON.stringify({ trackUris: uris }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message || 'Failed to add tracks');
+      if (!res.ok) {
+        let msg = 'Failed to add tracks';
+        try { const data = await res.json(); msg = data.message || msg; if (data.error === 'scope_missing') scopeMissing.value = true; } catch { /* non-JSON */ }
+        if (res.status === 403) scopeMissing.value = true;
+        throw new Error(msg);
+      }
       const pl = userPlaylists.value.find(p => p.id === playlistId);
       saveResult.value = { playlistUrl: `https://open.spotify.com/playlist/${playlistId}`, name: pl?.name || 'Playlist' };
     } catch (err) {
@@ -467,17 +479,25 @@ export function usePlaylistTools() {
         headers: headers(),
         body: JSON.stringify({ name, trackUris: uris }),
       });
-      const data = await res.json();
       if (!res.ok) {
-        if (data.error === 'scope_missing') {
-          throw Object.assign(new Error('Reconnect Spotify to enable playlist creation'), { scopeMissing: true });
+        let msg = 'Failed to save playlist';
+        let isScopeProblem = false;
+        try {
+          const data = await res.json();
+          msg = data.message || msg;
+          if (data.error === 'scope_missing') isScopeProblem = true;
+        } catch { /* non-JSON */ }
+        if (res.status === 403 || res.status === 404) isScopeProblem = true;
+        if (isScopeProblem) {
+          scopeMissing.value = true;
+          msg = 'Reconnect Spotify to enable playlist creation';
         }
-        throw new Error(data.message || 'Failed to save playlist');
+        throw new Error(msg);
       }
+      const data = await res.json();
       saveResult.value = data;
     } catch (err) {
       error.value = err.message;
-      if (err.scopeMissing) scopeMissing.value = true;
     }
     saving.value = false;
   };

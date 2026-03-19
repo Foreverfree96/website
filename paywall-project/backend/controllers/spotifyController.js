@@ -944,7 +944,12 @@ export const saveTrack = async (req, res) => {
 export const getUserPlaylists = async (req, res) => {
   try {
     const result = await getValidToken(req.user.id, false);
-    if (result.error) return res.status(result.error).json({ message: result.message });
+    if (result.error) {
+      return res.status(result.error).json({
+        message: result.message,
+        error: result.error === 404 ? "not_connected" : "auth_failed",
+      });
+    }
 
     const r = await axios.get("https://api.spotify.com/v1/me/playlists", {
       params: { limit: 50 },
@@ -961,6 +966,9 @@ export const getUserPlaylists = async (req, res) => {
     res.json({ playlists });
   } catch (err) {
     console.error("❌ Spotify get playlists error:", err.response?.data || err.message);
+    if (err.response?.status === 403) {
+      return res.status(403).json({ error: "scope_missing", message: "Reconnect Spotify to access playlists" });
+    }
     res.status(err.response?.status || 500).json({ message: "Failed to fetch playlists" });
   }
 };

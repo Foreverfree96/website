@@ -369,10 +369,12 @@
 import { ref, computed, watch } from 'vue';
 import { usePlaylistTools } from '../composables/usePlaylistTools.js';
 import { useSpotifySDK } from '../composables/useSpotifySDK.js';
+import { useNowPlaying } from '../composables/useNowPlaying.js';
 import { useNotifications } from '../composables/useNotifications.js';
 
 const pt  = usePlaylistTools();
 const sdk = useSpotifySDK();
+const { popOut: popOutMini } = useNowPlaying();
 const { playNotifPing } = useNotifications();
 
 // Play sound when background operation completes
@@ -480,6 +482,16 @@ const handlePlayNow = () => {
     tracks.map((t) => t.uri),
     tracks,
   );
+  // Open the mini player so the user has playback controls
+  popOutMini({
+    url: tracks[0]?.uri || `custom:playlist:${Date.now()}`,
+    type: 'spotify',
+    isPlaylist: tracks.length > 1,
+    position: 0,
+    playlistIndex: 0,
+    resumeOnLoad: true,
+    trackUri: tracks[0]?.uri || '',
+  });
   pt.close();
 };
 
