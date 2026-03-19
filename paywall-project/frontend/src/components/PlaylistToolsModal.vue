@@ -126,7 +126,7 @@
               <!-- Track count -->
               <div class="pt-section pt-row">
                 <label class="pt-label">Tracks: {{ pt.trackLimit.value }}</label>
-                <input type="range" min="10" max="50" v-model.number="pt.trackLimit.value" class="pt-range" />
+                <input type="range" min="10" max="100" v-model.number="pt.trackLimit.value" class="pt-range" />
               </div>
 
               <!-- Generate button -->

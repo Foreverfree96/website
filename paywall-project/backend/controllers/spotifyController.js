@@ -459,7 +459,7 @@ export const searchTracks = async (req, res) => {
 export const generatePlaylist = async (req, res) => {
   try {
     let { seedTrackIds = [], seedTrackMeta = [], seedPlaylistId, genres = [], limit = 30 } = req.body;
-    limit = Math.max(1, Math.min(Number(limit) || 30, 50));
+    limit = Math.max(1, Math.min(Number(limit) || 30, 100));
 
     let token;
     const result = await getValidToken(req.user.id, false);
