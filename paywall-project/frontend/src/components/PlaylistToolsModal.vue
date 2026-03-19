@@ -609,7 +609,7 @@ const handleAddToExisting = (playlistId) => {
 .pt-mini-pill {
   position: fixed;
   bottom: 24px;
-  right: 24px;
+  right: 86px; /* next to ChatWidget (54px toggle + 20px right + 12px gap) */
   z-index: 9001;
   background: #181820;
   border: 1px solid #333;
