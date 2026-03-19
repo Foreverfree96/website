@@ -75,20 +75,13 @@
       </template>
 
       <!--
-        Streamer category: accepts BOTH image URL (profile pic) AND media URL
+        Streamer category: accepts a channel/profile link
         (YouTube/@handle, Twitch channel, Kick channel, etc.).
       -->
       <template v-else-if="form.category === 'Streamer'">
-        <div class="field-label">Profile Image URL</div>
-        <input v-model="form.imageUrl" type="url" placeholder="Paste a profile picture link (jpg, png, gif...)"
-          class="create-input" />
-        <img v-if="form.imageUrl" :src="form.imageUrl" class="image-preview" alt="Preview"
-          @error="imageError = true" @load="imageError = false" />
-        <p v-if="imageError" class="auth-error" style="font-size:0.85rem;">Could not load image — check the URL.</p>
-
-        <div class="field-label">Channel Link (optional)</div>
+        <div class="field-label">Channel Link</div>
         <input v-model="form.mediaUrl" type="url"
-          placeholder="Paste a YouTube, Twitch, Kick channel link... (optional)"
+          placeholder="Paste a YouTube, Twitch, Kick channel link..."
           class="create-input" @input="detectEmbed" />
         <div v-if="form.mediaUrl && detectedType" class="detected-badge">{{ embedLabel }}</div>
         <MediaEmbed v-if="form.mediaUrl" :mediaUrl="form.mediaUrl" :embedType="detectedType" />

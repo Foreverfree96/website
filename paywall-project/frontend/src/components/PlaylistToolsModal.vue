@@ -1041,6 +1041,42 @@ const handleAddToExisting = (playlistId) => {
 /* ─── Mobile ──────────────────────────────────────────────────────────────── */
 @media (max-width: 600px) {
   .pt-panel { width: 100vw; }
-  .pt-match-row { font-size: 11px; }
+  .pt-header { padding: 12px 14px; }
+  .pt-tab { padding: 6px 12px; font-size: 13px; }
+  .pt-body { padding: 14px; gap: 12px; }
+  .pt-input { font-size: 13px; padding: 9px 12px; }
+  .pt-label { font-size: 11px; }
+  .pt-btn { padding: 9px 14px; font-size: 13px; }
+  .pt-track { gap: 8px; padding: 6px 2px; }
+  .pt-track-art { width: 34px; height: 34px; }
+  .pt-track-name { font-size: 12px; }
+  .pt-track-artist { font-size: 10px; }
+  .pt-track-list { max-height: 260px; }
+  .pt-match-row { font-size: 11px; gap: 6px; padding: 6px 2px; }
+  .pt-match-title { font-size: 11px; }
+  .pt-match-sub { font-size: 9px; }
+  .pt-chip { padding: 3px 8px 3px 3px; }
+  .pt-chip-art { width: 20px; height: 20px; }
+  .pt-chip-text { font-size: 11px; max-width: 120px; }
+  .pt-tag { padding: 4px 10px; font-size: 11px; }
+  .pt-actions { gap: 6px; flex-wrap: wrap; }
+  .pt-genre-search-row { flex-direction: column; gap: 6px; }
+  .pt-url-row { flex-direction: column; gap: 6px; }
+  .pt-url-input { width: 100%; }
+  .pt-save-dialog { padding: 16px; width: min(320px, 92%); }
+  .pt-existing-list { max-height: 180px; }
+  .pt-dropdown-art { width: 30px; height: 30px; }
+  .pt-dropdown-item { padding: 8px 10px; gap: 8px; }
+  .pt-alt-dropdown { min-width: 220px; }
+}
+
+@media (max-width: 380px) {
+  .pt-body { padding: 10px; gap: 10px; }
+  .pt-header { padding: 10px 12px; }
+  .pt-tab { padding: 5px 10px; font-size: 12px; }
+  .pt-track-art { width: 28px; height: 28px; }
+  .pt-chip-text { max-width: 80px; }
+  .pt-actions { flex-direction: column; }
+  .pt-actions .pt-btn { width: 100%; text-align: center; }
 }
 </style>
