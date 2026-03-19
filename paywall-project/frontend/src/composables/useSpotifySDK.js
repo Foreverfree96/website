@@ -525,6 +525,7 @@ const play = async (mediaUrl, opts = {}) => {
   if (localStorage.getItem('sp_oauth_done') || sessionStorage.getItem('sp_oauth_done')) _w.reconnectAttempted = true;
 
   _isPlaylist = isPlaylist;
+  const prevUrl = currentMediaUrl.value;
   currentMediaUrl.value = mediaUrl;
 
   // Case 1: No player yet — full init
@@ -570,7 +571,7 @@ const play = async (mediaUrl, opts = {}) => {
   }
 
   // Case 2: Player exists, same URL — just resume
-  if (mediaUrl === currentMediaUrl.value && sdkState.value === 'ready') {
+  if (mediaUrl === prevUrl && sdkState.value === 'ready') {
     if (autoPlay && paused.value) player.resume().catch(() => {});
     return;
   }

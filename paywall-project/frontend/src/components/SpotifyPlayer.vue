@@ -217,6 +217,20 @@ onMounted(() => {
   }
 });
 
+// ── Watch for mediaUrl changes (e.g. navigating between posts) ──────────────
+watch(() => props.mediaUrl, (newUrl, oldUrl) => {
+  if (!newUrl || newUrl === oldUrl) return;
+  // If the SDK is actively playing a different URL, switch to the new one
+  if (sdk.sdkState.value === 'ready' && sdk.currentMediaUrl.value && sdk.currentMediaUrl.value !== newUrl) {
+    sdk.play(newUrl, {
+      isPlaylist:    props.isPlaylist,
+      autoPlay:      false, // don't auto-play, show preview card
+      startPosition: 0,
+      startTrackUri: '',
+    });
+  }
+});
+
 // ── Auto-scroll active track ─────────────────────────────────────────────────
 watch(() => sdk.currentTrackUri.value, async () => {
   if (!tracklistEl.value) return;
