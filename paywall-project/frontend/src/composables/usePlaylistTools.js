@@ -280,9 +280,13 @@ export function usePlaylistTools() {
         if (!plId) throw new Error('Could not find playlist ID in URL');
 
         // Fetch YouTube tracks
+        const ytController = new AbortController();
+        const ytTimeout = setTimeout(() => ytController.abort(), 60000);
         const ytRes = await fetch(`${API}/api/youtube/playlist/${plId}/tracks`, {
           headers: headers(),
+          signal: ytController.signal,
         });
+        clearTimeout(ytTimeout);
         if (!ytRes.ok) {
           let msg = `YouTube fetch failed (${ytRes.status})`;
           try { const d = await ytRes.json(); msg = d.message || msg; } catch { /* non-JSON */ }
@@ -291,16 +295,22 @@ export function usePlaylistTools() {
         const ytData = await ytRes.json();
         sourceTracks.value = ytData.items || [];
 
+        bgStatus.value = `Matching ${sourceTracks.value.length} tracks...`;
+
         // Match to Spotify
         const matchBody = sourceTracks.value.map((t) => ({
           title: t.title,
           artist: t.channelTitle,
         }));
+        const spMatchController = new AbortController();
+        const spMatchTimeout = setTimeout(() => spMatchController.abort(), 120000);
         const matchRes = await fetch(`${API}/api/spotify/match`, {
           method: 'POST',
           headers: headers(),
           body: JSON.stringify({ tracks: matchBody }),
+          signal: spMatchController.signal,
         });
+        clearTimeout(spMatchTimeout);
         if (!matchRes.ok) {
           let msg = `Matching failed (${matchRes.status})`;
           try { const d = await matchRes.json(); msg = d.message || msg; } catch { /* non-JSON */ }
@@ -321,15 +331,20 @@ export function usePlaylistTools() {
         if (!plId) throw new Error('Could not find playlist ID in URL');
 
         // Fetch Spotify tracks (retry once on 429 after short delay)
+        const spController = new AbortController();
+        const spTimeout = setTimeout(() => spController.abort(), 60000);
         let spRes = await fetch(`${API}/api/spotify/playlist/${plId}/tracks`, {
           headers: headers(),
+          signal: spController.signal,
         });
         if (spRes.status === 429) {
           await new Promise(r => setTimeout(r, 3000));
           spRes = await fetch(`${API}/api/spotify/playlist/${plId}/tracks`, {
             headers: headers(),
+            signal: spController.signal,
           });
         }
+        clearTimeout(spTimeout);
         if (!spRes.ok) {
           let msg = `Spotify fetch failed (${spRes.status})`;
           try { const d = await spRes.json(); msg = d.message || msg; } catch { /* non-JSON */ }
@@ -344,13 +359,15 @@ export function usePlaylistTools() {
           art: i.track?.album?.images?.[0]?.url || '',
         }));
 
+        bgStatus.value = `Matching ${sourceTracks.value.length} tracks...`;
+
         // Match to YouTube
         const matchBody = sourceTracks.value.map((t) => ({
           title: t.title,
           artist: t.artist,
         }));
         const ytMatchController = new AbortController();
-        const ytMatchTimeout = setTimeout(() => ytMatchController.abort(), 60000);
+        const ytMatchTimeout = setTimeout(() => ytMatchController.abort(), 120000);
         const matchRes = await fetch(`${API}/api/youtube/match`, {
           method: 'POST',
           headers: headers(),
@@ -443,11 +460,15 @@ export function usePlaylistTools() {
     try {
       const uris = resultTracks.value.map(t => t.uri).filter(Boolean);
       if (!uris.length) throw new Error('No tracks to add');
+      const addController = new AbortController();
+      const addTimeout = setTimeout(() => addController.abort(), 60000);
       const res = await fetch(`${API}/api/spotify/playlist/${playlistId}/add`, {
         method: 'POST',
         headers: headers(),
         body: JSON.stringify({ trackUris: uris }),
+        signal: addController.signal,
       });
+      clearTimeout(addTimeout);
       if (!res.ok) {
         let msg = 'Failed to add tracks';
         try { const data = await res.json(); msg = data.message || msg; if (data.error === 'scope_missing') scopeMissing.value = true; } catch { /* non-JSON */ }
@@ -474,11 +495,15 @@ export function usePlaylistTools() {
         .filter(Boolean);
       if (!uris.length) throw new Error('No Spotify tracks to save');
 
+      const saveController = new AbortController();
+      const saveTimeout = setTimeout(() => saveController.abort(), 60000);
       const res = await fetch(`${API}/api/spotify/playlist`, {
         method: 'POST',
         headers: headers(),
         body: JSON.stringify({ name, trackUris: uris }),
+        signal: saveController.signal,
       });
+      clearTimeout(saveTimeout);
       if (!res.ok) {
         let msg = 'Failed to save playlist';
         let isScopeProblem = false;

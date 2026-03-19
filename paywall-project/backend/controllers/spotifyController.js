@@ -886,19 +886,30 @@ export const matchTracks = async (req, res) => {
       await new Promise(r => setTimeout(r, waitMs + 200));
     }
 
-    // Process in parallel batches of 3 with 500ms delay between batches
+    // Process in parallel batches of 5 with 200ms delay between batches
+    const startTime = Date.now();
+    const TIMEOUT_MS = 55000; // stay well under Render's 60s limit
     const matches = [];
-    const BATCH = 3;
+    const BATCH = 5;
     for (let i = 0; i < capped.length; i += BATCH) {
+      if (Date.now() - startTime > TIMEOUT_MS) {
+        console.log(`⏱ Spotify match timeout after ${matches.length}/${capped.length} tracks`);
+        // Fill remaining with no-match so frontend still gets results
+        for (let j = i; j < capped.length; j++) {
+          matches.push({ source: capped[j], bestMatch: null, confidence: "none", alternatives: [] });
+        }
+        break;
+      }
       // If rate-limited mid-run, wait it out instead of stopping
       if (Date.now() < _rateLimitedUntil) {
         const waitMs = Math.min(_rateLimitedUntil - Date.now(), 10000);
+        if (Date.now() - startTime + waitMs > TIMEOUT_MS) break;
         await new Promise(r => setTimeout(r, waitMs + 200));
       }
       const batch = capped.slice(i, i + BATCH);
       const results = await Promise.all(batch.map(matchOne));
       matches.push(...results);
-      if (i + BATCH < capped.length) await new Promise(r => setTimeout(r, 500));
+      if (i + BATCH < capped.length) await new Promise(r => setTimeout(r, 200));
     }
 
     const exact = matches.filter(m => m.confidence === 'exact').length;
