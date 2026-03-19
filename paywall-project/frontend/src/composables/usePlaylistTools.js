@@ -197,6 +197,8 @@ export function usePlaylistTools() {
     bgStatus.value = 'Generating...';
     bgDone.value = false;
     try {
+      if (!API) throw new Error('API URL not configured');
+
       const body = {
         seedTrackIds: seedTracks.value.map((t) => t.id),
         seedTrackMeta: seedTracks.value.map((t) => ({ name: t.name, artist: t.artist })),
@@ -230,7 +232,7 @@ export function usePlaylistTools() {
       }
 
       const genController = new AbortController();
-      const genTimeout = setTimeout(() => genController.abort(), 30000);
+      const genTimeout = setTimeout(() => genController.abort(), 60000);
       const res = await fetch(`${API}/api/spotify/generate`, {
         method: 'POST',
         headers: headers(),
@@ -238,15 +240,23 @@ export function usePlaylistTools() {
         signal: genController.signal,
       });
       clearTimeout(genTimeout);
+      if (!res.ok) {
+        let msg = `Server error (${res.status})`;
+        try { const data = await res.json(); msg = data.message || msg; } catch { /* non-JSON response */ }
+        throw new Error(msg);
+      }
       const data = await res.json();
-      if (!res.ok) throw new Error(data.message || 'Generation failed');
       generatedTracks.value = data.tracks || [];
       resultTracks.value = [...generatedTracks.value];
       bgStatus.value = `Done! ${generatedTracks.value.length} tracks`;
       bgDone.value = true;
     } catch (err) {
-      error.value = err.name === 'AbortError' ? 'Generation timed out — try fewer tracks or genres' : err.message;
+      const msg = err.name === 'AbortError'
+        ? 'Generation timed out — the server may be waking up, try again'
+        : (err.message || 'Generation failed — check your connection');
+      error.value = msg;
       bgStatus.value = 'Error';
+      console.error('Playlist generate error:', err);
     }
     generateLoading.value = false;
   };
@@ -273,8 +283,12 @@ export function usePlaylistTools() {
         const ytRes = await fetch(`${API}/api/youtube/playlist/${plId}/tracks`, {
           headers: headers(),
         });
+        if (!ytRes.ok) {
+          let msg = `YouTube fetch failed (${ytRes.status})`;
+          try { const d = await ytRes.json(); msg = d.message || msg; } catch { /* non-JSON */ }
+          throw new Error(msg);
+        }
         const ytData = await ytRes.json();
-        if (!ytRes.ok) throw new Error(ytData.message || 'Failed to fetch YouTube playlist');
         sourceTracks.value = ytData.items || [];
 
         // Match to Spotify
@@ -287,8 +301,12 @@ export function usePlaylistTools() {
           headers: headers(),
           body: JSON.stringify({ tracks: matchBody }),
         });
+        if (!matchRes.ok) {
+          let msg = `Matching failed (${matchRes.status})`;
+          try { const d = await matchRes.json(); msg = d.message || msg; } catch { /* non-JSON */ }
+          throw new Error(msg);
+        }
         const matchData = await matchRes.json();
-        if (!matchRes.ok) throw new Error(matchData.message || 'Matching failed');
         matchedTracks.value = matchData.matches || [];
         resultTracks.value = matchedTracks.value
           .filter((m) => m.bestMatch)
@@ -312,8 +330,12 @@ export function usePlaylistTools() {
             headers: headers(),
           });
         }
+        if (!spRes.ok) {
+          let msg = `Spotify fetch failed (${spRes.status})`;
+          try { const d = await spRes.json(); msg = d.message || msg; } catch { /* non-JSON */ }
+          throw new Error(msg);
+        }
         const spData = await spRes.json();
-        if (!spRes.ok) throw new Error(spData.message || 'Failed to fetch Spotify playlist');
         sourceTracks.value = (spData.items || []).map((i) => ({
           title: i.track?.name || '',
           artist: i.track?.artists?.map((a) => a.name).join(', ') || '',
@@ -327,7 +349,7 @@ export function usePlaylistTools() {
           artist: t.artist,
         }));
         const ytMatchController = new AbortController();
-        const ytMatchTimeout = setTimeout(() => ytMatchController.abort(), 35000);
+        const ytMatchTimeout = setTimeout(() => ytMatchController.abort(), 60000);
         const matchRes = await fetch(`${API}/api/youtube/match`, {
           method: 'POST',
           headers: headers(),
@@ -335,8 +357,12 @@ export function usePlaylistTools() {
           signal: ytMatchController.signal,
         });
         clearTimeout(ytMatchTimeout);
+        if (!matchRes.ok) {
+          let msg = `Matching failed (${matchRes.status})`;
+          try { const d = await matchRes.json(); msg = d.message || msg; } catch { /* non-JSON */ }
+          throw new Error(msg);
+        }
         const matchData = await matchRes.json();
-        if (!matchRes.ok) throw new Error(matchData.message || 'Matching failed');
         matchedTracks.value = matchData.matches || [];
         resultTracks.value = matchedTracks.value
           .filter((m) => m.bestMatch)
@@ -346,8 +372,12 @@ export function usePlaylistTools() {
         bgDone.value = true;
       }
     } catch (err) {
-      error.value = err.name === 'AbortError' ? 'Matching timed out — try a smaller playlist' : err.message;
+      const msg = err.name === 'AbortError'
+        ? 'Matching timed out — try a smaller playlist'
+        : (err.message || 'Conversion failed — check your connection');
+      error.value = msg;
       bgStatus.value = 'Error';
+      console.error('Playlist convert error:', err);
     }
     convertLoading.value = false;
   };

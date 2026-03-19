@@ -59,7 +59,7 @@
         </div>
       </div>
 
-      <!-- ── Media input — branch on Pictures vs. all other categories ── -->
+      <!-- ── Media input — branch on category ── -->
 
       <!--
         Pictures category: use a direct image URL instead of a platform embed.
@@ -69,26 +69,40 @@
         <div class="field-label">Image URL</div>
         <input v-model="form.imageUrl" type="url" placeholder="Paste a direct image link (jpg, png, gif...)"
           class="create-input" />
-        <!-- Preview the image while the user is typing — updates live with v-model -->
         <img v-if="form.imageUrl" :src="form.imageUrl" class="image-preview" alt="Preview"
           @error="imageError = true" @load="imageError = false" />
-        <!-- Load-error feedback — shown when the browser cannot fetch the image URL -->
         <p v-if="imageError" class="auth-error" style="font-size:0.85rem;">Could not load image — check the URL.</p>
+      </template>
+
+      <!--
+        Streamer category: accepts BOTH image URL (profile pic) AND media URL
+        (YouTube/@handle, Twitch channel, Kick channel, etc.).
+      -->
+      <template v-else-if="form.category === 'Streamer'">
+        <div class="field-label">Profile Image URL</div>
+        <input v-model="form.imageUrl" type="url" placeholder="Paste a profile picture link (jpg, png, gif...)"
+          class="create-input" />
+        <img v-if="form.imageUrl" :src="form.imageUrl" class="image-preview" alt="Preview"
+          @error="imageError = true" @load="imageError = false" />
+        <p v-if="imageError" class="auth-error" style="font-size:0.85rem;">Could not load image — check the URL.</p>
+
+        <div class="field-label">Channel Link (optional)</div>
+        <input v-model="form.mediaUrl" type="url"
+          placeholder="Paste a YouTube, Twitch, Kick channel link... (optional)"
+          class="create-input" @input="detectEmbed" />
+        <div v-if="form.mediaUrl && detectedType" class="detected-badge">{{ embedLabel }}</div>
+        <MediaEmbed v-if="form.mediaUrl" :mediaUrl="form.mediaUrl" :embedType="detectedType" />
       </template>
 
       <!--
         All other categories: accept a platform media URL (YouTube, Twitch,
         Spotify, SoundCloud, Apple Music, Instagram, TikTok, etc.).
-        detectEmbed runs on every input keystroke to identify the platform
-        and show the human-readable badge + a live embed preview.
       -->
       <template v-else>
         <input v-model="form.mediaUrl" type="url"
           placeholder="Paste a YouTube, Twitch, Spotify, SoundCloud, Apple Music link... (optional)"
           class="create-input" @input="detectEmbed" />
-        <!-- Platform detection badge — e.g. "▶ YouTube" or "🎵 Spotify" -->
         <div v-if="form.mediaUrl && detectedType" class="detected-badge">{{ embedLabel }}</div>
-        <!-- Live embed preview rendered by the shared MediaEmbed component -->
         <MediaEmbed v-if="form.mediaUrl" :mediaUrl="form.mediaUrl" :embedType="detectedType" />
       </template>
 
@@ -466,16 +480,19 @@ onMounted(() => {
  * Mirrors the types detected by detectEmbed below.
  */
 const embedLabels = {
-  youtube:    '▶ YouTube',
-  twitch:     '🎮 Twitch',
-  soundcloud: '🎵 SoundCloud',
-  spotify:    '🎵 Spotify',
-  applemusic: '🎵 Apple Music',
-  instagram:  '📷 Instagram',
-  tiktok:     '🎵 TikTok',
-  facebook:   '📘 Facebook',
-  twitter:    '🐦 Twitter/X',
-  other:      '🔗 Link',
+  youtube:          '▶ YouTube',
+  twitch:           '🎮 Twitch',
+  soundcloud:       '🎵 SoundCloud',
+  spotify:          '🎵 Spotify',
+  applemusic:       '🎵 Apple Music',
+  instagram:        '📷 Instagram',
+  tiktok:           '🎵 TikTok',
+  facebook:         '📘 Facebook',
+  twitter:          '🐦 Twitter/X',
+  'yt-channel':     '▶ YouTube Channel',
+  'twitch-channel': '🎮 Twitch Channel',
+  'kick-channel':   '🟢 Kick Channel',
+  other:            '🔗 Link',
 };
 
 /**
@@ -498,8 +515,14 @@ const detectEmbed = () => {
   // Clear state when the field is empty.
   if (!url) { detectedType.value = ''; embedLabel.value = ''; return; }
 
-  // Test each platform in order of specificity.
-  if      (/youtube\.com|youtu\.be/.test(url))   detectedType.value = 'youtube';
+  // Test each platform in order of specificity — channel URLs first.
+  if      (/youtube\.com\/@[^/?]+\s*$/i.test(url) || /youtube\.com\/channel\/[^/?]+\s*$/i.test(url))
+                                                 detectedType.value = 'yt-channel';
+  else if (/twitch\.tv\/[^/?]+\s*$/i.test(url) && !/\/clip\/|\/videos?\//.test(url))
+                                                 detectedType.value = 'twitch-channel';
+  else if (/kick\.com\/[^/?]+\s*$/i.test(url) && !/\/video\/|\/clip\//.test(url))
+                                                 detectedType.value = 'kick-channel';
+  else if (/youtube\.com|youtu\.be/.test(url))   detectedType.value = 'youtube';
   else if (/twitch\.tv/.test(url))               detectedType.value = 'twitch';
   else if (/open\.spotify\.com/.test(url))       detectedType.value = 'spotify';
   else if (/music\.apple\.com/.test(url))        detectedType.value = 'applemusic';

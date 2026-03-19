@@ -122,7 +122,7 @@ const postSchema = new mongoose.Schema(
      */
     embedType: {
       type: String,
-      enum: ["youtube", "twitch", "instagram", "soundcloud", "spotify", "applemusic", "facebook", "twitter", "tiktok", "other", ""],
+      enum: ["youtube", "twitch", "instagram", "soundcloud", "spotify", "applemusic", "facebook", "twitter", "tiktok", "yt-channel", "twitch-channel", "kick-channel", "other", ""],
       default: "",
     },
 
