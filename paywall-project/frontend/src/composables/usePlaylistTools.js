@@ -333,6 +333,7 @@ export function usePlaylistTools() {
         if (!spRes.ok) {
           let msg = `Spotify fetch failed (${spRes.status})`;
           try { const d = await spRes.json(); msg = d.message || msg; } catch { /* non-JSON */ }
+          if (spRes.status === 403) scopeMissing.value = true;
           throw new Error(msg);
         }
         const spData = await spRes.json();

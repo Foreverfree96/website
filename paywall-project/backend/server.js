@@ -163,9 +163,10 @@ app.use(cors({
 
 // ─── BODY PARSING ─────────────────────────────────────────────────────────────
 
-// Limit request bodies to 10 kb to reduce exposure to payload-based attacks
-app.use(express.json({ limit: "10kb" }));
-app.use(express.urlencoded({ extended: true, limit: "10kb" }));
+// Limit request bodies — 100kb allows playlist match/convert payloads (up to 100 tracks)
+// while still blocking unreasonably large requests
+app.use(express.json({ limit: "100kb" }));
+app.use(express.urlencoded({ extended: true, limit: "100kb" }));
 
 // ─── RATE LIMITING ────────────────────────────────────────────────────────────
 
@@ -350,6 +351,14 @@ app.post("/api/paypal/capture-order/:orderID", paypalLimiter, async (req, res) =
  * Logs the stack trace server-side and returns a generic 500 to the client.
  */
 app.use((err, req, res, next) => {
+  // Body-parser payload-too-large error
+  if (err.type === 'entity.too.large') {
+    return res.status(413).json({ message: "Request too large" });
+  }
+  // Body-parser JSON syntax error
+  if (err.type === 'entity.parse.failed') {
+    return res.status(400).json({ message: "Invalid JSON" });
+  }
   console.error(err.stack);
   res.status(500).json({ message: "Server error" });
 });
