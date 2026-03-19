@@ -241,6 +241,7 @@ const fetchPlaylistTracks = async (mediaUrl) => {
     saveCachedTracks(url, tracks);
     localStorage.setItem('sp_playlist_ok', '1');
     _w.reconnectAttempted = true;
+    needsReconnect.value = false;
     if (!currentTrackUri.value) {
       const t = tracks[0];
       if (t) track.value = { name: t.name, artist: t.artist, album: '', art: t.art };
