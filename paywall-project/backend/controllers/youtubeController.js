@@ -103,6 +103,41 @@ export const searchYoutubeTracks = async (req, res) => {
   }
 };
 
+// ─── YOUTUBE CHANNEL INFO ───────────────────────────────────────────────────
+// GET /api/youtube/channel/:identifier
+// identifier can be a channel ID (UC...) or handle (@username)
+export const getChannelInfo = async (req, res) => {
+  try {
+    if (!API_KEY()) return res.status(500).json({ message: "YouTube API key not configured" });
+
+    const id = req.params.identifier;
+    const isHandle = id.startsWith('@');
+
+    const params = {
+      part: "snippet,statistics",
+      key: API_KEY(),
+    };
+    if (isHandle) params.forHandle = id.replace('@', '');
+    else params.id = id;
+
+    const r = await axios.get(`${BASE}/channels`, { params });
+    const ch = r.data.items?.[0];
+    if (!ch) return res.status(404).json({ message: "Channel not found" });
+
+    res.json({
+      id:             ch.id,
+      title:          ch.snippet.title,
+      description:    ch.snippet.description?.slice(0, 200) || "",
+      avatar:         ch.snippet.thumbnails?.medium?.url || ch.snippet.thumbnails?.default?.url || "",
+      subscriberCount: ch.statistics.subscriberCount || "0",
+      videoCount:     ch.statistics.videoCount || "0",
+    });
+  } catch (err) {
+    console.error("❌ YouTube channel info error:", err.response?.data || err.message);
+    res.status(err.response?.status || 500).json({ message: "Failed to fetch channel info" });
+  }
+};
+
 // ─── YOUTUBE MATCH TRACKS ───────────────────────────────────────────────────
 // POST /api/youtube/match
 // Body: { tracks: [{ title, artist }] }
@@ -197,13 +232,14 @@ export const matchYoutubeTracks = async (req, res) => {
       }
     };
 
-    // Process in parallel batches of 3 (YouTube quota is more expensive)
+    // Process in parallel batches of 3 with 200ms delay (YouTube quota is more expensive)
     const matches = [];
     const BATCH = 3;
     for (let i = 0; i < capped.length; i += BATCH) {
       const batch = capped.slice(i, i + BATCH);
       const results = await Promise.all(batch.map(matchOne));
       matches.push(...results);
+      if (i + BATCH < capped.length) await new Promise(r => setTimeout(r, 200));
     }
 
     console.log(`✅ YouTube matched ${capped.length} tracks`);

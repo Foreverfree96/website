@@ -39,6 +39,19 @@ const textFilter = new Filter();
  */
 const detectEmbedType = (url) => {
   if (!url) return "";
+
+  // YouTube channel/profile URLs (before generic youtube match)
+  if (/youtube\.com\/@[^/?]+\s*$/i.test(url) || /youtube\.com\/channel\/[^/?]+\s*$/i.test(url))
+    return "yt-channel";
+
+  // Twitch channel URLs (not clips or videos)
+  if (/twitch\.tv\/[^/?]+\s*$/i.test(url) && !/\/clip\/|\/videos?\//.test(url))
+    return "twitch-channel";
+
+  // Kick channel URLs
+  if (/kick\.com\/[^/?]+\s*$/i.test(url) && !/\/video\/|\/clip\//.test(url))
+    return "kick-channel";
+
   if (/youtube\.com|youtu\.be/.test(url)) return "youtube";
   if (/twitch\.tv/.test(url)) return "twitch";
   if (/instagram\.com/.test(url)) return "instagram";

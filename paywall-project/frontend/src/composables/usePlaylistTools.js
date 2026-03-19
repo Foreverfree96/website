@@ -30,6 +30,7 @@ const resultTracks = ref([]);
 const saving       = ref(false);
 const saveResult   = ref(null); // { playlistUrl, name } after save
 const error        = ref('');
+const scopeMissing = ref(false);
 
 // Search state
 const searchQuery   = ref('');
@@ -37,13 +38,23 @@ const searchResults = ref([]);
 const searchLoading = ref(false);
 let _searchDebounce = null;
 
-// ─── Available genres (Spotify recommendation seeds) ────────────────────────
-const GENRES = [
-  'acoustic', 'ambient', 'chill', 'classical', 'country', 'dance',
-  'electronic', 'folk', 'funk', 'hip-hop', 'house', 'indie', 'jazz',
-  'k-pop', 'latin', 'lofi', 'metal', 'pop', 'punk', 'r-n-b',
-  'reggae', 'rock', 'soul', 'techno', 'trap',
-];
+// ─── Available genres (categorized) ──────────────────────────────────────────
+const GENRE_CATEGORIES = {
+  'Popular':          ['pop', 'hip-hop', 'r-n-b', 'rap', 'trap', 'drill', 'reggaeton'],
+  'Electronic':       ['electronic', 'house', 'techno', 'edm', 'dubstep', 'drum-and-bass', 'trance', 'ambient', 'lofi'],
+  'Rock & Metal':     ['rock', 'alt-rock', 'indie', 'punk', 'metal', 'grunge', 'emo', 'hardcore'],
+  'Chill & Acoustic': ['chill', 'acoustic', 'folk', 'singer-songwriter', 'bossa-nova'],
+  'Dance & Party':    ['dance', 'disco', 'funk', 'afrobeats', 'dancehall'],
+  'World & Cultural': ['latin', 'k-pop', 'j-pop', 'reggae', 'samba', 'flamenco'],
+  'Classical & Jazz':  ['classical', 'jazz', 'blues', 'soul', 'gospel', 'opera'],
+  'Moods':            ['sad', 'happy', 'workout', 'focus', 'sleep', 'road-trip', 'party', 'romantic'],
+};
+
+// Flat list for backwards compat
+const GENRES = [...new Set(Object.values(GENRE_CATEGORIES).flat())];
+
+// Genre search filter
+const genreFilter = ref('');
 
 // ─── URL detection helpers ──────────────────────────────────────────────────
 const detectPlatform = (url) => {
@@ -64,6 +75,24 @@ const extractSpotifyPlaylistId = (url) => {
 
 // ─── Composable ─────────────────────────────────────────────────────────────
 export function usePlaylistTools() {
+
+  // Sync resultTracks to the active tab's data
+  const syncResultTracks = () => {
+    if (activeTab.value === 'generate') {
+      resultTracks.value = [...generatedTracks.value];
+    } else {
+      resultTracks.value = matchedTracks.value
+        .filter(m => m.bestMatch)
+        .map(m => m.bestMatch);
+    }
+  };
+
+  const setTab = (tab) => {
+    activeTab.value = tab;
+    error.value = '';
+    saveResult.value = null;
+    syncResultTracks();
+  };
 
   const open = (tab) => {
     if (tab) activeTab.value = tab;
@@ -92,8 +121,10 @@ export function usePlaylistTools() {
     saving.value = false;
     saveResult.value = null;
     error.value = '';
+    scopeMissing.value = false;
     searchQuery.value = '';
     searchResults.value = [];
+    genreFilter.value = '';
   };
 
   // ── Seed track search ───────────────────────────────────────────────────
@@ -130,6 +161,12 @@ export function usePlaylistTools() {
     const idx = selectedGenres.value.indexOf(genre);
     if (idx >= 0) selectedGenres.value.splice(idx, 1);
     else selectedGenres.value.push(genre);
+  };
+
+  const addCustomGenre = (text) => {
+    const g = text.trim().toLowerCase();
+    if (!g || selectedGenres.value.includes(g)) return;
+    selectedGenres.value.push(g);
   };
 
   // ── Generate playlist ─────────────────────────────────────────────────
@@ -264,9 +301,60 @@ export function usePlaylistTools() {
     resultTracks.value.splice(index, 1);
   };
 
+  // ── Like track (save to Liked Songs) ──────────────────────────────────
+  const likedIds = ref(new Set());
+
+  const likeTrack = async (trackId) => {
+    if (!trackId || likedIds.value.has(trackId)) return;
+    try {
+      const res = await fetch(`${API}/api/spotify/save-track`, {
+        method: 'PUT',
+        headers: headers(),
+        body: JSON.stringify({ trackIds: [trackId] }),
+      });
+      if (res.ok) likedIds.value = new Set([...likedIds.value, trackId]);
+    } catch { /* silent */ }
+  };
+
+  // ── Fetch user playlists ──────────────────────────────────────────────
+  const userPlaylists = ref([]);
+  const playlistsLoading = ref(false);
+
+  const fetchUserPlaylists = async () => {
+    playlistsLoading.value = true;
+    try {
+      const res = await fetch(`${API}/api/spotify/playlists`, { headers: headers() });
+      const data = await res.json();
+      userPlaylists.value = data.playlists || [];
+    } catch { userPlaylists.value = []; }
+    playlistsLoading.value = false;
+  };
+
+  const addToExistingPlaylist = async (playlistId) => {
+    error.value = '';
+    saving.value = true;
+    try {
+      const uris = resultTracks.value.map(t => t.uri).filter(Boolean);
+      if (!uris.length) throw new Error('No tracks to add');
+      const res = await fetch(`${API}/api/spotify/playlist/${playlistId}/add`, {
+        method: 'POST',
+        headers: headers(),
+        body: JSON.stringify({ trackUris: uris }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Failed to add tracks');
+      const pl = userPlaylists.value.find(p => p.id === playlistId);
+      saveResult.value = { playlistUrl: `https://open.spotify.com/playlist/${playlistId}`, name: pl?.name || 'Playlist' };
+    } catch (err) {
+      error.value = err.message;
+    }
+    saving.value = false;
+  };
+
   // ── Save to Spotify ───────────────────────────────────────────────────
   const saveToSpotify = async (name) => {
     error.value = '';
+    scopeMissing.value = false;
     saving.value = true;
     saveResult.value = null;
     try {
@@ -283,13 +371,14 @@ export function usePlaylistTools() {
       const data = await res.json();
       if (!res.ok) {
         if (data.error === 'scope_missing') {
-          throw new Error('Please reconnect Spotify in your profile to enable playlist creation');
+          throw Object.assign(new Error('Reconnect Spotify to enable playlist creation'), { scopeMissing: true });
         }
         throw new Error(data.message || 'Failed to save playlist');
       }
       saveResult.value = data;
     } catch (err) {
       error.value = err.message;
+      if (err.scopeMissing) scopeMissing.value = true;
     }
     saving.value = false;
   };
@@ -300,14 +389,17 @@ export function usePlaylistTools() {
     seedTracks, seedPlaylistUrl, selectedGenres, trackLimit,
     generatedTracks, generateLoading,
     convertUrl, convertDirection, sourceTracks, matchedTracks, convertLoading,
-    resultTracks, saving, saveResult, error,
+    resultTracks, saving, saveResult, error, scopeMissing,
     searchQuery, searchResults, searchLoading,
-    GENRES,
+    GENRES, GENRE_CATEGORIES, genreFilter,
+
+    likedIds, userPlaylists, playlistsLoading,
 
     // Methods
-    open, close, reset,
-    searchSeeds, addSeed, removeSeed, toggleGenre,
+    open, close, reset, setTab,
+    searchSeeds, addSeed, removeSeed, toggleGenre, addCustomGenre,
     generate, startConvert, swapMatch, removeResult,
+    likeTrack, fetchUserPlaylists, addToExistingPlaylist,
     saveToSpotify,
   };
 }

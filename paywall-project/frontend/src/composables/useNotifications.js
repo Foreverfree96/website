@@ -26,10 +26,33 @@ import { ref } from "vue";
 import axios from "axios";
 import { io as socketIo } from "socket.io-client";
 
+// ── Persistent AudioContext for mobile compatibility ─────────────────────────
+let _audioCtx = null;
+
+const getAudioCtx = () => {
+  if (!_audioCtx) {
+    _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  // Mobile browsers suspend AudioContext until a user gesture resumes it
+  if (_audioCtx.state === 'suspended') _audioCtx.resume().catch(() => {});
+  return _audioCtx;
+};
+
+// Unlock AudioContext on first user interaction (required by iOS/Android browsers)
+if (typeof window !== 'undefined') {
+  const unlock = () => {
+    getAudioCtx();
+    window.removeEventListener('touchstart', unlock, true);
+    window.removeEventListener('click', unlock, true);
+  };
+  window.addEventListener('touchstart', unlock, true);
+  window.addEventListener('click', unlock, true);
+}
+
 // ── Notification ping (high, bright) ──────────────────────────────────────────
 const playNotifPing = () => {
   try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const ctx = getAudioCtx();
     const osc  = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.connect(gain); gain.connect(ctx.destination);
@@ -39,14 +62,13 @@ const playNotifPing = () => {
     gain.gain.setValueAtTime(0.25, ctx.currentTime);
     gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
     osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.6);
-    osc.onended = () => ctx.close();
   } catch { /* browser audio blocked */ }
 };
 
 // ── Send bump (short, low pop for outgoing messages) ─────────────────────────
 export const playBump = () => {
   try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const ctx = getAudioCtx();
     const osc  = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.connect(gain); gain.connect(ctx.destination);
@@ -56,14 +78,13 @@ export const playBump = () => {
     gain.gain.setValueAtTime(0.15, ctx.currentTime);
     gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.2);
     osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.2);
-    osc.onended = () => ctx.close();
   } catch { /* browser audio blocked */ }
 };
 
 // ── DM ping (softer, lower pitch) ─────────────────────────────────────────────
 const playDmPing = () => {
   try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const ctx = getAudioCtx();
     const osc  = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.connect(gain); gain.connect(ctx.destination);
@@ -73,7 +94,6 @@ const playDmPing = () => {
     gain.gain.setValueAtTime(0.18, ctx.currentTime);
     gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.45);
     osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.45);
-    osc.onended = () => ctx.close();
   } catch { /* browser audio blocked */ }
 };
 

@@ -91,6 +91,26 @@
                     </button>
                 </div>
 
+                <!-- Spotify Connection -->
+                <div class="dashboard-section">
+                    <h2 class="section-title">Spotify Connection</h2>
+                    <div v-if="spotifyStatus.connected" class="spotify-status">
+                        <span class="spotify-name">{{ spotifyStatus.displayName || 'Connected' }}</span>
+                        <span v-if="spotifyStatus.isPremium" class="spotify-premium-badge">Premium</span>
+                        <span v-else class="spotify-free-badge">Free</span>
+                    </div>
+                    <p v-else class="section-hint">Connect your Spotify account to enable playlist features and playback.</p>
+                    <div class="spotify-actions">
+                        <a v-if="!spotifyStatus.connected"
+                           :href="`${API_BASE}/api/spotify/login?token=${jwtToken}&returnTo=${encodeURIComponent(origin + '/profile')}`"
+                           class="btn-black spotify-btn">Connect Spotify</a>
+                        <a v-else
+                           :href="`${API_BASE}/api/spotify/login?token=${jwtToken}&returnTo=${encodeURIComponent(origin + '/profile')}`"
+                           class="btn-black spotify-btn">Reconnect</a>
+                        <button v-if="spotifyStatus.connected" class="btn-black spotify-disconnect-btn" @click="handleSpotifyDisconnect">Disconnect</button>
+                    </div>
+                </div>
+
                 <!-- My Network: followers / following counts with clickable modal -->
                 <div class="dashboard-section">
                     <h2 class="section-title">My Network</h2>
@@ -178,9 +198,12 @@ import { useRouter, useRoute } from 'vue-router';
 import axios from 'axios';
 import { useAuth } from '../composables/useAuth.js';
 
-const API_USERS = import.meta.env.VITE_API_URL + '/api/users';
+const API_BASE  = import.meta.env.VITE_API_URL;
+const API_USERS = API_BASE + '/api/users';
 const router = useRouter();
 const route  = useRoute();
+const jwtToken = localStorage.getItem('jwtToken') || '';
+const origin = globalThis.location?.origin || '';
 
 // ─── AUTH COMPOSABLE ──────────────────────────────────────────────────────────
 
@@ -198,6 +221,30 @@ const {
   updateCreatorProfile,
   togglePrivateAccount,
 } = useAuth();
+
+// ─── SPOTIFY CONNECTION STATE ─────────────────────────────────────────────────
+const spotifyStatus = ref({ connected: false, displayName: null, isPremium: false });
+
+const fetchSpotifyStatus = async () => {
+    try {
+        const res = await axios.get(`${API_BASE}/api/spotify/status`, {
+            headers: { Authorization: `Bearer ${jwtToken}` },
+        });
+        spotifyStatus.value = res.data;
+    } catch { /* non-critical */ }
+};
+
+const handleSpotifyDisconnect = async () => {
+    try {
+        await axios.delete(`${API_BASE}/api/spotify/disconnect`, {
+            headers: { Authorization: `Bearer ${jwtToken}` },
+        });
+        spotifyStatus.value = { connected: false, displayName: null, isPremium: false };
+        errorMessage.value = 'Spotify disconnected.';
+    } catch {
+        errorMessage.value = 'Failed to disconnect Spotify.';
+    }
+};
 
 // ─── FORM STATE: SHARED ───────────────────────────────────────────────────────
 
@@ -322,6 +369,9 @@ onMounted(async () => {
                 followingList.value  = netRes.data.following  || [];
             } catch { /* non-critical — silently ignore */ }
         }
+
+        // Fetch Spotify connection status
+        await fetchSpotifyStatus();
 
         // Clean up any leftover Spotify OAuth query params
         if (route.query.spotify) router.replace({ query: {} });
@@ -943,4 +993,49 @@ const doDeleteAccount = async () => {
     transition: transform 0.15s;
 }
 .confirm-delete:hover { transform: translateY(-2px); background: #991b1b; }
+
+/* ── Spotify Connection ── */
+.spotify-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.spotify-name {
+    font-weight: 700;
+    color: #000;
+    font-size: 0.95rem;
+}
+.spotify-premium-badge {
+    background: #1db954;
+    color: #fff;
+    font-size: 0.7rem;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+.spotify-free-badge {
+    background: #555;
+    color: #fff;
+    font-size: 0.7rem;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 10px;
+    text-transform: uppercase;
+}
+.spotify-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.spotify-btn {
+    text-decoration: none;
+    display: inline-block;
+    text-align: center;
+}
+.spotify-disconnect-btn {
+    border-color: #7f1d1d !important;
+}
 </style>

@@ -7,6 +7,19 @@
       <button class="embed-popin-btn" @click="popIn()" title="Return to post">↙ Pop back in</button>
     </div>
 
+    <!-- Channel/Profile embed cards -->
+    <template v-else-if="isChannelEmbed">
+      <div class="channel-card" @click="openChannel">
+        <img v-if="channelData.avatar" :src="channelData.avatar" class="channel-avatar" alt="" />
+        <div class="channel-info">
+          <span class="channel-name">{{ channelData.title || extractChannelName }}</span>
+          <span v-if="channelData.subscriberCount" class="channel-subs">{{ formatCount(channelData.subscriberCount) }} subscribers</span>
+          <span class="channel-platform">{{ channelPlatformLabel }}</span>
+        </div>
+        <span class="channel-arrow">→</span>
+      </div>
+    </template>
+
     <template v-else>
       <!-- Actual embed -->
       <div class="embed-wrap">
@@ -265,6 +278,62 @@ const popOutEmbed = () => {
 // ── Link card ─────────────────────────────────────────────────────────────────
 const platformIcon  = computed(() => ({ instagram: '📷', tiktok: '🎵', facebook: '📘', twitter: '🐦' })[props.embedType] || '🔗');
 const platformLabel = computed(() => ({ instagram: 'View on Instagram', tiktok: 'View on TikTok', facebook: 'View on Facebook', twitter: 'View on Twitter/X' })[props.embedType] || 'Open Link');
+
+// ── Channel/Profile embed logic ──────────────────────────────────────────────
+const API = import.meta.env.VITE_API_URL;
+const isChannelEmbed = computed(() => ['yt-channel', 'twitch-channel', 'kick-channel'].includes(props.embedType));
+const channelData = ref({ title: '', avatar: '', subscriberCount: '', videoCount: '' });
+
+const channelPlatformLabel = computed(() => ({
+  'yt-channel': 'YouTube Channel',
+  'twitch-channel': 'Twitch Channel',
+  'kick-channel': 'Kick Channel',
+})[props.embedType] || 'Channel');
+
+const extractChannelName = computed(() => {
+  const url = props.mediaUrl;
+  // YouTube @handle
+  const ytHandle = url.match(/youtube\.com\/@([^/?]+)/);
+  if (ytHandle) return `@${ytHandle[1]}`;
+  // Twitch
+  const twitch = url.match(/twitch\.tv\/([^/?]+)/);
+  if (twitch) return twitch[1];
+  // Kick
+  const kick = url.match(/kick\.com\/([^/?]+)/);
+  if (kick) return kick[1];
+  return 'Channel';
+});
+
+const formatCount = (n) => {
+  const num = Number(n);
+  if (num >= 1_000_000) return (num / 1_000_000).toFixed(1) + 'M';
+  if (num >= 1_000) return (num / 1_000).toFixed(1) + 'K';
+  return String(num);
+};
+
+const openChannel = () => { window.open(props.mediaUrl, '_blank'); };
+
+const fetchChannelData = async () => {
+  if (props.embedType === 'yt-channel') {
+    const url = props.mediaUrl;
+    const handle = url.match(/youtube\.com\/@([^/?]+)/);
+    const channelId = url.match(/youtube\.com\/channel\/([^/?]+)/);
+    const identifier = handle ? `@${handle[1]}` : channelId?.[1];
+    if (!identifier) return;
+    try {
+      const token = localStorage.getItem('jwtToken');
+      const res = await fetch(`${API}/api/youtube/channel/${encodeURIComponent(identifier)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) channelData.value = await res.json();
+    } catch { /* silent */ }
+  }
+  // Twitch and Kick: no API integration yet, just show the link card with name
+};
+
+watch(() => props.embedType, (type) => {
+  if (type === 'yt-channel') fetchChannelData();
+}, { immediate: true });
 </script>
 
 <style scoped>
@@ -412,6 +481,67 @@ const platformLabel = computed(() => ({ instagram: 'View on Instagram', tiktok: 
 .link-card__icon { font-size: 1.8rem; flex-shrink: 0; }
 .link-card__text { font-size: 0.95rem; word-break: break-all; }
 .link-card__text small { font-weight: 400; opacity: 0.7; }
+
+/* ── Channel embed card ── */
+.channel-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 20px;
+  background: #000;
+  border: 3.5px solid #14532d;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.channel-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+
+.channel-avatar {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+  border: 2px solid #14532d;
+}
+
+.channel-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow: hidden;
+}
+
+.channel-name {
+  color: pink;
+  font-weight: 700;
+  font-size: 1rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.channel-subs {
+  color: rgb(125, 190, 157);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.channel-platform {
+  color: #888;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.channel-arrow {
+  color: pink;
+  font-size: 1.4rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
 
 /* ── Mobile / Tablet ── */
 @media (max-width: 768px) {

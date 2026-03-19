@@ -10,11 +10,11 @@
               <div class="pt-tabs">
                 <button
                   :class="['pt-tab', { active: pt.activeTab.value === 'generate' }]"
-                  @click="pt.activeTab.value = 'generate'"
+                  @click="pt.setTab('generate')"
                 >Generate</button>
                 <button
                   :class="['pt-tab', { active: pt.activeTab.value === 'convert' }]"
-                  @click="pt.activeTab.value = 'convert'"
+                  @click="pt.setTab('convert')"
                 >Convert</button>
               </div>
               <button class="pt-close" @click="pt.close()" title="Close">&times;</button>
@@ -23,7 +23,8 @@
             <!-- Error banner -->
             <div v-if="pt.error.value" class="pt-error">
               {{ pt.error.value }}
-              <button class="pt-error-x" @click="pt.error.value = ''">&times;</button>
+              <a v-if="pt.scopeMissing.value" :href="spotifyReconnectUrl" class="pt-reconnect-link">Reconnect Spotify</a>
+              <button class="pt-error-x" @click="pt.error.value = ''; pt.scopeMissing.value = false">&times;</button>
             </div>
 
             <!-- Save success banner -->
@@ -85,13 +86,40 @@
               <!-- Genre/mood tags -->
               <div class="pt-section">
                 <label class="pt-label">Genres / Moods</label>
-                <div class="pt-tags">
-                  <button
-                    v-for="g in pt.GENRES"
-                    :key="g"
-                    :class="['pt-tag', { selected: pt.selectedGenres.value.includes(g) }]"
-                    @click="pt.toggleGenre(g)"
-                  >{{ g }}</button>
+                <div class="pt-genre-search-row">
+                  <input
+                    class="pt-input pt-genre-search"
+                    v-model="pt.genreFilter.value"
+                    placeholder="Search genres..."
+                  />
+                  <input
+                    class="pt-input pt-genre-custom"
+                    v-model="customGenreInput"
+                    placeholder="Custom genre..."
+                    @keydown.enter="addCustom"
+                  />
+                </div>
+                <!-- Selected genres chips -->
+                <div v-if="pt.selectedGenres.value.length" class="pt-chips" style="margin-bottom:6px">
+                  <div v-for="(g, i) in pt.selectedGenres.value" :key="'sel-'+g" class="pt-chip">
+                    <span class="pt-chip-text">{{ g }}</span>
+                    <button class="pt-chip-x" @click="pt.toggleGenre(g)">&times;</button>
+                  </div>
+                </div>
+                <!-- Categorized genre tags -->
+                <div v-for="(genres, cat) in filteredCategories" :key="cat" class="pt-genre-category">
+                  <div class="pt-genre-cat-header" @click="toggleCat(cat)">
+                    <span>{{ cat }}</span>
+                    <span class="pt-genre-cat-arrow">{{ openCats.has(cat) ? '▾' : '▸' }}</span>
+                  </div>
+                  <div v-if="openCats.has(cat)" class="pt-tags">
+                    <button
+                      v-for="g in genres"
+                      :key="g"
+                      :class="['pt-tag', { selected: pt.selectedGenres.value.includes(g) }]"
+                      @click="pt.toggleGenre(g)"
+                    >{{ g }}</button>
+                  </div>
                 </div>
               </div>
 
@@ -105,7 +133,7 @@
               <button
                 class="pt-btn pt-btn-primary"
                 @click="pt.generate()"
-                :disabled="pt.generateLoading.value || (!pt.seedTracks.value.length && !pt.selectedGenres.value.length)"
+                :disabled="pt.generateLoading.value || (!pt.seedTracks.value.length && !pt.selectedGenres.value.length && !pt.seedPlaylistUrl.value.trim())"
               >
                 {{ pt.generateLoading.value ? 'Generating...' : 'Generate Playlist' }}
               </button>
@@ -122,6 +150,7 @@
                       <span class="pt-track-name">{{ t.name }}</span>
                       <span class="pt-track-artist">{{ t.artist }}</span>
                     </div>
+                    <button v-if="t.id" class="pt-like-btn" :class="{ liked: pt.likedIds.value.has(t.id) }" @click="pt.likeTrack(t.id)" title="Save to Liked Songs">♥</button>
                     <button class="pt-track-remove" @click="pt.removeResult(i)" title="Remove">&times;</button>
                   </div>
                 </div>
@@ -221,7 +250,12 @@
                   </button>
                 </div>
                 <div class="pt-actions" v-else-if="pt.convertDirection.value === 'spotify-to-yt'">
-                  <p class="pt-hint">YouTube matches found — copy links or listen on YouTube.</p>
+                  <button class="pt-btn pt-btn-primary" @click="copyYoutubeLinks" :disabled="!pt.resultTracks.value.length">
+                    {{ ytCopied ? 'Copied!' : 'Copy All Links' }}
+                  </button>
+                  <button class="pt-btn" @click="openYoutubePlaylist" :disabled="!pt.resultTracks.value.length">
+                    Open Playlist
+                  </button>
                 </div>
               </div>
             </div>
@@ -230,18 +264,51 @@
             <div v-if="showSaveDialog" class="pt-save-overlay" @click.self="showSaveDialog = false">
               <div class="pt-save-dialog">
                 <h3>Save to Spotify</h3>
-                <input
-                  class="pt-input"
-                  v-model="playlistName"
-                  placeholder="Playlist name..."
-                  @keydown.enter="handleSave"
-                />
-                <div class="pt-save-actions">
-                  <button class="pt-btn pt-btn-save" @click="handleSave" :disabled="pt.saving.value || !playlistName.trim()">
-                    {{ pt.saving.value ? 'Saving...' : 'Save' }}
-                  </button>
-                  <button class="pt-btn" @click="showSaveDialog = false">Cancel</button>
+
+                <!-- Toggle: new vs existing -->
+                <div class="pt-save-toggle">
+                  <button :class="['pt-save-toggle-btn', { active: saveMode === 'new' }]" @click="saveMode = 'new'">New Playlist</button>
+                  <button :class="['pt-save-toggle-btn', { active: saveMode === 'existing' }]" @click="saveMode = 'existing'; loadPlaylists()">Add to Existing</button>
                 </div>
+
+                <!-- New playlist -->
+                <template v-if="saveMode === 'new'">
+                  <input
+                    class="pt-input"
+                    v-model="playlistName"
+                    placeholder="Playlist name..."
+                    @keydown.enter="handleSave"
+                  />
+                  <div class="pt-save-actions">
+                    <button class="pt-btn pt-btn-save" @click="handleSave" :disabled="pt.saving.value || !playlistName.trim()">
+                      {{ pt.saving.value ? 'Saving...' : 'Create & Save' }}
+                    </button>
+                    <button class="pt-btn" @click="showSaveDialog = false">Cancel</button>
+                  </div>
+                </template>
+
+                <!-- Existing playlist -->
+                <template v-else>
+                  <div v-if="pt.playlistsLoading.value" class="pt-hint">Loading playlists...</div>
+                  <div v-else-if="!pt.userPlaylists.value.length" class="pt-hint">No playlists found.</div>
+                  <div v-else class="pt-existing-list">
+                    <div
+                      v-for="pl in pt.userPlaylists.value"
+                      :key="pl.id"
+                      class="pt-existing-item"
+                      @click="handleAddToExisting(pl.id)"
+                    >
+                      <img v-if="pl.image" :src="pl.image" class="pt-existing-art" alt="" />
+                      <div class="pt-existing-info">
+                        <span class="pt-existing-name">{{ pl.name }}</span>
+                        <span class="pt-existing-count">{{ pl.tracks }} tracks</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="pt-save-actions">
+                    <button class="pt-btn" @click="showSaveDialog = false">Cancel</button>
+                  </div>
+                </template>
               </div>
             </div>
 
@@ -260,9 +327,41 @@ import { useSpotifySDK } from '../composables/useSpotifySDK.js';
 const pt  = usePlaylistTools();
 const sdk = useSpotifySDK();
 
-const showSaveDialog = ref(false);
-const playlistName   = ref('');
-const altOpen        = ref(null);
+const API = import.meta.env.VITE_API_URL;
+const spotifyReconnectUrl = computed(() => {
+  const token = localStorage.getItem('jwtToken') || '';
+  return `${API}/api/spotify/login?token=${token}&returnTo=${encodeURIComponent(window.location.origin + '/profile')}`;
+});
+
+const showSaveDialog   = ref(false);
+const playlistName     = ref('');
+const saveMode         = ref('new'); // 'new' | 'existing'
+const altOpen          = ref(null);
+const customGenreInput = ref('');
+const openCats         = ref(new Set(['Popular', 'Moods']));
+
+const toggleCat = (cat) => {
+  const s = openCats.value;
+  if (s.has(cat)) s.delete(cat); else s.add(cat);
+  openCats.value = new Set(s); // trigger reactivity
+};
+
+const filteredCategories = computed(() => {
+  const filter = pt.genreFilter.value.toLowerCase().trim();
+  const result = {};
+  for (const [cat, genres] of Object.entries(pt.GENRE_CATEGORIES)) {
+    const filtered = filter ? genres.filter(g => g.includes(filter)) : genres;
+    if (filtered.length) result[cat] = filtered;
+  }
+  return result;
+});
+
+const addCustom = () => {
+  if (customGenreInput.value.trim()) {
+    pt.addCustomGenre(customGenreInput.value);
+    customGenreInput.value = '';
+  }
+};
 
 const detectedPlatform = computed(() => {
   const url = pt.convertUrl.value;
@@ -299,6 +398,39 @@ const handleSave = () => {
   pt.saveToSpotify(playlistName.value.trim());
   showSaveDialog.value = false;
   playlistName.value = '';
+};
+
+const loadPlaylists = () => {
+  if (!pt.userPlaylists.value.length) pt.fetchUserPlaylists();
+};
+
+const ytCopied = ref(false);
+
+const copyYoutubeLinks = async () => {
+  const urls = pt.resultTracks.value
+    .filter(t => t.videoId || t.url)
+    .map(t => t.url || `https://www.youtube.com/watch?v=${t.videoId}`);
+  if (!urls.length) return;
+  try {
+    await navigator.clipboard.writeText(urls.join('\n'));
+    ytCopied.value = true;
+    setTimeout(() => { ytCopied.value = false; }, 2000);
+  } catch { /* clipboard not available */ }
+};
+
+const openYoutubePlaylist = () => {
+  const ids = pt.resultTracks.value
+    .map(t => t.videoId)
+    .filter(Boolean);
+  if (!ids.length) return;
+  // YouTube watch_videos URL plays multiple videos in sequence
+  const url = `https://www.youtube.com/watch_videos?video_ids=${ids.join(',')}`;
+  window.open(url, '_blank');
+};
+
+const handleAddToExisting = (playlistId) => {
+  pt.addToExistingPlaylist(playlistId);
+  showSaveDialog.value = false;
 };
 </script>
 
@@ -468,6 +600,29 @@ const handleSave = () => {
 }
 .pt-tag:hover:not(.selected) { border-color: #555; color: #ddd; }
 
+/* ─── Genre search + categories ──────────────────────────────────────────── */
+.pt-genre-search-row { display: flex; gap: 8px; margin-bottom: 8px; }
+.pt-genre-search { flex: 1; }
+.pt-genre-custom { flex: 1; }
+
+.pt-genre-category { margin-bottom: 4px; }
+
+.pt-genre-cat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 4px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  user-select: none;
+}
+.pt-genre-cat-header:hover { color: #ccc; }
+.pt-genre-cat-arrow { font-size: 11px; }
+
 /* ─── Range slider ────────────────────────────────────────────────────────── */
 .pt-row { flex-direction: row; align-items: center; gap: 12px; }
 .pt-range { flex: 1; accent-color: #7c3aed; }
@@ -525,6 +680,13 @@ const handleSave = () => {
 .pt-track-name { font-size: 13px; color: #eee; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pt-track-artist { font-size: 11px; color: #888; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
+.pt-like-btn {
+  background: none; border: none; color: #555; font-size: 16px; cursor: pointer; padding: 2px 4px; line-height: 1;
+  transition: color 0.15s;
+}
+.pt-like-btn:hover { color: #e74c8b; }
+.pt-like-btn.liked { color: #1db954; }
+
 .pt-track-remove {
   background: none; border: none; color: #555; font-size: 18px; cursor: pointer; padding: 2px 6px; line-height: 1;
 }
@@ -551,6 +713,7 @@ const handleSave = () => {
   flex-shrink: 0;
 }
 .pt-error-x { background: none; border: none; color: #fca5a5; font-size: 18px; cursor: pointer; }
+.pt-reconnect-link { color: #93c5fd; text-decoration: underline; font-weight: 600; margin-left: 6px; }
 
 .pt-success {
   background: #0b3d1a;
@@ -667,6 +830,24 @@ const handleSave = () => {
 .pt-save-dialog h3 { margin: 0; color: #eee; font-size: 16px; }
 
 .pt-save-actions { display: flex; gap: 10px; justify-content: flex-end; }
+
+.pt-save-toggle { display: flex; gap: 4px; margin-bottom: 4px; }
+.pt-save-toggle-btn {
+  flex: 1; padding: 7px; border-radius: 6px; border: 1px solid #333;
+  background: #1a1a1a; color: #888; font-size: 12px; font-weight: 600; cursor: pointer;
+}
+.pt-save-toggle-btn.active { background: #7c3aed; border-color: #7c3aed; color: #fff; }
+
+.pt-existing-list { max-height: 240px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+.pt-existing-item {
+  display: flex; align-items: center; gap: 10px; padding: 8px; border-radius: 6px;
+  cursor: pointer; transition: background 0.1s;
+}
+.pt-existing-item:hover { background: #252525; }
+.pt-existing-art { width: 40px; height: 40px; border-radius: 4px; object-fit: cover; flex-shrink: 0; }
+.pt-existing-info { display: flex; flex-direction: column; overflow: hidden; }
+.pt-existing-name { font-size: 13px; color: #eee; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pt-existing-count { font-size: 11px; color: #666; }
 
 /* ─── Mobile ──────────────────────────────────────────────────────────────── */
 @media (max-width: 600px) {

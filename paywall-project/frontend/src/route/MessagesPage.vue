@@ -1732,8 +1732,9 @@ const formatTime = (d) => {
 }
 
 .bubble.selected {
-  outline: 2.5px solid #7c3aed;
+  outline: 2.5px solid #7c3aed !important;
   outline-offset: 1px;
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.35) !important;
 }
 .mine .bubble.selected {
   background: #1a0030 !important;
@@ -1743,11 +1744,11 @@ const formatTime = (d) => {
 .theirs .bubble.selected {
   background: #ede9fe !important;
   color: #3b0764 !important;
-  border: 2px solid #7c3aed;
+  border: 2px solid #7c3aed !important;
   border-radius: 18px 18px 18px 4px;
 }
 .bubble.selected:hover {
-  outline: 2.5px solid #5b21b6;
+  outline: 2.5px solid #5b21b6 !important;
 }
 .mine .bubble.selected:hover {
   background: #2d0050 !important;

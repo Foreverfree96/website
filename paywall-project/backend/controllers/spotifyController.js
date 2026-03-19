@@ -12,6 +12,7 @@ const SCOPES = [
   "playlist-read-collaborative",
   "playlist-modify-public",
   "playlist-modify-private",
+  "user-library-modify",
 ].join(" ");
 
 // ─── CLIENT CREDENTIALS TOKEN (app-level, no user scopes needed) ──────────────
@@ -458,7 +459,7 @@ export const searchTracks = async (req, res) => {
 export const generatePlaylist = async (req, res) => {
   try {
     let { seedTrackIds = [], seedTrackMeta = [], seedPlaylistId, genres = [], limit = 30 } = req.body;
-    limit = Math.max(1, Math.min(Number(limit) || 30, 100));
+    limit = Math.max(1, Math.min(Number(limit) || 30, 50));
 
     let token;
     const result = await getValidToken(req.user.id, false);
@@ -555,8 +556,8 @@ export const generatePlaylist = async (req, res) => {
       });
     }
 
-    // Deduplicate and shuffle for variety
-    const uniqueQueries = [...new Set(queries)];
+    // Deduplicate, cap at 8 queries to avoid rate limits, and shuffle for variety
+    const uniqueQueries = [...new Set(queries)].slice(0, 8);
     uniqueQueries.sort(() => Math.random() - 0.5);
 
     // Search in batches until we have enough tracks
@@ -564,8 +565,11 @@ export const generatePlaylist = async (req, res) => {
     const collected = [];
     const perQuery = Math.ceil((limit + 10) / Math.max(uniqueQueries.length, 1));
 
-    for (const q of uniqueQueries) {
+    for (let qi = 0; qi < uniqueQueries.length; qi++) {
       if (collected.length >= limit) break;
+      if (Date.now() < _rateLimitedUntil) break; // respect rate limit
+
+      const q = uniqueQueries[qi];
       try {
         const offset = Math.floor(Math.random() * 20);
         const r = await axios.get("https://api.spotify.com/v1/search", {
@@ -588,7 +592,13 @@ export const generatePlaylist = async (req, res) => {
           });
         }
       } catch (e) {
+        if (e.response?.status === 429) setRateLimit(e.response.headers?.['retry-after']);
         console.error(`❌ Spotify search query "${q}" failed:`, e.response?.status || e.message);
+      }
+
+      // Small delay between queries to avoid 429s
+      if (qi < uniqueQueries.length - 1 && collected.length < limit) {
+        await new Promise(r => setTimeout(r, 200));
       }
     }
 
@@ -760,13 +770,21 @@ export const matchTracks = async (req, res) => {
       }
     };
 
-    // Process in parallel batches of 5 to avoid rate limits but stay fast
+    // Check rate limit before starting
+    if (Date.now() < _rateLimitedUntil) {
+      return res.status(429).json({ message: "Rate limited — try again shortly" });
+    }
+
+    // Process in parallel batches of 5 with 200ms delay between batches
     const matches = [];
     const BATCH = 5;
     for (let i = 0; i < capped.length; i += BATCH) {
+      if (Date.now() < _rateLimitedUntil) break;
       const batch = capped.slice(i, i + BATCH);
       const results = await Promise.all(batch.map(matchOne));
       matches.push(...results);
+      // Delay between batches to avoid 429s
+      if (i + BATCH < capped.length) await new Promise(r => setTimeout(r, 200));
     }
 
     const exact = matches.filter(m => m.confidence === 'exact').length;
@@ -777,5 +795,91 @@ export const matchTracks = async (req, res) => {
   } catch (err) {
     console.error("❌ Spotify match error:", err.response?.data || err.message);
     res.status(500).json({ message: "Matching failed" });
+  }
+};
+
+// ─── SPOTIFY SAVE TRACK (Like) ──────────────────────────────────────────────
+// PUT /api/spotify/save-track
+// Body: { trackIds: ["id1", "id2"] }
+export const saveTrack = async (req, res) => {
+  try {
+    const { trackIds = [] } = req.body;
+    if (!trackIds.length) return res.status(400).json({ message: "No track IDs provided" });
+
+    const result = await getValidToken(req.user.id, false);
+    if (result.error) return res.status(result.error).json({ message: result.message });
+
+    await axios.put(
+      "https://api.spotify.com/v1/me/tracks",
+      { ids: trackIds.slice(0, 50) },
+      { headers: { Authorization: `Bearer ${result.accessToken}`, "Content-Type": "application/json" } }
+    );
+
+    res.json({ saved: true });
+  } catch (err) {
+    if (err.response?.status === 403) {
+      return res.status(403).json({ error: "scope_missing", message: "Reconnect Spotify to save tracks" });
+    }
+    console.error("❌ Spotify save track error:", err.response?.data || err.message);
+    res.status(err.response?.status || 500).json({ message: "Failed to save track" });
+  }
+};
+
+// ─── SPOTIFY GET USER PLAYLISTS ─────────────────────────────────────────────
+// GET /api/spotify/playlists
+export const getUserPlaylists = async (req, res) => {
+  try {
+    const result = await getValidToken(req.user.id, false);
+    if (result.error) return res.status(result.error).json({ message: result.message });
+
+    const r = await axios.get("https://api.spotify.com/v1/me/playlists", {
+      params: { limit: 50 },
+      headers: { Authorization: `Bearer ${result.accessToken}` },
+    });
+
+    const playlists = (r.data.items || []).map((p) => ({
+      id:    p.id,
+      name:  p.name,
+      image: p.images?.[0]?.url || "",
+      tracks: p.tracks?.total || 0,
+    }));
+
+    res.json({ playlists });
+  } catch (err) {
+    console.error("❌ Spotify get playlists error:", err.response?.data || err.message);
+    res.status(err.response?.status || 500).json({ message: "Failed to fetch playlists" });
+  }
+};
+
+// ─── SPOTIFY ADD TO EXISTING PLAYLIST ───────────────────────────────────────
+// POST /api/spotify/playlist/:id/add
+// Body: { trackUris: ["spotify:track:xxx", ...] }
+export const addToPlaylist = async (req, res) => {
+  try {
+    const { trackUris = [] } = req.body;
+    const playlistId = req.params.id;
+    if (!trackUris.length) return res.status(400).json({ message: "No tracks provided" });
+
+    const result = await getValidToken(req.user.id, false);
+    if (result.error) return res.status(result.error).json({ message: result.message });
+
+    const auth = { Authorization: `Bearer ${result.accessToken}`, "Content-Type": "application/json" };
+
+    // Add in batches of 100
+    for (let i = 0; i < trackUris.length; i += 100) {
+      await axios.post(
+        `https://api.spotify.com/v1/playlists/${playlistId}/tracks`,
+        { uris: trackUris.slice(i, i + 100) },
+        { headers: auth }
+      );
+    }
+
+    res.json({ added: true });
+  } catch (err) {
+    if (err.response?.status === 403) {
+      return res.status(403).json({ error: "scope_missing", message: "Reconnect Spotify to modify playlists" });
+    }
+    console.error("❌ Spotify add to playlist error:", err.response?.data || err.message);
+    res.status(err.response?.status || 500).json({ message: "Failed to add tracks" });
   }
 };
