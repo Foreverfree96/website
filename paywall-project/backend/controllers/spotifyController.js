@@ -466,9 +466,14 @@ export const generatePlaylist = async (req, res) => {
     let { seedTrackIds = [], seedTrackMeta = [], seedPlaylistId, genres = [], limit = 30 } = req.body;
     limit = Math.max(1, Math.min(Number(limit) || 30, 100));
 
-    let token;
+    // Prefer user token (no content restrictions); fall back to client creds only if not connected
     const result = await getValidToken(req.user.id, false);
-    token = result.error ? await getClientCredToken() : result.accessToken;
+    let token = result.error ? null : result.accessToken;
+    let usingClientCreds = false;
+    if (!token) {
+      token = await getClientCredToken();
+      usingClientCreds = true;
+    }
     const auth = { Authorization: `Bearer ${token}` };
 
     // Collect artist names from seed tracks
@@ -577,13 +582,33 @@ export const generatePlaylist = async (req, res) => {
       if (Date.now() < _rateLimitedUntil) break; // respect rate limit
 
       const q = uniqueQueries[qi];
-      try {
+
+      const doSearch = async (query) => {
         const offset = Math.floor(Math.random() * 20);
         const r = await axios.get("https://api.spotify.com/v1/search", {
-          params: { q, type: "track", limit: Math.min(perQuery + 5, 50), offset },
+          params: { q: query, type: "track", limit: Math.min(perQuery + 5, 50), offset },
           headers: auth,
         });
-        const items = r.data.tracks?.items || [];
+        return r.data.tracks?.items || [];
+      };
+
+      try {
+        let items;
+        try {
+          items = await doSearch(q);
+        } catch (e) {
+          if (e.response?.status === 400) {
+            // Spotify rejects some queries (explicit content) via client creds — try generic fallback
+            const fallback = q.replace(/[^\w\s-]/g, '').trim();
+            if (fallback && fallback !== q) {
+              try { items = await doSearch(fallback); } catch { items = []; }
+            } else {
+              items = [];
+            }
+          } else {
+            throw e;
+          }
+        }
         for (const t of items) {
           if (collected.length >= limit) break;
           if (seenIds.has(t.id)) continue;
@@ -612,7 +637,7 @@ export const generatePlaylist = async (req, res) => {
     // Shuffle final results so tracks from different queries are mixed
     collected.sort(() => Math.random() - 0.5);
 
-    console.log(`✅ Generate: ${uniqueQueries.length} queries → ${collected.length} tracks (requested ${limit})`);
+    console.log(`✅ Generate: ${uniqueQueries.length} queries → ${collected.length} tracks (requested ${limit}) [${usingClientCreds ? 'client-creds' : 'user-token'}]`);
     res.json({ tracks: collected });
   } catch (err) {
     console.error("❌ Spotify generate error:", err.response?.data || err.message);
