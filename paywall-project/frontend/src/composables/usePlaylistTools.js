@@ -181,10 +181,29 @@ export function usePlaylistTools() {
         limit: trackLimit.value,
       };
 
-      // If user pasted a reference playlist URL
+      // If user pasted a reference playlist URL (Spotify or YouTube)
       if (seedPlaylistUrl.value) {
-        const spId = extractSpotifyPlaylistId(seedPlaylistUrl.value);
-        if (spId) body.seedPlaylistId = spId;
+        const platform = detectPlatform(seedPlaylistUrl.value);
+        if (platform === 'spotify') {
+          const spId = extractSpotifyPlaylistId(seedPlaylistUrl.value);
+          if (spId) body.seedPlaylistId = spId;
+        } else if (platform === 'youtube') {
+          // Fetch YouTube playlist tracks and use them as seed metadata
+          const ytId = extractYoutubePlaylistId(seedPlaylistUrl.value);
+          if (ytId) {
+            try {
+              const ytRes = await fetch(`${API}/api/youtube/playlist/${ytId}/tracks`, { headers: headers() });
+              const ytData = await ytRes.json();
+              if (ytRes.ok && ytData.items?.length) {
+                const ytSeeds = ytData.items.slice(0, 10).map(t => ({
+                  name: t.title,
+                  artist: t.channelTitle,
+                }));
+                body.seedTrackMeta = [...body.seedTrackMeta, ...ytSeeds];
+              }
+            } catch { /* proceed without YT seeds */ }
+          }
+        }
       }
 
       const res = await fetch(`${API}/api/spotify/generate`, {

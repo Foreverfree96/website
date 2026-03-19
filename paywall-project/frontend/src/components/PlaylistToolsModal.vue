@@ -79,7 +79,7 @@
                 <input
                   class="pt-input"
                   v-model="pt.seedPlaylistUrl.value"
-                  placeholder="Paste a Spotify playlist URL..."
+                  placeholder="Paste a Spotify or YouTube playlist URL..."
                 />
               </div>
 

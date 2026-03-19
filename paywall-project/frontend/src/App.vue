@@ -296,8 +296,31 @@ watch(
  * Useful in development to confirm that the JWT was decoded correctly and
  * that the reactive user state has been hydrated before the first render.
  */
-onMounted(() => {
+onMounted(async () => {
   console.log("[App.vue] mounted:", unref(user));
+
+  // Verify Spotify connection on app startup so we remember auth state
+  if (isLoggedIn.value) {
+    try {
+      const token = localStorage.getItem('jwtToken');
+      if (token) {
+        const res = await fetch(`${import.meta.env.VITE_API_URL}/api/spotify/status`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.connected) {
+            // Mark that Spotify OAuth is done so SDK knows
+            localStorage.setItem('sp_oauth_done', '1');
+            if (data.isPremium) localStorage.setItem('sp_premium', '1');
+            else localStorage.removeItem('sp_premium');
+          }
+          // If token is expired but user is connected, the backend will
+          // auto-refresh on the next API call — no action needed here
+        }
+      }
+    } catch { /* non-critical */ }
+  }
 });
 
 // ─── LOGOUT HANDLER ──────────────────────────────────────────────────────────

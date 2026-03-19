@@ -74,9 +74,14 @@ const getValidToken = async (userId, requirePremium = true) => {
   // Proactively refresh if expired or expiring within 5 minutes
   const fiveMinFromNow = new Date(Date.now() + 5 * 60 * 1000);
   if (!expiresAt || expiresAt < fiveMinFromNow) {
-    const refreshed = await refreshAccessToken(userId, user.spotifyRefreshToken);
-    accessToken = refreshed.accessToken;
-    expiresAt   = refreshed.expiresAt;
+    try {
+      const refreshed = await refreshAccessToken(userId, user.spotifyRefreshToken);
+      accessToken = refreshed.accessToken;
+      expiresAt   = refreshed.expiresAt;
+    } catch (err) {
+      console.error("❌ Spotify token refresh failed:", err.response?.data || err.message);
+      return { error: 401, message: "Spotify session expired — please reconnect" };
+    }
   }
 
   return { accessToken, expiresAt };
@@ -515,15 +520,17 @@ export const generatePlaylist = async (req, res) => {
       } catch { /* proceed with what we have */ }
     }
 
-    if (!seedArtists.length && !genres.length && !uniqueIds.length) {
-      return res.status(400).json({ message: "Provide at least one seed track or genre" });
-    }
-
-    // If we have track IDs but no artist names (lookup failed), use track names as search queries
+    // Use seed track metadata names/artists as search queries when no artist names resolved
     if (!seedArtists.length && seedTrackMeta.length) {
       seedTrackMeta.forEach((m) => {
-        if (m.name) seedArtists.push(m.name);
+        const artist = (m.artist || "").split(",")[0].trim();
+        if (artist && !seedArtists.includes(artist)) seedArtists.push(artist);
+        else if (m.name && !seedArtists.includes(m.name)) seedArtists.push(m.name);
       });
+    }
+
+    if (!seedArtists.length && !genres.length && !uniqueIds.length) {
+      return res.status(400).json({ message: "Provide at least one seed track or genre" });
     }
 
     // Build diverse search queries

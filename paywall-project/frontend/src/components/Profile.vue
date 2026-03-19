@@ -240,6 +240,11 @@ const handleSpotifyDisconnect = async () => {
             headers: { Authorization: `Bearer ${jwtToken}` },
         });
         spotifyStatus.value = { connected: false, displayName: null, isPremium: false };
+        // Clear Spotify localStorage flags
+        localStorage.removeItem('sp_oauth_done');
+        localStorage.removeItem('sp_premium');
+        localStorage.removeItem('sp_playlist_ok');
+        sessionStorage.removeItem('sp_oauth_done');
         errorMessage.value = 'Spotify disconnected.';
     } catch {
         errorMessage.value = 'Failed to disconnect Spotify.';
@@ -372,6 +377,15 @@ onMounted(async () => {
 
         // Fetch Spotify connection status
         await fetchSpotifyStatus();
+
+        // Handle return from Spotify OAuth
+        if (route.query.spotify === 'connected') {
+            localStorage.setItem('sp_oauth_done', '1');
+            if (spotifyStatus.value.isPremium) localStorage.setItem('sp_premium', '1');
+            errorMessage.value = `Spotify connected${spotifyStatus.value.isPremium ? ' (Premium)' : ''}!`;
+        } else if (route.query.spotify === 'error') {
+            errorMessage.value = 'Spotify connection failed. Please try again.';
+        }
 
         // Clean up any leftover Spotify OAuth query params
         if (route.query.spotify) router.replace({ query: {} });
