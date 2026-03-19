@@ -436,6 +436,13 @@ export const searchTracks = async (req, res) => {
     const { q, limit = 10 } = req.query;
     if (!q) return res.status(400).json({ message: "Missing query parameter q" });
 
+    // Wait out short rate limits
+    if (Date.now() < _rateLimitedUntil) {
+      const waitMs = _rateLimitedUntil - Date.now();
+      if (waitMs > 5000) return res.json({ tracks: [] }); // don't block search UI
+      await new Promise(r => setTimeout(r, waitMs + 100));
+    }
+
     let token;
     const result = await getValidToken(req.user.id, false);
     token = result.error ? await getClientCredToken() : result.accessToken;
@@ -576,37 +583,47 @@ export const generatePlaylist = async (req, res) => {
       });
     }
 
-    // Deduplicate, cap at 8 queries to avoid rate limits, and shuffle for variety
-    const uniqueQueries = [...new Set(queries)].slice(0, 8);
+    // Deduplicate, cap at 6 queries, and shuffle for variety
+    const uniqueQueries = [...new Set(queries)].slice(0, 6);
     uniqueQueries.sort(() => Math.random() - 0.5);
 
-    // Search in batches until we have enough tracks
+    // Search with timeout to stay within Render's 30s limit
+    const startTime = Date.now();
+    const TIMEOUT_MS = 22000;
     const seenIds = new Set(uniqueIds); // exclude seed tracks from results
     const collected = [];
     const perQuery = Math.ceil((limit + 10) / Math.max(uniqueQueries.length, 1));
 
+    const doSearch = async (query) => {
+      const offset = Math.floor(Math.random() * 20);
+      const r = await axios.get("https://api.spotify.com/v1/search", {
+        params: { q: query, type: "track", limit: Math.min(perQuery + 5, 50), offset },
+        headers: auth,
+      });
+      return r.data.tracks?.items || [];
+    };
+
     for (let qi = 0; qi < uniqueQueries.length; qi++) {
       if (collected.length >= limit) break;
-      if (Date.now() < _rateLimitedUntil) break; // respect rate limit
+      if (Date.now() - startTime > TIMEOUT_MS) {
+        console.log(`⏱ Generate timeout after ${qi}/${uniqueQueries.length} queries, ${collected.length} tracks`);
+        break;
+      }
+
+      // Wait out rate limit instead of breaking
+      if (Date.now() < _rateLimitedUntil) {
+        const waitMs = Math.min(_rateLimitedUntil - Date.now(), 8000);
+        if (Date.now() - startTime + waitMs > TIMEOUT_MS) break; // would exceed timeout
+        await new Promise(r => setTimeout(r, waitMs + 100));
+      }
 
       const q = uniqueQueries[qi];
-
-      const doSearch = async (query) => {
-        const offset = Math.floor(Math.random() * 20);
-        const r = await axios.get("https://api.spotify.com/v1/search", {
-          params: { q: query, type: "track", limit: Math.min(perQuery + 5, 50), offset },
-          headers: auth,
-        });
-        return r.data.tracks?.items || [];
-      };
-
       try {
         let items;
         try {
           items = await doSearch(q);
         } catch (e) {
           if (e.response?.status === 400) {
-            // Spotify rejects some queries (explicit content) via client creds — try generic fallback
             const fallback = q.replace(/[^\w\s-]/g, '').trim();
             if (fallback && fallback !== q) {
               try { items = await doSearch(fallback); } catch { items = []; }
@@ -636,9 +653,9 @@ export const generatePlaylist = async (req, res) => {
         console.error(`❌ Spotify search query "${q}" failed:`, e.response?.status || e.message);
       }
 
-      // Delay between queries to avoid 429s
+      // Small delay between queries
       if (qi < uniqueQueries.length - 1 && collected.length < limit) {
-        await new Promise(r => setTimeout(r, 500));
+        await new Promise(r => setTimeout(r, 300));
       }
     }
 

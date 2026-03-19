@@ -229,11 +229,15 @@ export function usePlaylistTools() {
         }
       }
 
+      const genController = new AbortController();
+      const genTimeout = setTimeout(() => genController.abort(), 30000);
       const res = await fetch(`${API}/api/spotify/generate`, {
         method: 'POST',
         headers: headers(),
         body: JSON.stringify(body),
+        signal: genController.signal,
       });
+      clearTimeout(genTimeout);
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || 'Generation failed');
       generatedTracks.value = data.tracks || [];
@@ -241,7 +245,7 @@ export function usePlaylistTools() {
       bgStatus.value = `Done! ${generatedTracks.value.length} tracks`;
       bgDone.value = true;
     } catch (err) {
-      error.value = err.message;
+      error.value = err.name === 'AbortError' ? 'Generation timed out — try fewer tracks or genres' : err.message;
       bgStatus.value = 'Error';
     }
     generateLoading.value = false;
