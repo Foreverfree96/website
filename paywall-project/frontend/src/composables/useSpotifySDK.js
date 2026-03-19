@@ -17,6 +17,7 @@ if (!window._sp) window._sp = {
   tokenFetchPromise:    null,
   oauthRedirecting:     false,
   reconnectAttempted:   false,
+  userDisconnected:     false,
   fetchingPlaylists:    new Map(),
   playlistBackoffUntil: 0,
 };
@@ -495,6 +496,7 @@ const createPlayer = async () => {
   player.addListener('account_error', () => {
     if (sdkState.value !== 'ready') {
       clearTimeout(connectTimeout);
+      if (_w.userDisconnected) { sdkState.value = 'needs-connect'; return; }
       const alreadyConnected = localStorage.getItem('sp_oauth_done') || sessionStorage.getItem('sp_oauth_done') || localStorage.getItem('sp_playlist_ok');
       if (alreadyConnected) { sdkState.value = 'unavailable'; return; }
       const jwt = localStorage.getItem('jwtToken');
@@ -519,6 +521,7 @@ const play = async (mediaUrl, opts = {}) => {
     _w.tokenFetchPromise = null;
     _w.reconnectAttempted = true;
     _w.oauthRedirecting = false;
+    _w.userDisconnected = false;
     localStorage.setItem('sp_oauth_done', '1');
     sessionStorage.setItem('sp_oauth_done', '1');
   }
@@ -537,6 +540,8 @@ const play = async (mediaUrl, opts = {}) => {
       const [tokenResult] = await Promise.all([fetchToken(), loadSDK()]);
       if (tokenResult.needsConnect) {
         clearTimeout(connectTimeout);
+        // After explicit disconnect, always show "Connect Spotify" button
+        if (_w.userDisconnected) { sdkState.value = 'needs-connect'; return; }
         const alreadyDone = localStorage.getItem('sp_oauth_done') || sessionStorage.getItem('sp_oauth_done');
         if (alreadyDone) { sdkState.value = 'unavailable'; return; }
         const jwt = localStorage.getItem('jwtToken');
@@ -718,6 +723,7 @@ const disconnect = async () => {
   _w.tokenFetchPromise = null;
   _w.oauthRedirecting = false;
   _w.reconnectAttempted = false;
+  _w.userDisconnected = true;
   _w.fetchingPlaylists.clear();
 
   // Clear all sp_* localStorage/sessionStorage
