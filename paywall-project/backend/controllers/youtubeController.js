@@ -195,9 +195,11 @@ export const matchYoutubeTracks = async (req, res) => {
     const { tracks = [] } = req.body;
     if (!tracks.length) return res.status(400).json({ message: "No tracks provided" });
 
-    // Cap at 50 tracks — YouTube search costs 100 quota units each
-    const capped = tracks.slice(0, 50);
+    // Cap at 30 tracks — YouTube search costs 100 quota units each, and Render has ~30s timeout
+    const capped = tracks.slice(0, 30);
     console.log(`🔍 Matching ${capped.length} tracks to YouTube...`);
+    const startTime = Date.now();
+    const TIMEOUT_MS = 25000; // bail before Render's 30s timeout
 
     const searchYT = async (query) => {
       try {
@@ -223,40 +225,25 @@ export const matchYoutubeTracks = async (req, res) => {
       const artist = cleanArtistForYT(src.artist || "");
       if (!title && !artist) return { source: src, bestMatch: null, confidence: "none", alternatives: [] };
 
-      // Try multiple query strategies
-      const queries = [];
-      if (title && artist) queries.push(`${title} ${artist}`);
-      if (title) queries.push(`${title} official audio`); // fallback: title + "official audio"
+      // Single query: "title artist" — keep it fast to stay within timeout
+      const query = title && artist ? `${title} ${artist}` : `${title} official audio`;
+      const items = await searchYT(query);
 
-      let allCandidates = [];
-
-      for (const query of queries) {
-        const items = await searchYT(query);
-        if (items.length) {
-          const candidates = items.map((i) => {
-            const ytTitle   = cleanTitle(i.snippet.title || "");
-            const titleSim  = similarity(title, ytTitle);
-            const channelName = (i.snippet.channelTitle || "").replace(/\s*-\s*topic$/i, "").replace(/\s*VEVO$/i, "").trim();
-            const artistSim = artist ? similarity(artist, channelName) : 0.5;
-            // Weight title higher — artist match on YouTube is less reliable
-            const score = artist ? titleSim * 0.65 + artistSim * 0.35 : titleSim * 0.9 + 0.1;
-            return {
-              title:        i.snippet.title,
-              channelTitle: i.snippet.channelTitle || "",
-              videoId:      i.id?.videoId || "",
-              thumbnail:    i.snippet.thumbnails?.medium?.url || "",
-              url:          `https://www.youtube.com/watch?v=${i.id?.videoId}`,
-              score,
-            };
-          });
-          allCandidates = allCandidates.concat(candidates);
-          if (candidates.sort((a, b) => b.score - a.score)[0]?.score >= 0.7) break; // good enough
-        }
-      }
-
-      // Deduplicate by videoId
-      const seen = new Set();
-      allCandidates = allCandidates.filter(c => { if (seen.has(c.videoId)) return false; seen.add(c.videoId); return true; });
+      const allCandidates = items.map((i) => {
+        const ytTitle   = cleanTitle(i.snippet.title || "");
+        const titleSim  = similarity(title, ytTitle);
+        const channelName = (i.snippet.channelTitle || "").replace(/\s*-\s*topic$/i, "").replace(/\s*VEVO$/i, "").trim();
+        const artistSim = artist ? similarity(artist, channelName) : 0.5;
+        const score = artist ? titleSim * 0.65 + artistSim * 0.35 : titleSim * 0.9 + 0.1;
+        return {
+          title:        i.snippet.title,
+          channelTitle: i.snippet.channelTitle || "",
+          videoId:      i.id?.videoId || "",
+          thumbnail:    i.snippet.thumbnails?.medium?.url || "",
+          url:          `https://www.youtube.com/watch?v=${i.id?.videoId}`,
+          score,
+        };
+      });
       allCandidates.sort((a, b) => b.score - a.score);
 
       const best = allCandidates[0] || null;
@@ -265,14 +252,22 @@ export const matchYoutubeTracks = async (req, res) => {
       return { source: src, bestMatch: best, confidence, alternatives: allCandidates.slice(1, 4) };
     };
 
-    // Process in parallel batches of 3 with 500ms delay
+    // Process in parallel batches of 5 with 300ms delay (1 query per track now, so faster)
     const matches = [];
-    const BATCH = 3;
+    const BATCH = 5;
     for (let i = 0; i < capped.length; i += BATCH) {
+      if (Date.now() - startTime > TIMEOUT_MS) {
+        console.log(`⏱ YouTube match timeout after ${matches.length}/${capped.length} tracks`);
+        // Fill remaining with no-match
+        for (let j = i; j < capped.length; j++) {
+          matches.push({ source: capped[j], bestMatch: null, confidence: "none", alternatives: [] });
+        }
+        break;
+      }
       const batch = capped.slice(i, i + BATCH);
       const results = await Promise.all(batch.map(matchOne));
       matches.push(...results);
-      if (i + BATCH < capped.length) await new Promise(r => setTimeout(r, 500));
+      if (i + BATCH < capped.length) await new Promise(r => setTimeout(r, 300));
     }
 
     const exact = matches.filter(m => m.confidence === 'exact').length;

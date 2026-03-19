@@ -291,10 +291,10 @@ export const getPlaylistTracks = async (req, res) => {
   if (cached && (cached.items?.length ?? 0) >= 20) return res.json(cached);
   if (cached) _playlistCache.delete(playlistId); // stale partial — re-fetch
 
-  // Respect app-wide Spotify 429 backoff — wait it out if under 10s
+  // Respect app-wide Spotify 429 backoff — wait it out if under 15s
   if (Date.now() < _rateLimitedUntil) {
     const waitMs = _rateLimitedUntil - Date.now();
-    if (waitMs > 10000) {
+    if (waitMs > 15000) {
       return res.status(429).json({ message: 'Rate limited — try again shortly' });
     }
     await new Promise(r => setTimeout(r, waitMs + 200));

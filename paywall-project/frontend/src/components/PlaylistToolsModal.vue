@@ -1,9 +1,23 @@
 <template>
+  <!-- Floating pill when minimized -->
   <Teleport to="body">
     <Transition name="pt-fade">
-      <div v-if="pt.isOpen.value" class="pt-overlay" @click.self="pt.close()">
+      <div v-if="pt.isOpen.value && pt.isMinimized.value"
+           :class="['pt-mini-pill', { done: pt.bgDone.value }]"
+           @click="pt.open()">
+        <span class="pt-mini-icon">♫</span>
+        <span class="pt-mini-text">{{ pt.bgStatus.value || 'Playlist Tools' }}</span>
+        <button class="pt-mini-close" @click.stop="pt.close()">&times;</button>
+      </div>
+    </Transition>
+  </Teleport>
+
+  <!-- Main panel -->
+  <Teleport to="body">
+    <Transition name="pt-fade">
+      <div v-if="pt.isOpen.value && !pt.isMinimized.value" class="pt-overlay" @click.self="pt.close()">
         <Transition name="pt-slide">
-          <div v-if="pt.isOpen.value" class="pt-panel">
+          <div v-if="pt.isOpen.value && !pt.isMinimized.value" class="pt-panel">
 
             <!-- Header -->
             <div class="pt-header">
@@ -17,6 +31,7 @@
                   @click="pt.setTab('convert')"
                 >Convert</button>
               </div>
+              <button class="pt-minimize" @click="pt.minimize()" title="Minimize">&#x2015;</button>
               <button class="pt-close" @click="pt.close()" title="Close">&times;</button>
             </div>
 
@@ -351,12 +366,21 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { usePlaylistTools } from '../composables/usePlaylistTools.js';
 import { useSpotifySDK } from '../composables/useSpotifySDK.js';
+import { useNotifications } from '../composables/useNotifications.js';
 
 const pt  = usePlaylistTools();
 const sdk = useSpotifySDK();
+const { playNotifPing } = useNotifications();
+
+// Play sound when background operation completes
+watch(() => pt.bgDone.value, (done) => {
+  if (done && pt.isMinimized.value) {
+    try { playNotifPing(); } catch { /* silent */ }
+  }
+});
 
 const API = import.meta.env.VITE_API_URL;
 const spotifyReconnectUrl = computed(() => {
@@ -559,6 +583,17 @@ const handleAddToExisting = (playlistId) => {
 }
 .pt-tab:hover:not(.active) { border-color: #555; color: #ccc; }
 
+.pt-minimize {
+  background: none;
+  border: none;
+  color: #888;
+  font-size: 22px;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0 6px;
+}
+.pt-minimize:hover { color: #fff; }
+
 .pt-close {
   background: none;
   border: none;
@@ -569,6 +604,45 @@ const handleAddToExisting = (playlistId) => {
   padding: 0 4px;
 }
 .pt-close:hover { color: #fff; }
+
+/* ─── Minimized floating pill ────────────────────────────────────────────── */
+.pt-mini-pill {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 9001;
+  background: #181820;
+  border: 1px solid #333;
+  border-radius: 24px;
+  padding: 8px 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  color: #fff;
+  font-size: 0.85rem;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+  transition: transform 0.2s, box-shadow 0.2s;
+  user-select: none;
+}
+.pt-mini-pill:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.5); }
+.pt-mini-pill.done { border-color: #22c55e; animation: pt-pulse 1.5s infinite; }
+.pt-mini-icon { font-size: 1.1rem; }
+.pt-mini-text { white-space: nowrap; }
+.pt-mini-close {
+  background: none;
+  border: none;
+  color: #888;
+  font-size: 18px;
+  cursor: pointer;
+  padding: 0 0 0 4px;
+  line-height: 1;
+}
+.pt-mini-close:hover { color: #fff; }
+@keyframes pt-pulse {
+  0%, 100% { box-shadow: 0 4px 16px rgba(0,0,0,0.4); }
+  50% { box-shadow: 0 4px 20px rgba(34,197,94,0.4); }
+}
 
 /* ─── Body (scrollable area) ──────────────────────────────────────────────── */
 .pt-body {

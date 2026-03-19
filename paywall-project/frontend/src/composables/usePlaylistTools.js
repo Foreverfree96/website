@@ -32,6 +32,11 @@ const saveResult   = ref(null); // { playlistUrl, name } after save
 const error        = ref('');
 const scopeMissing = ref(false);
 
+// Minimize / background state
+const isMinimized = ref(false);
+const bgStatus    = ref('');   // 'Generating...', 'Converting...', 'Done! 30 tracks', 'Error'
+const bgDone      = ref(false);
+
 // Search state
 const searchQuery   = ref('');
 const searchResults = ref([]);
@@ -95,14 +100,27 @@ export function usePlaylistTools() {
   };
 
   const open = (tab) => {
+    if (isOpen.value && isMinimized.value) {
+      // Restore from minimized
+      isMinimized.value = false;
+      return;
+    }
     if (tab) activeTab.value = tab;
     isOpen.value = true;
+    isMinimized.value = false;
     error.value = '';
     saveResult.value = null;
   };
 
   const close = () => {
     isOpen.value = false;
+    isMinimized.value = false;
+    bgStatus.value = '';
+    bgDone.value = false;
+  };
+
+  const minimize = () => {
+    isMinimized.value = true;
   };
 
   const reset = () => {
@@ -125,6 +143,9 @@ export function usePlaylistTools() {
     searchQuery.value = '';
     searchResults.value = [];
     genreFilter.value = '';
+    isMinimized.value = false;
+    bgStatus.value = '';
+    bgDone.value = false;
   };
 
   // ── Seed track search ───────────────────────────────────────────────────
@@ -173,6 +194,8 @@ export function usePlaylistTools() {
   const generate = async () => {
     error.value = '';
     generateLoading.value = true;
+    bgStatus.value = 'Generating...';
+    bgDone.value = false;
     try {
       const body = {
         seedTrackIds: seedTracks.value.map((t) => t.id),
@@ -215,8 +238,11 @@ export function usePlaylistTools() {
       if (!res.ok) throw new Error(data.message || 'Generation failed');
       generatedTracks.value = data.tracks || [];
       resultTracks.value = [...generatedTracks.value];
+      bgStatus.value = `Done! ${generatedTracks.value.length} tracks`;
+      bgDone.value = true;
     } catch (err) {
       error.value = err.message;
+      bgStatus.value = 'Error';
     }
     generateLoading.value = false;
   };
@@ -225,6 +251,8 @@ export function usePlaylistTools() {
   const startConvert = async () => {
     error.value = '';
     convertLoading.value = true;
+    bgStatus.value = 'Converting...';
+    bgDone.value = false;
     matchedTracks.value = [];
     sourceTracks.value = [];
 
@@ -261,6 +289,9 @@ export function usePlaylistTools() {
         resultTracks.value = matchedTracks.value
           .filter((m) => m.bestMatch)
           .map((m) => m.bestMatch);
+        const matched = matchedTracks.value.filter(m => m.confidence !== 'none').length;
+        bgStatus.value = `Done! ${matched}/${matchedTracks.value.length} matched`;
+        bgDone.value = true;
 
       } else {
         convertDirection.value = 'spotify-to-yt';
@@ -291,20 +322,28 @@ export function usePlaylistTools() {
           title: t.title,
           artist: t.artist,
         }));
+        const ytMatchController = new AbortController();
+        const ytMatchTimeout = setTimeout(() => ytMatchController.abort(), 35000);
         const matchRes = await fetch(`${API}/api/youtube/match`, {
           method: 'POST',
           headers: headers(),
           body: JSON.stringify({ tracks: matchBody }),
+          signal: ytMatchController.signal,
         });
+        clearTimeout(ytMatchTimeout);
         const matchData = await matchRes.json();
         if (!matchRes.ok) throw new Error(matchData.message || 'Matching failed');
         matchedTracks.value = matchData.matches || [];
         resultTracks.value = matchedTracks.value
           .filter((m) => m.bestMatch)
           .map((m) => m.bestMatch);
+        const matched = matchedTracks.value.filter(m => m.confidence !== 'none').length;
+        bgStatus.value = `Done! ${matched}/${matchedTracks.value.length} matched`;
+        bgDone.value = true;
       }
     } catch (err) {
-      error.value = err.message;
+      error.value = err.name === 'AbortError' ? 'Matching timed out — try a smaller playlist' : err.message;
+      bgStatus.value = 'Error';
     }
     convertLoading.value = false;
   };
@@ -410,7 +449,7 @@ export function usePlaylistTools() {
 
   return {
     // State
-    isOpen, activeTab,
+    isOpen, activeTab, isMinimized, bgStatus, bgDone,
     seedTracks, seedPlaylistUrl, selectedGenres, trackLimit,
     generatedTracks, generateLoading,
     convertUrl, convertDirection, sourceTracks, matchedTracks, convertLoading,
@@ -421,7 +460,7 @@ export function usePlaylistTools() {
     likedIds, userPlaylists, playlistsLoading,
 
     // Methods
-    open, close, reset, setTab,
+    open, close, minimize, reset, setTab,
     searchSeeds, addSeed, removeSeed, toggleGenre, addCustomGenre,
     generate, startConvert, swapMatch, removeResult,
     likeTrack, fetchUserPlaylists, addToExistingPlaylist,
