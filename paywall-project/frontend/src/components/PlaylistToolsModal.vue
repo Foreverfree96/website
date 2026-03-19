@@ -38,7 +38,7 @@
             <!-- Error banner -->
             <div v-if="pt.error.value" class="pt-error">
               {{ pt.error.value }}
-              <a v-if="pt.scopeMissing.value" :href="spotifyReconnectUrl" class="pt-reconnect-link">Reconnect Spotify</a>
+              <a v-if="pt.scopeMissing.value" :href="spotifyReconnectUrl" class="pt-reconnect-link" @click="pt.saveState()">Reconnect Spotify</a>
               <button class="pt-error-x" @click="pt.error.value = ''; pt.scopeMissing.value = false">&times;</button>
             </div>
 
@@ -366,7 +366,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, onMounted } from 'vue';
 import { usePlaylistTools } from '../composables/usePlaylistTools.js';
 import { useSpotifySDK } from '../composables/useSpotifySDK.js';
 import { useNowPlaying } from '../composables/useNowPlaying.js';
@@ -376,6 +376,25 @@ const pt  = usePlaylistTools();
 const sdk = useSpotifySDK();
 const { popOut: popOutMini } = useNowPlaying();
 const { playNotifPing } = useNotifications();
+
+// Restore saved state after Spotify reconnect redirect
+onMounted(() => {
+  const url = new URL(window.location.href);
+  if (url.searchParams.get('spotify') === 'connected') {
+    // Invalidate SDK token cache so it uses the new token
+    if (window._sp) {
+      window._sp.tokenCache = null;
+      window._sp.tokenFetchPromise = null;
+      window._sp.reconnectAttempted = true;
+    }
+    localStorage.setItem('sp_oauth_done', '1');
+    pt.restoreState();
+    // Clean up query params
+    url.searchParams.delete('spotify');
+    url.searchParams.delete('premium');
+    window.history.replaceState({}, '', url.pathname + url.search + url.hash);
+  }
+});
 
 // Play sound when background operation completes
 watch(() => pt.bgDone.value, (done) => {
@@ -387,7 +406,11 @@ watch(() => pt.bgDone.value, (done) => {
 const API = import.meta.env.VITE_API_URL;
 const spotifyReconnectUrl = computed(() => {
   const token = localStorage.getItem('jwtToken') || '';
-  return `${API}/api/spotify/login?token=${token}&returnTo=${encodeURIComponent(window.location.origin + '/profile')}`;
+  // Use clean URL (strip any existing ?spotify= params) so returnTo is correct
+  const url = new URL(window.location.href);
+  url.searchParams.delete('spotify');
+  url.searchParams.delete('premium');
+  return `${API}/api/spotify/login?token=${token}&returnTo=${encodeURIComponent(url.toString())}`;
 });
 
 const showSaveDialog   = ref(false);

@@ -502,6 +502,55 @@ export function usePlaylistTools() {
     saving.value = false;
   };
 
+  // ── Persist state before Spotify reconnect redirect ─────────────────────
+  const STORAGE_KEY = 'pt_saved_state';
+
+  const saveState = () => {
+    try {
+      const state = {
+        activeTab: activeTab.value,
+        seedTracks: seedTracks.value,
+        seedPlaylistUrl: seedPlaylistUrl.value,
+        selectedGenres: selectedGenres.value,
+        trackLimit: trackLimit.value,
+        generatedTracks: generatedTracks.value,
+        convertUrl: convertUrl.value,
+        convertDirection: convertDirection.value,
+        sourceTracks: sourceTracks.value,
+        matchedTracks: matchedTracks.value,
+        resultTracks: resultTracks.value,
+        savedAt: Date.now(),
+      };
+      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    } catch { /* storage full */ }
+  };
+
+  const restoreState = () => {
+    try {
+      const raw = sessionStorage.getItem(STORAGE_KEY);
+      if (!raw) return false;
+      sessionStorage.removeItem(STORAGE_KEY);
+      const state = JSON.parse(raw);
+      // Only restore if saved within the last 5 minutes
+      if (Date.now() - state.savedAt > 5 * 60 * 1000) return false;
+      activeTab.value = state.activeTab || 'generate';
+      seedTracks.value = state.seedTracks || [];
+      seedPlaylistUrl.value = state.seedPlaylistUrl || '';
+      selectedGenres.value = state.selectedGenres || [];
+      trackLimit.value = state.trackLimit || 30;
+      generatedTracks.value = state.generatedTracks || [];
+      convertUrl.value = state.convertUrl || '';
+      convertDirection.value = state.convertDirection || null;
+      sourceTracks.value = state.sourceTracks || [];
+      matchedTracks.value = state.matchedTracks || [];
+      resultTracks.value = state.resultTracks || [];
+      isOpen.value = true;
+      error.value = '';
+      scopeMissing.value = false;
+      return true;
+    } catch { return false; }
+  };
+
   return {
     // State
     isOpen, activeTab, isMinimized, bgStatus, bgDone,
@@ -519,6 +568,6 @@ export function usePlaylistTools() {
     searchSeeds, addSeed, removeSeed, toggleGenre, addCustomGenre,
     generate, startConvert, swapMatch, removeResult,
     likeTrack, fetchUserPlaylists, addToExistingPlaylist,
-    saveToSpotify,
+    saveToSpotify, saveState, restoreState,
   };
 }
