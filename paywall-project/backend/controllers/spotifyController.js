@@ -431,14 +431,16 @@ export const spotifyDisconnect = async (req, res) => {
 
 // ─── SPOTIFY SEARCH TRACKS ──────────────────────────────────────────────────
 // GET /api/spotify/search?q=...&limit=10
+let _searchRateLimitUntil = 0; // separate rate limit for search — not blocked by playlist/generate 429s
+
 export const searchTracks = async (req, res) => {
   try {
     const { q, limit = 10 } = req.query;
     if (!q) return res.status(400).json({ message: "Missing query parameter q" });
 
-    // If rate-limited, return empty immediately — don't block the UI
-    if (Date.now() < _rateLimitedUntil) {
-      const retryAfter = Math.ceil((_rateLimitedUntil - Date.now()) / 1000);
+    // Only respect search-specific rate limit, not the global one
+    if (Date.now() < _searchRateLimitUntil) {
+      const retryAfter = Math.ceil((_searchRateLimitUntil - Date.now()) / 1000);
       return res.status(429).json({ tracks: [], retryAfter, message: 'Rate limited' });
     }
 
@@ -460,14 +462,14 @@ export const searchTracks = async (req, res) => {
       items = await doSearch(token || await getClientCredToken());
     } catch (e) {
       if (e.response?.status === 429) {
-        setRateLimit(e.response.headers?.['retry-after']);
+        const secs = Math.min(parseInt(e.response.headers?.['retry-after'] || '5', 10), 10);
+        _searchRateLimitUntil = Date.now() + secs * 1000;
         // Fallback to client credentials if user token was rate-limited
         if (token) {
           try { items = await doSearch(await getClientCredToken()); }
           catch { items = []; }
         } else {
-          const retryAfter = Math.ceil((_rateLimitedUntil - Date.now()) / 1000);
-          return res.status(429).json({ tracks: [], retryAfter, message: 'Rate limited — try again shortly' });
+          return res.status(429).json({ tracks: [], retryAfter: secs, message: 'Rate limited — try again shortly' });
         }
       } else if (e.response?.status === 401 && token) {
         // User token expired, try client creds
@@ -492,8 +494,9 @@ export const searchTracks = async (req, res) => {
   } catch (err) {
     console.error("❌ Spotify search error:", err.response?.data || err.message);
     if (err.response?.status === 429) {
-      setRateLimit(err.response.headers?.['retry-after']);
-      return res.status(429).json({ tracks: [], message: 'Rate limited — try again shortly' });
+      const secs = Math.min(parseInt(err.response.headers?.['retry-after'] || '5', 10), 10);
+      _searchRateLimitUntil = Date.now() + secs * 1000;
+      return res.status(429).json({ tracks: [], retryAfter: secs, message: 'Rate limited — try again shortly' });
     }
     res.status(err.response?.status || 500).json({ message: "Search failed" });
   }
