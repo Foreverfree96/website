@@ -816,8 +816,9 @@ export const matchTracks = async (req, res) => {
     const { tracks = [] } = req.body;
     if (!tracks.length) return res.status(400).json({ message: "No tracks provided" });
 
-    // Cap at 100 tracks to avoid timeout
-    const capped = tracks.slice(0, 100);
+    // Cap at 300 tracks — timeout guard fills remainder with no-match
+    const capped = tracks.slice(0, 300);
+    const skipped = tracks.length - capped.length;
 
     // Prefer user token (avoids explicit content 400s from client creds)
     const result = await getValidToken(req.user.id, false);
@@ -825,7 +826,7 @@ export const matchTracks = async (req, res) => {
     if (!token) token = await getClientCredToken();
     const auth = { Authorization: `Bearer ${token}` };
 
-    console.log(`🔍 Matching ${capped.length} tracks to Spotify...`);
+    console.log(`🔍 Matching ${capped.length} tracks to Spotify...${skipped ? ` (${skipped} over limit, skipped)` : ''}`);
 
     const searchSpotify = async (query) => {
       try {
