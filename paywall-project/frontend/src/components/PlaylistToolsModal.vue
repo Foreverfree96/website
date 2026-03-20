@@ -308,6 +308,7 @@
                         </div>
                         <!-- Custom search results -->
                         <div v-if="swapSearchLoading" class="pt-alt-loading">Searching...</div>
+                        <div v-if="swapSearchError" class="pt-alt-loading" style="color: #f87171; font-size: 11px;">{{ swapSearchError }}</div>
                         <template v-if="swapResults.length">
                           <div class="pt-alt-divider">Search results</div>
                           <div
@@ -527,10 +528,14 @@ const toggleAlt = (i) => {
   altOpen.value = altOpen.value === i ? null : i;
   swapQuery.value = '';
   swapResults.value = [];
+  swapSearchError.value = '';
 };
+
+const swapSearchError = ref('');
 
 const debounceSwapSearch = () => {
   clearTimeout(_swapDebounce);
+  swapSearchError.value = '';
   const q = swapQuery.value.trim();
   if (!q) { swapResults.value = []; return; }
   swapSearchLoading.value = true;
@@ -543,6 +548,13 @@ const debounceSwapSearch = () => {
       const res = await fetch(endpoint, {
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('jwtToken')}` },
       });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        swapSearchError.value = errData.message || `Search failed (${res.status})`;
+        swapResults.value = [];
+        swapSearchLoading.value = false;
+        return;
+      }
       const data = await res.json();
       if (isYt) {
         swapResults.value = (data.items || []).map(t => ({
@@ -552,7 +564,11 @@ const debounceSwapSearch = () => {
       } else {
         swapResults.value = data.tracks || [];
       }
-    } catch { swapResults.value = []; }
+      if (!swapResults.value.length) swapSearchError.value = 'No results found';
+    } catch (e) {
+      swapSearchError.value = 'Search failed — check connection';
+      swapResults.value = [];
+    }
     swapSearchLoading.value = false;
   }, 350);
 };
