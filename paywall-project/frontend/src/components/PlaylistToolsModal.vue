@@ -15,7 +15,7 @@
   <!-- Main panel -->
   <Teleport to="body">
     <Transition name="pt-fade">
-      <div v-if="pt.isOpen.value && !pt.isMinimized.value" class="pt-overlay" @click.self="pt.close()">
+      <div v-if="pt.isOpen.value && !pt.isMinimized.value" class="pt-overlay" @click.self="pt.minimize()">
         <Transition name="pt-slide">
           <div v-if="pt.isOpen.value && !pt.isMinimized.value" class="pt-panel">
 
@@ -482,8 +482,8 @@ const debounceSwapSearch = () => {
     try {
       const isYt = pt.convertDirection.value === 'spotify-to-yt';
       const endpoint = isYt
-        ? `${API}/api/youtube/search?q=${encodeURIComponent(q)}&limit=5`
-        : `${API}/api/spotify/search?q=${encodeURIComponent(q)}&limit=5`;
+        ? `${API}/api/youtube/search?q=${encodeURIComponent(q)}&limit=10`
+        : `${API}/api/spotify/search?q=${encodeURIComponent(q)}&limit=10`;
       const res = await fetch(endpoint, {
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('jwtToken')}` },
       });
@@ -518,7 +518,8 @@ const handlePlayNow = () => {
     resumeOnLoad: true,
     trackUri: tracks[0]?.uri || '',
   });
-  pt.close();
+  // Minimize instead of closing — user can reopen from pill
+  pt.minimize();
 };
 
 const handleSave = () => {

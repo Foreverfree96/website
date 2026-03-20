@@ -146,10 +146,16 @@ export const getChannelInfo = async (req, res) => {
 
 const cleanTitle = (title) =>
   title
-    .replace(/\s*[\(\[](official\s*(video|audio|music\s*video|lyric\s*video)|lyrics?|audio|hd|hq|remaster(ed)?|live|visuali[sz]er|explicit|clean|mv|m\/v|4k|video\s*oficial)[\)\]]/gi, "")
+    .replace(/\s*[\(\[](official\s*(video|audio|music\s*video|lyric\s*video)|lyrics?|audio|hd|hq|remaster(ed)?|live|visuali[sz]er|explicit|clean|mv|m\/v|4k|video\s*oficial|original mix|radio edit|extended mix)[\)\]]/gi, "")
     .replace(/\s*[\(\[]feat\.?[^\)\]]*[\)\]]/gi, "")
+    .replace(/\s*[\(\[]ft\.?[^\)\]]*[\)\]]/gi, "")
+    .replace(/\s*[\(\[]prod\.?[^\)\]]*[\)\]]/gi, "")
+    .replace(/\s*[\(\[]with\s+[^\)\]]*[\)\]]/gi, "")
     .replace(/\s*-\s*topic$/i, "")
-    .replace(/\|.*$/, "")
+    .replace(/\s*\|\s*.*$/, "")
+    .replace(/\s*\/\/\s*.*$/, "")
+    .replace(/\s*#\w+/g, "")
+    .replace(/\s+/g, " ")
     .trim();
 
 const levenshtein = (a, b) => {
@@ -225,9 +231,19 @@ export const matchYoutubeTracks = async (req, res) => {
       const artist = cleanArtistForYT(src.artist || "");
       if (!title && !artist) return { source: src, bestMatch: null, confidence: "none", alternatives: [] };
 
-      // Single query: "title artist" — keep it fast to stay within timeout
-      const query = title && artist ? `${title} ${artist}` : `${title} official audio`;
-      const items = await searchYT(query);
+      // Try primary query, then fallback if no good results
+      const queries = [];
+      if (title && artist) queries.push(`${title} ${artist}`);
+      if (title) queries.push(`${title} official audio`);
+
+      let allItems = [];
+      for (const query of queries) {
+        const items = await searchYT(query);
+        allItems = allItems.concat(items);
+        // If first query got results, skip fallback
+        if (items.length >= 3) break;
+      }
+      const items = allItems;
 
       const allCandidates = items.map((i) => {
         const ytTitle   = cleanTitle(i.snippet.title || "");
@@ -247,7 +263,7 @@ export const matchYoutubeTracks = async (req, res) => {
       allCandidates.sort((a, b) => b.score - a.score);
 
       const best = allCandidates[0] || null;
-      const confidence = !best ? "none" : best.score >= 0.7 ? "exact" : best.score >= 0.35 ? "close" : "none";
+      const confidence = !best ? "none" : best.score >= 0.6 ? "exact" : best.score >= 0.25 ? "close" : "none";
 
       return { source: src, bestMatch: best, confidence, alternatives: allCandidates.slice(1, 4) };
     };

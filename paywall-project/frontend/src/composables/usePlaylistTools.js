@@ -236,7 +236,7 @@ export function usePlaylistTools() {
       try {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 10000);
-        const res = await fetch(`${API}/api/spotify/search?q=${encodeURIComponent(searchQuery.value)}&limit=8`, {
+        const res = await fetch(`${API}/api/spotify/search?q=${encodeURIComponent(searchQuery.value)}&limit=50`, {
           headers: headers(),
           signal: controller.signal,
         });
@@ -505,8 +505,14 @@ export function usePlaylistTools() {
   // Swap a matched track with an alternative
   const swapMatch = (index, newTrack) => {
     if (matchedTracks.value[index]) {
-      matchedTracks.value[index].bestMatch = newTrack;
-      matchedTracks.value[index].confidence = 'manual';
+      // Replace entire entry to ensure Vue reactivity triggers properly
+      matchedTracks.value[index] = {
+        ...matchedTracks.value[index],
+        bestMatch: newTrack,
+        confidence: 'manual',
+      };
+      // Force array reactivity
+      matchedTracks.value = [...matchedTracks.value];
     }
     // Rebuild resultTracks
     resultTracks.value = matchedTracks.value

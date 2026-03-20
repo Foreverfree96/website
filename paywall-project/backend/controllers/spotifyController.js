@@ -435,7 +435,7 @@ let _searchRateLimitUntil = 0; // separate rate limit for search — not blocked
 
 export const searchTracks = async (req, res) => {
   try {
-    const { q, limit = 10 } = req.query;
+    const { q, limit = 50 } = req.query;
     if (!q) return res.status(400).json({ message: "Missing query parameter q" });
 
     // Only respect search-specific rate limit, not the global one
@@ -776,10 +776,16 @@ export const createPlaylist = async (req, res) => {
 
 const cleanTitle = (title) =>
   title
-    .replace(/\s*[\(\[](official\s*(video|audio|music\s*video|lyric\s*video)|lyrics?|audio|hd|hq|remaster(ed)?|live|visuali[sz]er|explicit|clean|mv|m\/v|4k|video\s*oficial)[\)\]]/gi, "")
+    .replace(/\s*[\(\[](official\s*(video|audio|music\s*video|lyric\s*video)|lyrics?|audio|hd|hq|remaster(ed)?|live|visuali[sz]er|explicit|clean|mv|m\/v|4k|video\s*oficial|original mix|radio edit|extended mix)[\)\]]/gi, "")
     .replace(/\s*[\(\[]feat\.?[^\)\]]*[\)\]]/gi, "")
+    .replace(/\s*[\(\[]ft\.?[^\)\]]*[\)\]]/gi, "")
+    .replace(/\s*[\(\[]prod\.?[^\)\]]*[\)\]]/gi, "")
+    .replace(/\s*[\(\[]with\s+[^\)\]]*[\)\]]/gi, "")
     .replace(/\s*-\s*topic$/i, "")
-    .replace(/\|.*$/, "")
+    .replace(/\s*\|\s*.*$/, "")
+    .replace(/\s*\/\/\s*.*$/, "")
+    .replace(/\s*#\w+/g, "")
+    .replace(/\s+/g, " ")
     .trim();
 
 const levenshtein = (a, b) => {
@@ -863,17 +869,37 @@ export const matchTracks = async (req, res) => {
         .replace(/\s*-\s*topic$/i, "")
         .replace(/\s*VEVO$/i, "")
         .replace(/\s*Official$/i, "")
+        .replace(/\s*Music$/i, "")
+        .replace(/\s*Records$/i, "")
+        .replace(/\s*TV$/i, "")
+        .replace(/\s*Channel$/i, "")
+        .split(/[,&×x]/)[0] // take first artist from multi-artist channels
         .trim();
     };
 
+    // Extract artist from title patterns like "Artist - Title" or "Artist: Title"
+    const extractArtistFromTitle = (title) => {
+      const m = title.match(/^(.+?)\s*[-–—:]\s+(.+)$/);
+      return m ? { artist: m[1].trim(), title: m[2].trim() } : null;
+    };
+
     const matchOne = async (src) => {
-      const cleaned = cleanTitle(src.title || "");
+      const rawTitle = src.title || "";
+      const cleaned = cleanTitle(rawTitle);
       const artist = cleanArtist(src.artist || "");
 
-      // Try multiple query strategies
+      // Try to extract artist from title if "Artist - Song" pattern
+      const extracted = extractArtistFromTitle(cleaned);
+      const effectiveTitle = extracted ? extracted.title : cleaned;
+      const effectiveArtist = artist || (extracted ? extracted.artist : "");
+
+      // Try multiple query strategies — most specific first
       const queries = [];
-      if (cleaned && artist) queries.push(`${cleaned} ${artist}`);
-      if (cleaned) queries.push(cleaned); // title-only fallback
+      if (effectiveTitle && effectiveArtist) {
+        queries.push(`track:${effectiveTitle} artist:${effectiveArtist}`); // Spotify search operators
+        queries.push(`${effectiveTitle} ${effectiveArtist}`); // plain text fallback
+      }
+      if (effectiveTitle) queries.push(effectiveTitle); // title-only fallback
       if (!queries.length) return { source: src, bestMatch: null, confidence: "none", alternatives: [] };
 
       let allCandidates = [];
@@ -882,16 +908,16 @@ export const matchTracks = async (req, res) => {
         const items = await searchSpotify(query);
         if (items.length) {
           const candidates = items.map((t) => {
-            const titleSim  = similarity(cleaned, cleanTitle(t.name || ""));
-            const artistSim = artist ? similarity(artist, t.artists?.[0]?.name || "") : 0.5; // neutral if no artist
+            const titleSim  = similarity(effectiveTitle, cleanTitle(t.name || ""));
+            const artistSim = effectiveArtist ? similarity(effectiveArtist, t.artists?.[0]?.name || "") : 0.5; // neutral if no artist
             let durationBonus = 0;
             if (src.duration_ms && t.duration_ms) {
               const diff = Math.abs(src.duration_ms - t.duration_ms);
               durationBonus = diff < 5000 ? 1 : diff < 15000 ? 0.5 : 0;
             }
             // Weight title higher since YT channel names are unreliable as artist
-            const score = artist
-              ? titleSim * 0.5 + artistSim * 0.4 + durationBonus * 0.1
+            const score = effectiveArtist
+              ? titleSim * 0.55 + artistSim * 0.35 + durationBonus * 0.1
               : titleSim * 0.85 + durationBonus * 0.15;
             return {
               id:          t.id,
@@ -915,7 +941,7 @@ export const matchTracks = async (req, res) => {
       allCandidates.sort((a, b) => b.score - a.score);
 
       const best = allCandidates[0] || null;
-      const confidence = !best ? "none" : best.score >= 0.75 ? "exact" : best.score >= 0.4 ? "close" : "none";
+      const confidence = !best ? "none" : best.score >= 0.65 ? "exact" : best.score >= 0.3 ? "close" : "none";
 
       return { source: src, bestMatch: best, confidence, alternatives: allCandidates.slice(1, 4) };
     };
