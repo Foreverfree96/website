@@ -348,29 +348,28 @@ export const getPlaylistTracks = async (req, res) => {
 
       // 1. GET /v1/playlists/{id}/tracks — requires playlist-read-private, paginates all tracks
       try {
+        console.log(`   [1] Trying user-token GET /tracks for ${playlistId}...`);
         const items = await fetchAllPages(
           `https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=100`,
           auth
         );
         if (items.length) return cacheAndReturn(items);
+        console.log(`   [1] User-token returned 0 items`);
       } catch (err) {
+        console.error(`   [1] User-token failed:`, err.response?.status, err.response?.data?.error?.message || err.message);
         if (err.response?.status === 429) {
-          const secs = setRateLimit(err.response.headers?.['retry-after']);
-          console.error(`❌ Spotify GET /tracks failed: 429 — backing off ${secs}s`);
-          throw err;
+          setRateLimit(err.response.headers?.['retry-after']);
+          // Don't throw — fall through to try other methods
+        } else if (err.response?.status !== 403) {
+          // Unexpected error — still fall through
         }
-        if (err.response?.status !== 403) {
-          console.error("❌ Spotify GET /tracks failed:", err.response?.status, err.response?.data?.error?.message);
-          throw err;
-        }
-        // 403 = token lacks playlist-read-private scope, fall through to parent object
       }
 
       // 2. GET /v1/playlists/{id} — parent object, then paginate remaining tracks
       try {
+        console.log(`   [2] Trying user-token GET /playlists/${playlistId}...`);
         const r = await axios.get(`https://api.spotify.com/v1/playlists/${playlistId}`, { headers: auth });
         const firstItems = parseItems(r.data.tracks || {});
-        // Paginate remaining pages if the playlist has more tracks
         const nextUrl = r.data.tracks?.next || null;
         let allItems = firstItems;
         if (nextUrl) {
@@ -378,14 +377,16 @@ export const getPlaylistTracks = async (req, res) => {
           allItems = allItems.concat(remaining);
         }
         if (allItems.length) return cacheAndReturn(allItems);
+        console.log(`   [2] Parent object returned 0 items`);
       } catch (err) {
+        console.error(`   [2] Parent object failed:`, err.response?.status, err.response?.data?.error?.message || err.message);
         if (err.response?.status === 429) setRateLimit(err.response.headers?.['retry-after']);
-        if (err.response?.status !== 403) console.error("❌ Spotify GET playlist failed:", err.response?.status);
       }
     }
 
     // 3. Client credentials (public playlists only) — paginate all tracks
     try {
+      console.log(`   [3] Trying client-creds for ${playlistId}...`);
       const appToken = await getClientCredToken();
       const auth = { Authorization: `Bearer ${appToken}` };
       const items = await fetchAllPages(
@@ -393,13 +394,10 @@ export const getPlaylistTracks = async (req, res) => {
         auth
       );
       if (items.length) return cacheAndReturn(items);
+      console.log(`   [3] Client-creds returned 0 items`);
     } catch (err) {
-      if (err.response?.status === 429) {
-        const secs = setRateLimit(err.response.headers?.['retry-after']);
-        console.error(`❌ Spotify client-cred playlist fetch failed: 429 — backing off ${secs}s`);
-      } else {
-        console.error("❌ Spotify client-cred playlist fetch failed:", err.response?.status);
-      }
+      console.error(`   [3] Client-creds failed:`, err.response?.status, err.response?.data?.error?.message || err.message);
+      if (err.response?.status === 429) setRateLimit(err.response.headers?.['retry-after']);
     }
 
     return null; // no tracks found
@@ -413,8 +411,12 @@ export const getPlaylistTracks = async (req, res) => {
       console.log(`✅ Playlist ${playlistId}: returning ${data.items?.length || 0} tracks`);
       return res.json(data);
     }
-    console.error(`❌ Playlist ${playlistId}: no tracks found (all methods failed)`);
-    res.status(403).json({ message: 'Reconnect Spotify to load playlist tracks (playlist-read-private scope required)' });
+    console.error(`❌ Playlist ${playlistId}: no tracks found (all 3 methods failed)`);
+    // Check if rate-limited — give accurate error instead of always blaming scope
+    if (Date.now() < _rateLimitedUntil) {
+      return res.status(429).json({ message: 'Spotify rate limited — try again in a few seconds' });
+    }
+    res.status(403).json({ message: 'Could not load playlist — try reconnecting Spotify or check the URL' });
   } catch (err) {
     _inflight.delete(playlistId);
     const status = err.response?.status || 500;
