@@ -257,13 +257,16 @@ export function usePlaylistTools() {
     _searchDebounce = setTimeout(async () => {
       if (!searchQuery.value.trim()) { searchLoading.value = false; return; }
       const q = encodeURIComponent(searchQuery.value);
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 10000);
-      const opts = { headers: headers(), signal: controller.signal };
+      const hdrs = headers();
 
-      // Search both Spotify and YouTube in parallel
-      const [spResult, ytResult] = await Promise.allSettled([
-        fetch(`${API}/api/spotify/search?q=${q}&limit=20`, opts).then(async r => {
+      // Search Spotify and YouTube in parallel with separate timeouts
+      // so a slow Spotify cold-start doesn't kill YouTube results
+      const spPromise = (async () => {
+        try {
+          const ctrl = new AbortController();
+          const t = setTimeout(() => ctrl.abort(), 20000);
+          const r = await fetch(`${API}/api/spotify/search?q=${q}&limit=20`, { headers: hdrs, signal: ctrl.signal });
+          clearTimeout(t);
           if (r.status === 429) {
             const d = await r.json().catch(() => ({}));
             _searchRateLimitUntil = Date.now() + (d.retryAfter || 5) * 1000;
@@ -272,8 +275,15 @@ export function usePlaylistTools() {
           if (!r.ok) return [];
           const d = await r.json();
           return (d.tracks || []).map(t => ({ ...t, _source: 'spotify' }));
-        }),
-        fetch(`${API}/api/youtube/search?q=${q}&limit=15`, opts).then(async r => {
+        } catch { return []; }
+      })();
+
+      const ytPromise = (async () => {
+        try {
+          const ctrl = new AbortController();
+          const t = setTimeout(() => ctrl.abort(), 15000);
+          const r = await fetch(`${API}/api/youtube/search?q=${q}&limit=15`, { headers: hdrs, signal: ctrl.signal });
+          clearTimeout(t);
           if (!r.ok) return [];
           const d = await r.json();
           return (d.items || []).map(t => ({
@@ -284,17 +294,30 @@ export function usePlaylistTools() {
             videoId: t.videoId,
             _source: 'youtube',
           }));
-        }),
+        } catch { return []; }
+      })();
+
+      // Show results as they arrive — don't wait for both
+      let spTracks = [], ytTracks = [];
+      const first = await Promise.race([
+        spPromise.then(r => { spTracks = r; return 'sp'; }),
+        ytPromise.then(r => { ytTracks = r; return 'yt'; }),
       ]);
-      clearTimeout(timeout);
 
-      const spTracks = spResult.status === 'fulfilled' ? spResult.value : [];
-      const ytTracks = ytResult.status === 'fulfilled' ? ytResult.value : [];
+      // Show first results immediately
+      if (searchQuery.value.trim()) {
+        searchResults.value = [...spTracks, ...ytTracks];
+      }
 
-      // Interleave: spotify results first, then youtube
-      const combined = [...spTracks, ...ytTracks];
-      searchResults.value = combined;
-      searchError.value = combined.length ? '' : 'No results found';
+      // Wait for the other one
+      if (first === 'sp') ytTracks = await ytPromise;
+      else spTracks = await spPromise;
+
+      // Final combined results (check query hasn't changed)
+      if (searchQuery.value.trim()) {
+        searchResults.value = [...spTracks, ...ytTracks];
+        searchError.value = (spTracks.length || ytTracks.length) ? '' : 'No results found';
+      }
       searchLoading.value = false;
     }, 600);
   };
