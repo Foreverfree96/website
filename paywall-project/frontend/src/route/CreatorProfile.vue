@@ -613,6 +613,7 @@ const showLikers = async (postId) => {
   .creator-card__badges { gap: 4px; }
   .creator-card__stats { flex-direction: column; gap: 6px; align-items: flex-start; }
   .creator-card__username { font-size: 1.1rem; }
+  .modal-box { max-width: calc(100% - 20px); padding: 14px; box-sizing: border-box; }
   .modal-user { padding: 8px 11px; font-size: 0.85rem; }
   .back-btn { padding: 6px 14px; font-size: 0.88rem; }
 }

@@ -1512,7 +1512,9 @@ const formatDate = (d) => new Date(d).toLocaleDateString();
   .post-full__meta { font-size: 0.82rem; }
   .action-btn { padding: 5px 10px; font-size: 0.76rem; }
   .comment-card { padding: 8px 10px; }
-  .modal-info, .modal-confirm { min-width: 200px; padding: 16px 12px; }
+  .modal-info, .modal-confirm { min-width: 200px; padding: 16px 12px; max-width: calc(100% - 24px); box-sizing: border-box; }
+  .confirm-box { padding: 20px 14px; min-width: auto; max-width: calc(100% - 24px); box-sizing: border-box; }
+  .report-modal-box { min-width: auto; max-width: calc(100% - 24px); }
   .modal-actions { flex-direction: column; gap: 8px; }
   .modal-ok, .modal-confirm-btn, .modal-cancel { width: 100%; justify-content: center; }
   .back-btn { padding: 6px 14px; font-size: 0.88rem; }

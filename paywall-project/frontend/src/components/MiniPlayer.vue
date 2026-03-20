@@ -486,7 +486,7 @@ const previewLabel = computed(() => {
 .mp-header-btns { display: flex; gap: 6px; }
 .mp-hbtn {
   background: #2a2a2a; border: none; color: #bbb;
-  border-radius: 6px; padding: 3px 9px; cursor: pointer;
+  border-radius: 6px; padding: 6px 12px; cursor: pointer;
   font-size: 0.88rem; font-weight: 700; line-height: 1.4;
   transition: background 0.15s, color 0.15s;
 }
