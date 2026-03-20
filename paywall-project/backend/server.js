@@ -164,10 +164,10 @@ app.use(cors({
 
 // ─── BODY PARSING ─────────────────────────────────────────────────────────────
 
-// Limit request bodies — 100kb allows playlist match/convert payloads (up to 100 tracks)
+// Limit request bodies — 500kb allows playlist match/convert payloads (up to 1000 tracks)
 // while still blocking unreasonably large requests
-app.use(express.json({ limit: "100kb" }));
-app.use(express.urlencoded({ extended: true, limit: "100kb" }));
+app.use(express.json({ limit: "500kb" }));
+app.use(express.urlencoded({ extended: true, limit: "500kb" }));
 
 // ─── RATE LIMITING ────────────────────────────────────────────────────────────
 

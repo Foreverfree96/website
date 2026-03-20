@@ -1091,7 +1091,7 @@ export const matchTracks = async (req, res) => {
 
     // Process in parallel batches of 5 with 200ms delay between batches
     const startTime = Date.now();
-    const TIMEOUT_MS = 55000; // stay well under Render's 60s limit
+    const TIMEOUT_MS = 290000; // ~5 min for large playlists (up to 1000 tracks)
     const matches = [];
     const BATCH = 5;
     for (let i = 0; i < capped.length; i += BATCH) {

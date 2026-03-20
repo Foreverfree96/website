@@ -25,10 +25,12 @@ const sourceTracks     = ref([]);
 const matchedTracks    = ref([]);
 const convertLoading   = ref(false);
 
-// Shared
-const resultTracks = ref([]);
-const saving       = ref(false);
-const saveResult   = ref(null); // { playlistUrl, name } after save
+// Separate result tracks for each tab so they don't interfere
+const generateResults = ref([]);
+const convertResults  = ref([]);
+const resultTracks    = ref([]); // points to whichever tab is active
+const saving          = ref(false);
+const saveResult      = ref(null); // { playlistUrl, name } after save
 const error        = ref('');
 const scopeMissing = ref(false);
 
@@ -55,7 +57,9 @@ const _persistResults = () => {
     const state = {
       activeTab: activeTab.value,
       generatedTracks: generatedTracks.value,
+      generateResults: generateResults.value,
       matchedTracks: matchedTracks.value,
+      convertResults: convertResults.value,
       resultTracks: resultTracks.value,
       convertDirection: convertDirection.value,
       convertUrl: convertUrl.value,
@@ -85,7 +89,9 @@ const _restoreResults = () => {
     if (!state.generatedTracks?.length && !state.matchedTracks?.length) return false;
     activeTab.value = state.activeTab || 'generate';
     generatedTracks.value = state.generatedTracks || [];
+    generateResults.value = state.generateResults || [];
     matchedTracks.value = state.matchedTracks || [];
+    convertResults.value = state.convertResults || [];
     resultTracks.value = state.resultTracks || [];
     convertDirection.value = state.convertDirection || null;
     convertUrl.value = state.convertUrl || '';
@@ -150,14 +156,12 @@ const extractSpotifyPlaylistId = (url) => {
 // ─── Composable ─────────────────────────────────────────────────────────────
 export function usePlaylistTools() {
 
-  // Sync resultTracks to the active tab's data
+  // Sync resultTracks to the active tab's stored results
   const syncResultTracks = () => {
     if (activeTab.value === 'generate') {
-      resultTracks.value = [...generatedTracks.value];
+      resultTracks.value = [...generateResults.value];
     } else {
-      resultTracks.value = matchedTracks.value
-        .filter(m => m.bestMatch)
-        .map(m => m.bestMatch);
+      resultTracks.value = [...convertResults.value];
     }
   };
 
@@ -204,11 +208,13 @@ export function usePlaylistTools() {
     selectedGenres.value = [];
     trackLimit.value = 30;
     generatedTracks.value = [];
+    generateResults.value = [];
     generateLoading.value = false;
     convertUrl.value = '';
     convertDirection.value = null;
     sourceTracks.value = [];
     matchedTracks.value = [];
+    convertResults.value = [];
     convertLoading.value = false;
     resultTracks.value = [];
     saving.value = false;
@@ -342,7 +348,7 @@ export function usePlaylistTools() {
         }
       }
 
-      const genTimeout = setTimeout(() => { if (!signal.aborted) _activeAbort?.abort(); }, 60000);
+      const genTimeout = setTimeout(() => { if (!signal.aborted) _activeAbort?.abort(); }, 360000);
       const res = await fetch(`${API}/api/spotify/generate`, {
         method: 'POST',
         headers: headers(),
@@ -357,7 +363,8 @@ export function usePlaylistTools() {
       }
       const data = await res.json();
       generatedTracks.value = data.tracks || [];
-      resultTracks.value = [...generatedTracks.value];
+      generateResults.value = [...generatedTracks.value];
+      resultTracks.value = [...generateResults.value];
       bgStatus.value = `Done! ${generatedTracks.value.length} tracks`;
       bgDone.value = true;
       _activeAbort = null;
@@ -398,7 +405,7 @@ export function usePlaylistTools() {
         if (!plId) throw new Error('Could not find playlist ID in URL');
 
         // Fetch YouTube tracks
-        const ytTimeout = setTimeout(() => { if (!signal.aborted) _activeAbort?.abort(); }, 60000);
+        const ytTimeout = setTimeout(() => { if (!signal.aborted) _activeAbort?.abort(); }, 360000);
         const ytRes = await fetch(`${API}/api/youtube/playlist/${plId}/tracks`, {
           headers: headers(),
           signal,
@@ -432,9 +439,10 @@ export function usePlaylistTools() {
         }
         const matchData = await matchRes.json();
         matchedTracks.value = matchData.matches || [];
-        resultTracks.value = matchedTracks.value
+        convertResults.value = matchedTracks.value
           .filter((m) => m.bestMatch)
           .map((m) => m.bestMatch);
+        resultTracks.value = [...convertResults.value];
         const matched = matchedTracks.value.filter(m => m.confidence !== 'none').length;
         bgStatus.value = `Done! ${matched}/${matchedTracks.value.length} matched`;
         bgDone.value = true;
@@ -490,9 +498,10 @@ export function usePlaylistTools() {
         }
         const matchData = await matchRes.json();
         matchedTracks.value = matchData.matches || [];
-        resultTracks.value = matchedTracks.value
+        convertResults.value = matchedTracks.value
           .filter((m) => m.bestMatch)
           .map((m) => m.bestMatch);
+        resultTracks.value = [...convertResults.value];
         const matched = matchedTracks.value.filter(m => m.confidence !== 'none').length;
         bgStatus.value = `Done! ${matched}/${matchedTracks.value.length} matched`;
         bgDone.value = true;
@@ -523,15 +532,22 @@ export function usePlaylistTools() {
       // Force array reactivity
       matchedTracks.value = [...matchedTracks.value];
     }
-    // Rebuild resultTracks
-    resultTracks.value = matchedTracks.value
+    // Rebuild convertResults and resultTracks
+    convertResults.value = matchedTracks.value
       .filter((m) => m.bestMatch)
       .map((m) => m.bestMatch);
+    resultTracks.value = [...convertResults.value];
   };
 
   // Remove a track from results
   const removeResult = (index) => {
     resultTracks.value.splice(index, 1);
+    // Sync back to the tab-specific store
+    if (activeTab.value === 'generate') {
+      generateResults.value = [...resultTracks.value];
+    } else {
+      convertResults.value = [...resultTracks.value];
+    }
   };
 
   // ── Like track (save to Liked Songs) ──────────────────────────────────
@@ -578,7 +594,7 @@ export function usePlaylistTools() {
       const uris = resultTracks.value.map(t => t.uri).filter(Boolean);
       if (!uris.length) throw new Error('No tracks to add');
       const addController = new AbortController();
-      const addTimeout = setTimeout(() => addController.abort(), 60000);
+      const addTimeout = setTimeout(() => addController.abort(), 120000);
       const res = await fetch(`${API}/api/spotify/playlist/${playlistId}/add`, {
         method: 'POST',
         headers: headers(),
@@ -613,7 +629,7 @@ export function usePlaylistTools() {
       if (!uris.length) throw new Error('No Spotify tracks to save');
 
       const saveController = new AbortController();
-      const saveTimeout = setTimeout(() => saveController.abort(), 60000);
+      const saveTimeout = setTimeout(() => saveController.abort(), 120000);
       const res = await fetch(`${API}/api/spotify/playlist`, {
         method: 'POST',
         headers: headers(),
@@ -656,10 +672,12 @@ export function usePlaylistTools() {
         selectedGenres: selectedGenres.value,
         trackLimit: trackLimit.value,
         generatedTracks: generatedTracks.value,
+        generateResults: generateResults.value,
         convertUrl: convertUrl.value,
         convertDirection: convertDirection.value,
         sourceTracks: sourceTracks.value,
         matchedTracks: matchedTracks.value,
+        convertResults: convertResults.value,
         resultTracks: resultTracks.value,
         savedAt: Date.now(),
       };
@@ -681,10 +699,12 @@ export function usePlaylistTools() {
       selectedGenres.value = state.selectedGenres || [];
       trackLimit.value = state.trackLimit || 30;
       generatedTracks.value = state.generatedTracks || [];
+      generateResults.value = state.generateResults || [];
       convertUrl.value = state.convertUrl || '';
       convertDirection.value = state.convertDirection || null;
       sourceTracks.value = state.sourceTracks || [];
       matchedTracks.value = state.matchedTracks || [];
+      convertResults.value = state.convertResults || [];
       resultTracks.value = state.resultTracks || [];
       isOpen.value = true;
       error.value = '';

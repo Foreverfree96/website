@@ -236,7 +236,7 @@ export const matchYoutubeTracks = async (req, res) => {
     const capped = tracks;
     console.log(`🔍 Matching ${capped.length} tracks to YouTube...`);
     const startTime = Date.now();
-    const TIMEOUT_MS = 55000; // 55s to stay under Render's 60s limit
+    const TIMEOUT_MS = 290000; // ~5 min for large playlists (up to 1000 tracks)
 
     const searchYT = async (query) => {
       try {
