@@ -944,31 +944,32 @@ export const matchTracks = async (req, res) => {
     console.log(`🔍 Matching ${capped.length} tracks to Spotify...${skipped ? ` (${skipped} over limit, skipped)` : ''}`);
 
     const searchSpotify = async (query) => {
-      try {
-        const r = await axios.get("https://api.spotify.com/v1/search", {
-          params: { q: query, type: "track", limit: 20 },
-          headers: auth,
-        });
-        return r.data.tracks?.items || [];
-      } catch (e) {
-        if (e.response?.status === 400) {
-          // Retry with cleaned query (strip special chars that Spotify rejects)
-          const clean = query.replace(/[^\w\s'-]/g, '').trim();
-          if (clean && clean !== query) {
-            try {
-              const r2 = await axios.get("https://api.spotify.com/v1/search", {
-                params: { q: clean, type: "track", limit: 20 },
-                headers: auth,
-              });
-              return r2.data.tracks?.items || [];
-            } catch { return []; }
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          const q = attempt === 0 ? query : query.replace(/[^\w\s'-]/g, '').trim();
+          if (!q) return [];
+          const r = await axios.get("https://api.spotify.com/v1/search", {
+            params: { q, type: "track", limit: 20 },
+            headers: auth,
+          });
+          return r.data.tracks?.items || [];
+        } catch (e) {
+          if (e.response?.status === 400 && attempt === 0) continue; // retry with cleaned query
+          if (e.response?.status === 429) {
+            const secs = parseInt(e.response.headers?.['retry-after'] || '3', 10);
+            setRateLimit(e.response.headers?.['retry-after']);
+            if (attempt < 2) {
+              await new Promise(r => setTimeout(r, Math.min(secs, 5) * 1000 + 200));
+              continue; // retry after waiting
+            }
+          }
+          if (attempt === 0 || e.response?.status !== 400) {
+            console.error(`❌ Match search failed for "${query}":`, e.response?.status || e.message);
           }
           return [];
         }
-        if (e.response?.status === 429) setRateLimit(e.response.headers?.['retry-after']);
-        console.error(`❌ Match search failed for "${query}":`, e.response?.status || e.message);
-        return [];
       }
+      return [];
     };
 
     // Clean YouTube channel names that aren't real artist names

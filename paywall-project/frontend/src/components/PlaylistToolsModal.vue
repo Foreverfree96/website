@@ -78,6 +78,7 @@
                       <span class="pt-dropdown-name">{{ t.name }}</span>
                       <span class="pt-dropdown-artist">{{ t.artist }}</span>
                     </div>
+                    <span :class="['pt-source-badge', t._source || 'spotify']">{{ t._source === 'youtube' ? 'YT' : 'SP' }}</span>
                   </div>
                 </div>
 
@@ -144,7 +145,22 @@
               <!-- Track count -->
               <div class="pt-section pt-row">
                 <label class="pt-label">Tracks: {{ pt.trackLimit.value }}</label>
-                <input type="range" min="10" max="100" v-model.number="pt.trackLimit.value" class="pt-range" />
+                <input type="range" min="10" max="100" step="5" v-model.number="pt.trackLimit.value" class="pt-range" />
+              </div>
+
+              <!-- Generate target toggle -->
+              <div class="pt-section">
+                <label class="pt-label">Output Platform</label>
+                <div class="pt-target-toggle">
+                  <button
+                    :class="['pt-target-btn', { active: pt.generateTarget.value === 'spotify' }]"
+                    @click="pt.generateTarget.value = 'spotify'"
+                  >Spotify</button>
+                  <button
+                    :class="['pt-target-btn', { active: pt.generateTarget.value === 'youtube' }]"
+                    @click="pt.generateTarget.value = 'youtube'"
+                  >YouTube</button>
+                </div>
               </div>
 
               <!-- Generate button -->
@@ -153,7 +169,7 @@
                 @click="pt.generate()"
                 :disabled="pt.generateLoading.value || (!pt.seedTracks.value.length && !pt.selectedGenres.value.length && !pt.seedPlaylistUrl.value.trim())"
               >
-                {{ pt.generateLoading.value ? 'Generating...' : 'Generate Playlist' }}
+                {{ pt.generateLoading.value ? 'Generating...' : `Generate ${pt.generateTarget.value === 'youtube' ? 'YouTube' : 'Spotify'} Playlist` }}
               </button>
 
               <!-- Results -->
@@ -173,12 +189,20 @@
                   </div>
                 </div>
                 <!-- Action bar -->
-                <div class="pt-actions">
+                <div class="pt-actions" v-if="pt.generateTarget.value === 'spotify'">
                   <button class="pt-btn pt-btn-play" @click="handlePlayNow" :disabled="!pt.resultTracks.value.length">
                     Play Now
                   </button>
                   <button class="pt-btn pt-btn-save" @click="showSaveDialog = true" :disabled="!pt.resultTracks.value.length">
                     Save to Spotify
+                  </button>
+                </div>
+                <div class="pt-actions" v-else>
+                  <button class="pt-btn pt-btn-primary" @click="copyYoutubeLinks" :disabled="!pt.resultTracks.value.length">
+                    {{ ytCopied ? 'Copied!' : 'Copy All Links' }}
+                  </button>
+                  <button class="pt-btn" @click="openYoutubePlaylist" :disabled="!pt.resultTracks.value.length">
+                    Open Playlist
                   </button>
                 </div>
               </div>
@@ -888,6 +912,46 @@ const handleAddToExisting = (playlistId) => {
 }
 .pt-autofill-btn:hover:not(:disabled) { background: #1d4ed8; color: #fff; transform: scale(1.03); }
 .pt-autofill-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+/* Target toggle (Spotify / YouTube) */
+.pt-target-toggle {
+  display: flex;
+  gap: 0;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #333;
+}
+.pt-target-btn {
+  flex: 1;
+  padding: 8px 12px;
+  background: #111;
+  color: #888;
+  border: none;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.pt-target-btn.active {
+  background: #1db954;
+  color: #fff;
+  font-weight: 600;
+}
+.pt-target-btn:last-child.active {
+  background: #c00;
+}
+.pt-target-btn:hover:not(.active) { background: #1a1a1a; color: #ccc; }
+
+/* Source badge on search results */
+.pt-source-badge {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 600;
+  flex-shrink: 0;
+  letter-spacing: 0.5px;
+}
+.pt-source-badge.spotify { background: #1db95433; color: #1db954; }
+.pt-source-badge.youtube { background: #ff000033; color: #f44; }
 
 .pt-track-list {
   max-height: 320px;

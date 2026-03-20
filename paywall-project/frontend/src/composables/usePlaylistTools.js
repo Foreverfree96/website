@@ -17,6 +17,7 @@ const selectedGenres  = ref([]);
 const trackLimit      = ref(30);
 const generatedTracks = ref([]);
 const generateLoading = ref(false);
+const generateTarget  = ref('spotify'); // 'spotify' | 'youtube'
 
 // Convert tab
 const convertUrl       = ref('');
@@ -216,6 +217,7 @@ export function usePlaylistTools() {
     generatedTracks.value = [];
     generateResults.value = [];
     generateLoading.value = false;
+    generateTarget.value = 'spotify';
     convertUrl.value = '';
     convertDirection.value = null;
     sourceTracks.value = [];
@@ -237,7 +239,7 @@ export function usePlaylistTools() {
     autofillProgress.value = '';
   };
 
-  // ── Seed track search ───────────────────────────────────────────────────
+  // ── Seed track search (dual-source: Spotify + YouTube) ──────────────────
   let _searchRateLimitUntil = 0;
 
   const searchSeeds = (query) => {
@@ -246,7 +248,6 @@ export function usePlaylistTools() {
     clearTimeout(_searchDebounce);
     if (!query.trim()) { searchResults.value = []; searchLoading.value = false; return; }
 
-    // Don't spam requests during rate limit
     if (Date.now() < _searchRateLimitUntil) {
       searchError.value = 'Rate limited — wait a moment';
       return;
@@ -254,34 +255,46 @@ export function usePlaylistTools() {
 
     searchLoading.value = true;
     _searchDebounce = setTimeout(async () => {
-      // Re-check query hasn't been cleared during debounce
       if (!searchQuery.value.trim()) { searchLoading.value = false; return; }
-      try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 10000);
-        const res = await fetch(`${API}/api/spotify/search?q=${encodeURIComponent(searchQuery.value)}&limit=50`, {
-          headers: headers(),
-          signal: controller.signal,
-        });
-        clearTimeout(timeout);
-        if (res.status === 429) {
-          const data = await res.json().catch(() => ({}));
-          const retryAfter = (data.retryAfter || 5) * 1000;
-          _searchRateLimitUntil = Date.now() + retryAfter;
-          searchError.value = 'Rate limited — wait a moment';
-          searchResults.value = [];
-        } else if (!res.ok) {
-          searchError.value = res.status === 401 ? 'Login required' : `Search failed (${res.status})`;
-          searchResults.value = [];
-        } else {
-          const data = await res.json();
-          searchResults.value = data.tracks || [];
-          searchError.value = searchResults.value.length ? '' : 'No results found';
-        }
-      } catch (err) {
-        searchError.value = err.name === 'AbortError' ? 'Search timed out' : 'Search failed — check connection';
-        searchResults.value = [];
-      }
+      const q = encodeURIComponent(searchQuery.value);
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000);
+      const opts = { headers: headers(), signal: controller.signal };
+
+      // Search both Spotify and YouTube in parallel
+      const [spResult, ytResult] = await Promise.allSettled([
+        fetch(`${API}/api/spotify/search?q=${q}&limit=20`, opts).then(async r => {
+          if (r.status === 429) {
+            const d = await r.json().catch(() => ({}));
+            _searchRateLimitUntil = Date.now() + (d.retryAfter || 5) * 1000;
+            return [];
+          }
+          if (!r.ok) return [];
+          const d = await r.json();
+          return (d.tracks || []).map(t => ({ ...t, _source: 'spotify' }));
+        }),
+        fetch(`${API}/api/youtube/search?q=${q}&limit=15`, opts).then(async r => {
+          if (!r.ok) return [];
+          const d = await r.json();
+          return (d.items || []).map(t => ({
+            id:      `yt_${t.videoId}`,
+            name:    t.title,
+            artist:  t.channelTitle,
+            art:     t.thumbnail,
+            videoId: t.videoId,
+            _source: 'youtube',
+          }));
+        }),
+      ]);
+      clearTimeout(timeout);
+
+      const spTracks = spResult.status === 'fulfilled' ? spResult.value : [];
+      const ytTracks = ytResult.status === 'fulfilled' ? ytResult.value : [];
+
+      // Interleave: spotify results first, then youtube
+      const combined = [...spTracks, ...ytTracks];
+      searchResults.value = combined;
+      searchError.value = combined.length ? '' : 'No results found';
       searchLoading.value = false;
     }, 600);
   };
@@ -289,7 +302,15 @@ export function usePlaylistTools() {
   const addSeed = (track) => {
     if (seedTracks.value.length >= 5) return;
     if (seedTracks.value.find((t) => t.id === track.id)) return;
-    seedTracks.value.push(track);
+    seedTracks.value.push({
+      id:      track.id,
+      name:    track.name,
+      artist:  track.artist,
+      art:     track.art,
+      uri:     track.uri || '',
+      videoId: track.videoId || '',
+      _source: track._source || 'spotify',
+    });
     searchQuery.value = '';
     searchResults.value = [];
   };
@@ -326,7 +347,7 @@ export function usePlaylistTools() {
       if (!API) throw new Error('API URL not configured');
 
       const body = {
-        seedTrackIds: seedTracks.value.map((t) => t.id),
+        seedTrackIds: seedTracks.value.filter(t => !t.id.startsWith('yt_')).map(t => t.id),
         seedTrackMeta: seedTracks.value.map((t) => ({ name: t.name, artist: t.artist })),
         genres: selectedGenres.value,
         limit: trackLimit.value,
@@ -370,7 +391,40 @@ export function usePlaylistTools() {
         throw new Error(msg);
       }
       const data = await res.json();
-      generatedTracks.value = data.tracks || [];
+      const spTracks = data.tracks || [];
+
+      if (generateTarget.value === 'youtube' && spTracks.length) {
+        // Match Spotify recommendations to YouTube
+        bgStatus.value = `Matching ${spTracks.length} tracks to YouTube...`;
+        const matchBody = spTracks.map(t => ({ title: t.name, artist: t.artist }));
+        const matchRes = await fetch(`${API}/api/youtube/match`, {
+          method: 'POST',
+          headers: headers(),
+          body: JSON.stringify({ tracks: matchBody }),
+          signal,
+        });
+        if (matchRes.ok) {
+          const matchData = await matchRes.json();
+          const ytTracks = (matchData.matches || [])
+            .filter(m => m.bestMatch)
+            .map(m => ({
+              id:      m.bestMatch.videoId,
+              name:    m.bestMatch.title,
+              artist:  m.bestMatch.channelTitle,
+              art:     m.bestMatch.thumbnail,
+              url:     m.bestMatch.url,
+              videoId: m.bestMatch.videoId,
+              _source: 'youtube',
+            }));
+          generatedTracks.value = ytTracks;
+        } else {
+          // Fallback: still show Spotify results
+          generatedTracks.value = spTracks;
+        }
+      } else {
+        generatedTracks.value = spTracks;
+      }
+
       generateResults.value = [...generatedTracks.value];
       resultTracks.value = [...generateResults.value];
       bgStatus.value = `Done! ${generatedTracks.value.length} tracks`;
@@ -797,7 +851,7 @@ export function usePlaylistTools() {
     // State
     isOpen, activeTab, isMinimized, bgStatus, bgDone,
     seedTracks, seedPlaylistUrl, selectedGenres, trackLimit,
-    generatedTracks, generateLoading,
+    generatedTracks, generateLoading, generateTarget,
     convertUrl, convertDirection, sourceTracks, matchedTracks, convertLoading,
     resultTracks, saving, saveResult, error, scopeMissing,
     searchQuery, searchResults, searchLoading, searchError,
