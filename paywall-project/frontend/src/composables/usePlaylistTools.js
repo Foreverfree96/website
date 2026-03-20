@@ -41,6 +41,7 @@ const bgDone      = ref(false);
 const searchQuery   = ref('');
 const searchResults = ref([]);
 const searchLoading = ref(false);
+const searchError   = ref('');
 let _searchDebounce = null;
 
 // ─── Available genres (categorized) ──────────────────────────────────────────
@@ -151,17 +152,37 @@ export function usePlaylistTools() {
   // ── Seed track search ───────────────────────────────────────────────────
   const searchSeeds = (query) => {
     searchQuery.value = query;
+    searchError.value = '';
     clearTimeout(_searchDebounce);
-    if (!query.trim()) { searchResults.value = []; return; }
+    if (!query.trim()) { searchResults.value = []; searchLoading.value = false; return; }
     searchLoading.value = true;
     _searchDebounce = setTimeout(async () => {
       try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 10000);
         const res = await fetch(`${API}/api/spotify/search?q=${encodeURIComponent(query)}&limit=8`, {
           headers: headers(),
+          signal: controller.signal,
         });
-        const data = await res.json();
-        searchResults.value = data.tracks || [];
-      } catch { searchResults.value = []; }
+        clearTimeout(timeout);
+        if (!res.ok) {
+          const msg = res.status === 401 ? 'Login required' : `Search failed (${res.status})`;
+          searchError.value = msg;
+          searchResults.value = [];
+          console.error('Seed search error:', res.status);
+        } else {
+          const data = await res.json();
+          searchResults.value = data.tracks || [];
+          searchError.value = '';
+          if (!searchResults.value.length && query.trim()) {
+            searchError.value = 'No results found';
+          }
+        }
+      } catch (err) {
+        searchError.value = err.name === 'AbortError' ? 'Search timed out' : 'Search failed — check connection';
+        searchResults.value = [];
+        console.error('Seed search error:', err.message);
+      }
       searchLoading.value = false;
     }, 300);
   };
@@ -583,7 +604,7 @@ export function usePlaylistTools() {
     generatedTracks, generateLoading,
     convertUrl, convertDirection, sourceTracks, matchedTracks, convertLoading,
     resultTracks, saving, saveResult, error, scopeMissing,
-    searchQuery, searchResults, searchLoading,
+    searchQuery, searchResults, searchLoading, searchError,
     GENRES, GENRE_CATEGORIES, genreFilter,
 
     likedIds, userPlaylists, playlistsLoading,

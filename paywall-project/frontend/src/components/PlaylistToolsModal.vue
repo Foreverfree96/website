@@ -62,18 +62,21 @@
                     placeholder="Search for a track..."
                     :disabled="pt.seedTracks.value.length >= 5"
                   />
-                  <div v-if="pt.searchResults.value.length" class="pt-dropdown">
-                    <div
-                      v-for="t in pt.searchResults.value"
-                      :key="t.id"
-                      class="pt-dropdown-item"
-                      @click="pt.addSeed(t)"
-                    >
-                      <img v-if="t.art" :src="t.art" class="pt-dropdown-art" alt="" />
-                      <div class="pt-dropdown-info">
-                        <span class="pt-dropdown-name">{{ t.name }}</span>
-                        <span class="pt-dropdown-artist">{{ t.artist }}</span>
-                      </div>
+                  <div v-if="pt.searchLoading.value && pt.searchQuery.value.trim()" class="pt-search-loading">Searching...</div>
+                  <div v-if="pt.searchError.value" class="pt-search-error">{{ pt.searchError.value }}</div>
+                </div>
+                <!-- Search results (in normal flow so scrollable body doesn't clip them) -->
+                <div v-if="pt.searchResults.value.length" class="pt-search-results">
+                  <div
+                    v-for="t in pt.searchResults.value"
+                    :key="t.id"
+                    class="pt-dropdown-item"
+                    @click="pt.addSeed(t)"
+                  >
+                    <img v-if="t.art" :src="t.art" class="pt-dropdown-art" alt="" />
+                    <div class="pt-dropdown-info">
+                      <span class="pt-dropdown-name">{{ t.name }}</span>
+                      <span class="pt-dropdown-artist">{{ t.artist }}</span>
                     </div>
                   </div>
                 </div>
@@ -146,7 +149,7 @@
 
               <!-- Generate button -->
               <button
-                class="pt-btn pt-btn-primary"
+                class="pt-btn pt-btn-primary pt-btn-full"
                 @click="pt.generate()"
                 :disabled="pt.generateLoading.value || (!pt.seedTracks.value.length && !pt.selectedGenres.value.length && !pt.seedPlaylistUrl.value.trim())"
               >
@@ -204,7 +207,7 @@
               </div>
 
               <button
-                class="pt-btn pt-btn-primary"
+                class="pt-btn pt-btn-primary pt-btn-full"
                 @click="pt.startConvert()"
                 :disabled="pt.convertLoading.value || !pt.convertUrl.value.trim()"
               >
@@ -711,6 +714,22 @@ const handleAddToExisting = (playlistId) => {
 /* ─── Search dropdown ─────────────────────────────────────────────────────── */
 .pt-search-wrap { position: relative; }
 
+.pt-search-loading {
+  font-size: 12px; color: #888; padding: 6px 2px;
+}
+.pt-search-error {
+  font-size: 12px; color: #f59e0b; padding: 4px 2px;
+}
+
+/* Search results in normal flow (not absolute) so scrollable body doesn't clip */
+.pt-search-results {
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 8px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
 .pt-dropdown {
   position: absolute;
   top: 100%;
@@ -820,10 +839,12 @@ const handleAddToExisting = (playlistId) => {
 .pt-btn-primary { background: #7c3aed; border-color: #7c3aed; color: #fff; }
 .pt-btn-primary:hover:not(:disabled) { background: #6d28d9; }
 
-.pt-btn-play { background: #1db954; border-color: #1db954; color: #fff; }
+.pt-btn-full { width: 100%; text-align: center; }
+
+.pt-btn-play { background: #1db954; border-color: #1db954; color: #fff; flex: 1; text-align: center; }
 .pt-btn-play:hover:not(:disabled) { background: #1aa34a; }
 
-.pt-btn-save { background: #7c3aed; border-color: #7c3aed; color: #fff; }
+.pt-btn-save { background: #7c3aed; border-color: #7c3aed; color: #fff; flex: 1; text-align: center; }
 
 /* ─── Results ─────────────────────────────────────────────────────────────── */
 .pt-results { display: flex; flex-direction: column; gap: 8px; }
@@ -1046,7 +1067,7 @@ const handleAddToExisting = (playlistId) => {
   .pt-body { padding: 14px; gap: 12px; }
   .pt-input { font-size: 13px; padding: 9px 12px; }
   .pt-label { font-size: 11px; }
-  .pt-btn { padding: 9px 14px; font-size: 13px; }
+  .pt-btn { padding: 10px 14px; font-size: 13px; }
   .pt-track { gap: 8px; padding: 6px 2px; }
   .pt-track-art { width: 34px; height: 34px; }
   .pt-track-name { font-size: 12px; }
@@ -1059,7 +1080,8 @@ const handleAddToExisting = (playlistId) => {
   .pt-chip-art { width: 20px; height: 20px; }
   .pt-chip-text { font-size: 11px; max-width: 120px; }
   .pt-tag { padding: 4px 10px; font-size: 11px; }
-  .pt-actions { gap: 6px; flex-wrap: wrap; }
+  .pt-actions { flex-direction: column; gap: 8px; }
+  .pt-actions .pt-btn { width: 100%; text-align: center; padding: 12px 14px; font-size: 14px; }
   .pt-genre-search-row { flex-direction: column; gap: 6px; }
   .pt-url-row { flex-direction: column; gap: 6px; }
   .pt-url-input { width: 100%; }
@@ -1068,6 +1090,8 @@ const handleAddToExisting = (playlistId) => {
   .pt-dropdown-art { width: 30px; height: 30px; }
   .pt-dropdown-item { padding: 8px 10px; gap: 8px; }
   .pt-alt-dropdown { min-width: 220px; }
+  .pt-search-results { max-height: 200px; }
+  .pt-btn-full { padding: 12px; font-size: 14px; }
 }
 
 @media (max-width: 380px) {
@@ -1076,7 +1100,7 @@ const handleAddToExisting = (playlistId) => {
   .pt-tab { padding: 5px 10px; font-size: 12px; }
   .pt-track-art { width: 28px; height: 28px; }
   .pt-chip-text { max-width: 80px; }
-  .pt-actions { flex-direction: column; }
-  .pt-actions .pt-btn { width: 100%; text-align: center; }
+  .pt-btn-full { padding: 11px; font-size: 13px; }
+  .pt-search-results { max-height: 160px; }
 }
 </style>

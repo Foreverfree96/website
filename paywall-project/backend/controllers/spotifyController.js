@@ -506,17 +506,26 @@ export const generatePlaylist = async (req, res) => {
       const cached = getCachedPlaylist(seedPlaylistId);
       let items = cached?.items;
       if (!items) {
-        try {
-          const r = await axios.get(
-            `https://api.spotify.com/v1/playlists/${seedPlaylistId}/tracks?limit=100`,
-            { headers: auth }
-          );
-          items = (r.data.items || []).filter((i) => i?.track?.id);
-        } catch { items = []; }
+        // Try user token first, then client credentials as fallback
+        for (const tryToken of [token, null]) {
+          try {
+            const t = tryToken || await getClientCredToken();
+            const r = await axios.get(
+              `https://api.spotify.com/v1/playlists/${seedPlaylistId}/tracks?limit=100`,
+              { headers: { Authorization: `Bearer ${t}` } }
+            );
+            items = (r.data.items || []).filter((i) => i?.track?.id);
+            if (items.length) break;
+          } catch (e) {
+            if (tryToken && (e.response?.status === 403 || e.response?.status === 401)) continue; // try client creds
+            console.error(`❌ Playlist seed fetch failed:`, e.response?.status || e.message);
+          }
+        }
+        if (!items) items = [];
       }
       if (items?.length) {
         const shuffled = items.sort(() => Math.random() - 0.5);
-        shuffled.slice(0, 3).forEach((i) => {
+        shuffled.slice(0, 5).forEach((i) => {
           const artist = i.track?.artists?.[0]?.name;
           if (artist && !seedArtists.includes(artist)) seedArtists.push(artist);
           if (i.track?.id) seedTrackIds.push(i.track.id);
