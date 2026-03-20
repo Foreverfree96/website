@@ -767,7 +767,8 @@ export function usePlaylistTools() {
     const isYt = convertDirection.value === 'spotify-to-yt';
     let filled = 0;
 
-    // Process one at a time to avoid rate limiting
+    // Process one at a time — wait out rate limits instead of giving up
+    let delay = 800; // start with 800ms between requests
     for (let b = 0; b < noneIndices.length; b++) {
       const idx = noneIndices[b];
       const m = matchedTracks.value[idx];
@@ -779,18 +780,27 @@ export function usePlaylistTools() {
         const endpoint = isYt
           ? `${API}/api/youtube/search?q=${encodeURIComponent(q)}&limit=5`
           : `${API}/api/spotify/search?q=${encodeURIComponent(q)}&limit=5`;
-        const res = await fetch(endpoint, { headers: headers() });
-        if (res.status === 429) {
-          // Wait and retry once
-          await new Promise(r => setTimeout(r, 5000));
-          const retry = await fetch(endpoint, { headers: headers() });
-          if (!retry.ok) { autofillProgress.value = `${b + 1}/${noneIndices.length}`; continue; }
-          var data = await retry.json();
-        } else if (!res.ok) {
-          autofillProgress.value = `${b + 1}/${noneIndices.length}`; continue;
-        } else {
-          var data = await res.json();
+
+        let data = null;
+        for (let attempt = 0; attempt < 3; attempt++) {
+          const res = await fetch(endpoint, { headers: headers() });
+          if (res.ok) {
+            data = await res.json();
+            delay = 800; // reset delay on success
+            break;
+          }
+          if (res.status === 429) {
+            // Parse retry-after or use escalating backoff
+            const retryAfter = parseInt(res.headers.get('retry-after') || '0', 10);
+            const waitMs = Math.max(retryAfter * 1000, delay * (attempt + 2));
+            autofillProgress.value = `${b + 1}/${noneIndices.length} (waiting ${Math.round(waitMs / 1000)}s)`;
+            await new Promise(r => setTimeout(r, waitMs));
+            delay = Math.min(delay * 1.5, 5000); // slow down future requests
+            continue;
+          }
+          break; // other errors — skip this track
         }
+        if (!data) { autofillProgress.value = `${b + 1}/${noneIndices.length}`; continue; }
 
         let top = null;
         if (isYt) {
@@ -814,8 +824,7 @@ export function usePlaylistTools() {
         }
       } catch { /* skip failed searches */ }
       autofillProgress.value = `${b + 1}/${noneIndices.length}`;
-      // Delay between each search to avoid rate limiting
-      if (b < noneIndices.length - 1) await new Promise(r => setTimeout(r, 600));
+      if (b < noneIndices.length - 1) await new Promise(r => setTimeout(r, delay));
     }
 
     // Force reactivity
