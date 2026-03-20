@@ -166,8 +166,8 @@
               <!-- Progress pill + Cancel button -->
               <div v-if="pt.generateLoading.value" class="pt-progress-wrap">
                 <div class="pt-progress-pill">
-                  <div class="pt-progress-bar" :style="{ width: pt.generateProgress.value + '%' }"></div>
-                  <span class="pt-progress-text">{{ pt.generateProgress.value }}%</span>
+                  <div class="pt-progress-bar" :style="{ width: Math.round(pt.generateProgress.value) + '%' }"></div>
+                  <span class="pt-progress-text">{{ Math.round(pt.generateProgress.value) }}%</span>
                 </div>
                 <button
                   class="pt-btn pt-btn-cancel pt-btn-full"
@@ -243,8 +243,8 @@
 
               <div v-if="pt.convertLoading.value" class="pt-progress-wrap">
                 <div class="pt-progress-pill">
-                  <div class="pt-progress-bar" :style="{ width: pt.convertProgress.value + '%' }"></div>
-                  <span class="pt-progress-text">{{ pt.convertProgress.value }}%</span>
+                  <div class="pt-progress-bar" :style="{ width: Math.round(pt.convertProgress.value) + '%' }"></div>
+                  <span class="pt-progress-text">{{ Math.round(pt.convertProgress.value) }}%</span>
                 </div>
                 <button
                   class="pt-btn pt-btn-cancel pt-btn-full"
@@ -979,7 +979,7 @@ const handleAddToExisting = (playlistId) => {
   height: 100%;
   background: linear-gradient(90deg, #6366f1, #8b5cf6, #a78bfa);
   border-radius: 13px;
-  transition: width 0.3s ease;
+  transition: width 0.15s linear;
   box-shadow: 0 0 10px rgba(99, 102, 241, 0.4);
 }
 .pt-progress-text {

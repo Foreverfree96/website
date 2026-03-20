@@ -52,13 +52,18 @@ const _startProgress = (progressRef, timerKey) => {
   const id = setInterval(() => {
     const elapsed = (Date.now() - start) / 1000;
     const cur = progressRef.value;
-    if (cur >= 97) { clearInterval(id); return; }
-    // Steady pace throughout: ~3%/tick early, ~1.5%/tick mid, ~0.5%/tick late
-    if (elapsed < 3) progressRef.value = Math.min(25, cur + 3);
-    else if (elapsed < 15) progressRef.value = Math.min(85, cur + 1.5);
-    else if (elapsed < 30) progressRef.value = Math.min(95, cur + 0.5);
-    else progressRef.value = Math.min(97, cur + 0.2);
-  }, 200);
+    if (cur >= 99) return;
+    // Smooth asymptotic curve — always moving, never stops, never hits 100
+    // Approaches 99 but decelerates naturally like a real loading bar
+    const target = 99;
+    const remaining = target - cur;
+    let speed;
+    if (elapsed < 2)       speed = 4;            // 0-2s:  fast start
+    else if (elapsed < 8)  speed = 2;            // 2-8s:  steady
+    else if (elapsed < 20) speed = 0.8;          // 8-20s: slowing
+    else                   speed = remaining * 0.03; // 20s+: asymptotic (always moving)
+    progressRef.value = Math.min(target, cur + Math.max(speed, 0.05));
+  }, 150);
   if (timerKey === 'gen') { clearInterval(_genProgressTimer); _genProgressTimer = id; }
   else { clearInterval(_convProgressTimer); _convProgressTimer = id; }
 };
