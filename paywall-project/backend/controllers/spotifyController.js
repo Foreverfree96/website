@@ -479,6 +479,7 @@ export const searchTracks = async (req, res) => {
       return r.data.tracks?.items || [];
     };
 
+    // Client creds ONLY for search — keeps rate-limit bucket separate from generate/match (user token)
     let items;
     try {
       items = await doSearch(await getClientCredToken());
@@ -486,22 +487,12 @@ export const searchTracks = async (req, res) => {
       if (e.response?.status === 429) {
         const secs = Math.min(parseInt(e.response.headers?.['retry-after'] || '5', 10), 30);
         _searchRateLimitUntil = Date.now() + secs * 1000;
-        // Fallback to user token if client creds are rate-limited
-        try {
-          const result = await getValidToken(req.user.id, false);
-          if (!result.error) {
-            items = await doSearch(result.accessToken);
-          } else {
-            return res.status(429).json({ tracks: [], retryAfter: secs, message: 'Rate limited — try again shortly' });
-          }
-        } catch {
-          return res.status(429).json({ tracks: [], retryAfter: secs, message: 'Rate limited — try again shortly' });
-        }
+        return res.status(429).json({ tracks: [], retryAfter: secs, message: 'Rate limited — try again shortly' });
       } else if (e.response?.status === 401 || e.response?.status === 403) {
+        // Client creds token expired — get a fresh one
         try {
-          const result = await getValidToken(req.user.id, false);
-          if (!result.error) items = await doSearch(result.accessToken);
-          else items = [];
+          _clientCredCache = null;
+          items = await doSearch(await getClientCredToken());
         } catch { items = []; }
       } else {
         console.error('❌ Search unexpected error:', e.response?.status || e.message);
@@ -545,15 +536,13 @@ export const generatePlaylist = async (req, res) => {
     console.log(`🎵 Generate request: ${seedTrackIds.length} trackIds, ${seedTrackMeta.length} meta, ${genres.length} genres, limit=${limit}, playlist=${seedPlaylistId || 'none'}`);
     if (seedTrackMeta.length) console.log(`   Meta:`, seedTrackMeta.slice(0, 3).map(m => `${m.name} - ${m.artist}`));
 
-    // Prefer user token (no content restrictions); fall back to client creds only if not connected
+    // User token ONLY for generate — keeps rate-limit bucket separate from search (client creds)
     const result = await getValidToken(req.user.id, false);
-    let token = result.error ? null : result.accessToken;
-    let usingClientCreds = false;
-    if (!token) {
-      token = await getClientCredToken();
-      usingClientCreds = true;
+    if (result.error) {
+      return res.status(401).json({ message: "Connect Spotify first" });
     }
-    console.log(`   Token: ${usingClientCreds ? 'client-creds' : 'user-token'} (${token ? 'valid' : 'NULL'})`);
+    let token = result.accessToken;
+    console.log(`   Token: user-token (${token ? 'valid' : 'NULL'})`);
     const auth = { Authorization: `Bearer ${token}` };
 
     // Clean YouTube channel names helper
@@ -581,20 +570,14 @@ export const generatePlaylist = async (req, res) => {
       const cached = getCachedPlaylist(seedPlaylistId);
       let items = cached?.items;
       if (!items) {
-        // Try user token first, then client credentials as fallback
-        for (const tryToken of [token, null]) {
-          try {
-            const t = tryToken || await getClientCredToken();
-            const r = await axios.get(
-              `https://api.spotify.com/v1/playlists/${seedPlaylistId}/tracks?limit=100`,
-              { headers: { Authorization: `Bearer ${t}` } }
-            );
-            items = (r.data.items || []).filter((i) => i?.track?.id);
-            if (items.length) break;
-          } catch (e) {
-            if (tryToken && (e.response?.status === 403 || e.response?.status === 401)) continue; // try client creds
-            console.error(`❌ Playlist seed fetch failed:`, e.response?.status || e.message);
-          }
+        try {
+          const r = await axios.get(
+            `https://api.spotify.com/v1/playlists/${seedPlaylistId}/tracks?limit=100`,
+            { headers: auth }
+          );
+          items = (r.data.items || []).filter((i) => i?.track?.id);
+        } catch (e) {
+          console.error(`❌ Playlist seed fetch failed:`, e.response?.status || e.message);
         }
         if (!items) items = [];
       }
@@ -725,30 +708,19 @@ export const generatePlaylist = async (req, res) => {
             return [];
           }
 
-          // On 429/401/403: switch to the OTHER token type first (free retry, no wait)
-          if ((status === 429 || status === 401 || status === 403) && !_switchedToken) {
+          // On 401/403: try refreshing the user token
+          if ((status === 401 || status === 403) && !_switchedToken) {
             try {
-              if (usingClientCreds) {
-                const userResult = await getValidToken(req.user.id, false);
-                if (!userResult.error) {
-                  console.log(`   Switching to user-token after ${status}`);
-                  auth.Authorization = `Bearer ${userResult.accessToken}`;
-                  usingClientCreds = false;
-                  _switchedToken = true;
-                  continue; // immediate retry with other token
-                }
-              } else {
-                console.log(`   Switching to client-creds after ${status}`);
-                const appToken = await getClientCredToken();
-                auth.Authorization = `Bearer ${appToken}`;
-                usingClientCreds = true;
+              const refreshed = await getValidToken(req.user.id, true);
+              if (!refreshed.error) {
+                auth.Authorization = `Bearer ${refreshed.accessToken}`;
                 _switchedToken = true;
                 continue;
               }
-            } catch { /* switch failed */ }
+            } catch { /* refresh failed */ }
           }
 
-          // Both tokens rate-limited — actually wait for the cooldown
+          // 429: wait for the cooldown (user token only — keeps bucket separate from search)
           if (status === 429 && attempt < 4) {
             const secs = parseInt(e.response.headers?.['retry-after'] || '5', 10);
             const waitMs = Math.min(secs, 30) * 1000 + 500;
@@ -823,7 +795,7 @@ export const generatePlaylist = async (req, res) => {
     collected.sort(() => Math.random() - 0.5);
 
     emitProgress(100, `Done! ${collected.length} tracks`);
-    console.log(`✅ Generate: ${collected.length} tracks (requested ${limit}) [${usingClientCreds ? 'client-creds' : 'user-token'}]`);
+    console.log(`✅ Generate: ${collected.length} tracks (requested ${limit}) [user-token]`);
     res.json({ tracks: collected });
   } catch (err) {
     console.error("❌ Spotify generate error:", err.response?.data || err.message);
@@ -982,14 +954,14 @@ export const matchTracks = async (req, res) => {
     const { tracks = [] } = req.body;
     if (!tracks.length) return res.status(400).json({ message: "No tracks provided" });
 
-    // Prefer user token (avoids explicit content 400s from client creds)
+    // User token ONLY for match — keeps rate-limit bucket separate from search (client creds)
     const result = await getValidToken(req.user.id, false);
-    let token = result.error ? null : result.accessToken;
-    let usingClientCreds = !token;
-    if (!token) token = await getClientCredToken();
-    const auth = { Authorization: `Bearer ${token}` };
+    if (result.error) {
+      return res.status(401).json({ message: "Connect Spotify first" });
+    }
+    const auth = { Authorization: `Bearer ${result.accessToken}` };
 
-    console.log(`🔍 Matching ${tracks.length} tracks to Spotify... [${usingClientCreds ? 'client-creds' : 'user-token'}]`);
+    console.log(`🔍 Matching ${tracks.length} tracks to Spotify... [user-token]`);
 
     const searchSpotify = async (query) => {
       let _switched = false;
@@ -1006,28 +978,19 @@ export const matchTracks = async (req, res) => {
           const status = e.response?.status;
           if (status === 400 && attempt === 0) continue;
 
-          // On 429/401/403: switch to the OTHER token type first
-          if ((status === 429 || status === 401 || status === 403) && !_switched) {
+          // On 401/403: try refreshing the user token
+          if ((status === 401 || status === 403) && !_switched) {
             try {
-              if (usingClientCreds) {
-                const userResult = await getValidToken(req.user.id, false);
-                if (!userResult.error) {
-                  auth.Authorization = `Bearer ${userResult.accessToken}`;
-                  usingClientCreds = false;
-                  _switched = true;
-                  continue;
-                }
-              } else {
-                const appToken = await getClientCredToken();
-                auth.Authorization = `Bearer ${appToken}`;
-                usingClientCreds = true;
+              const refreshed = await getValidToken(req.user.id, true);
+              if (!refreshed.error) {
+                auth.Authorization = `Bearer ${refreshed.accessToken}`;
                 _switched = true;
                 continue;
               }
-            } catch { /* switch failed */ }
+            } catch { /* refresh failed */ }
           }
 
-          // Both tokens rate-limited — wait for cooldown
+          // 429: wait for cooldown (user token only — keeps bucket separate from search)
           if (status === 429 && attempt < 4) {
             const secs = parseInt(e.response.headers?.['retry-after'] || '5', 10);
             const waitMs = Math.min(secs, 30) * 1000 + 500;
