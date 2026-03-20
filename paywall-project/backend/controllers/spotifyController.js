@@ -116,16 +116,10 @@ export const spotifyLogin = async (req, res) => {
     return res.status(401).json({ message: "Invalid token" });
   }
 
-  // Force the consent dialog when reconnecting (force=1) so Spotify prompts
-  // for any newly-added scopes. Without this, Spotify auto-redirects with
-  // cached scopes and new permissions are never granted.
-  let showDialog = "true";
-  if (!force) {
-    try {
-      const user = await User.findById(userId).select("spotifyId").lean();
-      if (user?.spotifyId) showDialog = "false"; // already connected, skip dialog
-    } catch { /* default to showing dialog */ }
-  }
+  // Always show consent dialog so Spotify prompts for any newly-added scopes.
+  // Without this, Spotify auto-redirects with cached scopes and new
+  // permissions (like playlist-read-private) are never granted.
+  const showDialog = "true";
 
   // Encode userId + safe returnTo URL in state so callback can redirect back.
   // Use base64url (not base64) — regular base64 has +/= chars that URL encoding mangles.
