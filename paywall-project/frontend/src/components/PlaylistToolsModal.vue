@@ -163,12 +163,17 @@
                 </div>
               </div>
 
-              <!-- Generate / Cancel button -->
-              <button
-                v-if="pt.generateLoading.value"
-                class="pt-btn pt-btn-cancel pt-btn-full"
-                @click="pt.cancelGenerate()"
-              >Cancel</button>
+              <!-- Progress pill + Cancel button -->
+              <div v-if="pt.generateLoading.value" class="pt-progress-wrap">
+                <div class="pt-progress-pill">
+                  <div class="pt-progress-bar" :style="{ width: pt.generateProgress.value + '%' }"></div>
+                  <span class="pt-progress-text">{{ pt.generateProgress.value }}%</span>
+                </div>
+                <button
+                  class="pt-btn pt-btn-cancel pt-btn-full"
+                  @click="pt.cancelGenerate()"
+                >Cancel</button>
+              </div>
               <button
                 v-else
                 class="pt-btn pt-btn-primary pt-btn-full"
@@ -236,11 +241,16 @@
                 <span v-else>Spotify &rarr; YouTube</span>
               </div>
 
-              <button
-                v-if="pt.convertLoading.value"
-                class="pt-btn pt-btn-cancel pt-btn-full"
-                @click="pt.cancelConvert()"
-              >Cancel</button>
+              <div v-if="pt.convertLoading.value" class="pt-progress-wrap">
+                <div class="pt-progress-pill">
+                  <div class="pt-progress-bar" :style="{ width: pt.convertProgress.value + '%' }"></div>
+                  <span class="pt-progress-text">{{ pt.convertProgress.value }}%</span>
+                </div>
+                <button
+                  class="pt-btn pt-btn-cancel pt-btn-full"
+                  @click="pt.cancelConvert()"
+                >Cancel</button>
+              </div>
               <button
                 v-else
                 class="pt-btn pt-btn-primary pt-btn-full"
@@ -950,6 +960,40 @@ const handleAddToExisting = (playlistId) => {
   background: #c00;
 }
 .pt-target-btn:hover:not(.active) { background: #1a1a1a; color: #ccc; }
+
+/* Progress pill */
+.pt-progress-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.pt-progress-pill {
+  position: relative;
+  height: 26px;
+  background: #1a1a2e;
+  border-radius: 13px;
+  overflow: hidden;
+  border: 1px solid #2a2a4a;
+}
+.pt-progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #6366f1, #8b5cf6, #a78bfa);
+  border-radius: 13px;
+  transition: width 0.3s ease;
+  box-shadow: 0 0 10px rgba(99, 102, 241, 0.4);
+}
+.pt-progress-text {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+  letter-spacing: 0.5px;
+}
 
 /* Cancel button — glowing pulse */
 .pt-btn-cancel {

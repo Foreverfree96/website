@@ -363,7 +363,7 @@ export const matchYoutubeTracks = async (req, res) => {
         : "none";
 
       // Always return alternatives so user can swap
-      return { source: src, bestMatch: best, confidence, alternatives: allCandidates.slice(1, 5) };
+      return { source: src, bestMatch: best, confidence, alternatives: allCandidates.slice(1, 7) };
     };
 
     // Dynamic batch size & delay based on playlist size

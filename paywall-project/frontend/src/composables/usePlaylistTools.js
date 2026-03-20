@@ -40,6 +40,35 @@ const isMinimized = ref(false);
 const bgStatus    = ref('');   // 'Generating...', 'Converting...', 'Done! 30 tracks', 'Error'
 const bgDone      = ref(false);
 
+// Progress tracking (0-100)
+const generateProgress = ref(0);
+const convertProgress  = ref(0);
+let _genProgressTimer  = null;
+let _convProgressTimer = null;
+
+const _startProgress = (progressRef, timerKey) => {
+  progressRef.value = 1;
+  let phase = 0; // 0=init, 1=working, 2=finishing
+  const start = Date.now();
+  const id = setInterval(() => {
+    const elapsed = (Date.now() - start) / 1000;
+    const cur = progressRef.value;
+    if (cur >= 95) { clearInterval(id); return; }
+    // Fast 0-15% (first 2s), steady 15-80% (2-20s), slow 80-95% (20s+)
+    if (elapsed < 2) progressRef.value = Math.min(15, cur + 2);
+    else if (elapsed < 20) progressRef.value = Math.min(80, cur + (80 - cur) * 0.04);
+    else progressRef.value = Math.min(95, cur + (95 - cur) * 0.01);
+  }, 200);
+  if (timerKey === 'gen') { clearInterval(_genProgressTimer); _genProgressTimer = id; }
+  else { clearInterval(_convProgressTimer); _convProgressTimer = id; }
+};
+
+const _stopProgress = (progressRef, timerKey, success) => {
+  if (timerKey === 'gen') { clearInterval(_genProgressTimer); _genProgressTimer = null; }
+  else { clearInterval(_convProgressTimer); _convProgressTimer = null; }
+  progressRef.value = success ? 100 : 0;
+};
+
 // Autofill state
 const autofillLoading  = ref(false);
 const autofillProgress = ref(''); // e.g. "3/12"
@@ -348,6 +377,7 @@ export function usePlaylistTools() {
   const cancelGenerate = () => {
     if (_generateAbort) { _generateAbort.abort(); _generateAbort = null; }
     generateLoading.value = false;
+    _stopProgress(generateProgress, 'gen', false);
     bgStatus.value = '';
     bgDone.value = false;
   };
@@ -355,6 +385,7 @@ export function usePlaylistTools() {
   const cancelConvert = () => {
     if (_convertAbort) { _convertAbort.abort(); _convertAbort = null; }
     convertLoading.value = false;
+    _stopProgress(convertProgress, 'conv', false);
     bgStatus.value = '';
     bgDone.value = false;
   };
@@ -377,6 +408,7 @@ export function usePlaylistTools() {
     generateLoading.value = true;
     bgStatus.value = 'Generating...';
     bgDone.value = false;
+    _startProgress(generateProgress, 'gen');
 
     // Own abort controller — doesn't cancel a running convert
     if (_generateAbort) _generateAbort.abort();
@@ -431,6 +463,7 @@ export function usePlaylistTools() {
                 });
                 body.seedTrackMeta = [...body.seedTrackMeta, ...ytSeeds];
                 bgStatus.value = `Generating from ${ytSeeds.length} seed tracks...`;
+                generateProgress.value = Math.max(generateProgress.value, 25);
               } else {
                 throw new Error('Could not fetch playlist tracks — check the URL');
               }
@@ -445,6 +478,8 @@ export function usePlaylistTools() {
         }
       }
 
+      generateProgress.value = Math.max(generateProgress.value, 20);
+      console.log('[Generate] Sending request:', { seedTrackIds: body.seedTrackIds?.length, seedTrackMeta: body.seedTrackMeta?.length, genres: body.genres, limit: body.limit, playlist: body.seedPlaylistId || 'none' });
       const genTimeout = setTimeout(() => { if (!signal.aborted) _generateAbort?.abort(); }, 360000);
       const res = await fetch(`${API}/api/spotify/generate`, {
         method: 'POST',
@@ -453,17 +488,22 @@ export function usePlaylistTools() {
         signal,
       });
       clearTimeout(genTimeout);
+      console.log('[Generate] Response status:', res.status);
       if (!res.ok) {
         let msg = `Server error (${res.status})`;
         try { const data = await res.json(); msg = data.message || msg; } catch { /* non-JSON response */ }
+        console.error('[Generate] Server error:', msg);
         throw new Error(msg);
       }
       const data = await res.json();
       const spTracks = data.tracks || [];
+      console.log('[Generate] Got', spTracks.length, 'tracks from backend');
+      generateProgress.value = Math.max(generateProgress.value, 75);
 
       if (generateTarget.value === 'youtube' && spTracks.length) {
         // Match Spotify recommendations to YouTube
         bgStatus.value = `Matching ${spTracks.length} tracks to YouTube...`;
+        generateProgress.value = 80;
         const matchBody = spTracks.map(t => ({ title: t.name, artist: t.artist }));
         const matchRes = await fetch(`${API}/api/youtube/match`, {
           method: 'POST',
@@ -498,14 +538,17 @@ export function usePlaylistTools() {
       if (!generatedTracks.value.length) {
         error.value = 'No tracks found — try different inputs for better results';
         bgStatus.value = 'No results';
+        _stopProgress(generateProgress, 'gen', false);
       } else {
         bgStatus.value = `Done! ${generatedTracks.value.length} tracks`;
+        _stopProgress(generateProgress, 'gen', true);
       }
       bgDone.value = true;
       _generateAbort = null;
       _persistResults();
     } catch (err) {
-      if (err.name === 'AbortError' && !isOpen.value) return; // user closed, don't show error
+      _stopProgress(generateProgress, 'gen', false);
+      if (err.name === 'AbortError' && !isOpen.value) return;
       const msg = err.name === 'AbortError'
         ? 'Generation timed out — the server may be waking up, try again'
         : (err.message || 'Generation failed — check your connection');
@@ -524,6 +567,7 @@ export function usePlaylistTools() {
     bgDone.value = false;
     matchedTracks.value = [];
     sourceTracks.value = [];
+    _startProgress(convertProgress, 'conv');
 
     // Own abort controller — doesn't cancel a running generate
     if (_convertAbort) _convertAbort.abort();
@@ -553,6 +597,7 @@ export function usePlaylistTools() {
         }
         const ytData = await ytRes.json();
         sourceTracks.value = ytData.items || [];
+        convertProgress.value = Math.max(convertProgress.value, 30);
 
         bgStatus.value = `Matching ${sourceTracks.value.length} tracks...`;
 
@@ -581,6 +626,7 @@ export function usePlaylistTools() {
         const matched = matchedTracks.value.filter(m => m.confidence !== 'none').length;
         bgStatus.value = `Done! ${matched}/${matchedTracks.value.length} matched`;
         bgDone.value = true;
+        _stopProgress(convertProgress, 'conv', true);
 
       } else {
         convertDirection.value = 'spotify-to-yt';
@@ -612,6 +658,7 @@ export function usePlaylistTools() {
           uri: i.track?.uri || '',
           art: i.track?.album?.images?.[0]?.url || '',
         }));
+        convertProgress.value = Math.max(convertProgress.value, 30);
 
         bgStatus.value = `Matching ${sourceTracks.value.length} tracks...`;
 
@@ -640,6 +687,7 @@ export function usePlaylistTools() {
         const matched = matchedTracks.value.filter(m => m.confidence !== 'none').length;
         bgStatus.value = `Done! ${matched}/${matchedTracks.value.length} matched`;
         bgDone.value = true;
+        _stopProgress(convertProgress, 'conv', true);
         if (matchData.quotaExhausted) {
           error.value = 'YouTube API quota reached — some tracks could not be searched. Unmatched tracks can be autofilled later.';
         }
@@ -647,7 +695,8 @@ export function usePlaylistTools() {
       _convertAbort = null;
       _persistResults();
     } catch (err) {
-      if (err.name === 'AbortError' && !isOpen.value) return; // user closed, don't show error
+      _stopProgress(convertProgress, 'conv', false);
+      if (err.name === 'AbortError' && !isOpen.value) return;
       const msg = err.name === 'AbortError'
         ? 'Matching timed out — try a smaller playlist'
         : (err.message || 'Conversion failed — check your connection');
@@ -924,8 +973,8 @@ export function usePlaylistTools() {
     // State
     isOpen, activeTab, isMinimized, bgStatus, bgDone,
     seedTracks, seedPlaylistUrl, selectedGenres, trackLimit,
-    generatedTracks, generateLoading, generateTarget,
-    convertUrl, convertDirection, sourceTracks, matchedTracks, convertLoading,
+    generatedTracks, generateLoading, generateTarget, generateProgress,
+    convertUrl, convertDirection, sourceTracks, matchedTracks, convertLoading, convertProgress,
     resultTracks, saving, saveResult, error, scopeMissing,
     searchQuery, searchResults, searchLoading, searchError,
     autofillLoading, autofillProgress,

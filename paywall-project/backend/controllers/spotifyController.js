@@ -956,7 +956,7 @@ export const matchTracks = async (req, res) => {
           const q = attempt === 0 ? query : query.replace(/[^\w\s'-]/g, '').trim();
           if (!q) return [];
           const r = await axios.get("https://api.spotify.com/v1/search", {
-            params: { q, type: "track", limit: 20 },
+            params: { q, type: "track", limit: 30 },
             headers: auth,
           });
           return r.data.tracks?.items || [];
@@ -1115,9 +1115,10 @@ export const matchTracks = async (req, res) => {
             };
           });
           allCandidates = allCandidates.concat(candidates);
-          // Stop early if we already have a strong match
-          if (candidates.some(c => c.score >= 0.7)) break;
-          if (allCandidates.length >= 5 && candidates.some(c => c.score >= 0.5)) break;
+          // Stop early if we have enough candidates (always run at least 2 queries for swap variety)
+          const queryIdx = uniqueQueries.indexOf(query);
+          if (queryIdx >= 1 && candidates.some(c => c.score >= 0.7)) break;
+          if (allCandidates.length >= 8 && candidates.some(c => c.score >= 0.5)) break;
         }
       }
 
@@ -1134,7 +1135,7 @@ export const matchTracks = async (req, res) => {
         : "none";
 
       // Always return alternatives so user can swap — even low scores are useful as options
-      return { source: src, bestMatch: best, confidence, alternatives: allCandidates.slice(1, 5) };
+      return { source: src, bestMatch: best, confidence, alternatives: allCandidates.slice(1, 7) };
     };
 
     // Wait out rate limit if active (up to 10s), otherwise proceed
