@@ -868,15 +868,29 @@ export const createPlaylist = async (req, res) => {
       console.error(`❌ /me check failed:`, e.response?.status, e.response?.data);
     }
 
-    // Create the playlist
+    // Create the playlist — Dev Mode (Feb 2026) uses /me/playlists instead of /users/{id}/playlists
     let playlistId;
     try {
-      const r = await axios.post(
-        `https://api.spotify.com/v1/users/${user.spotifyId}/playlists`,
-        { name, description, public: false },
-        { headers: { ...auth, "Content-Type": "application/json" } }
-      );
+      let r;
+      try {
+        // Try Dev Mode endpoint first
+        r = await axios.post(
+          `https://api.spotify.com/v1/me/playlists`,
+          { name, description, public: false },
+          { headers: { ...auth, "Content-Type": "application/json" } }
+        );
+      } catch (e) {
+        if (e.response?.status === 403 || e.response?.status === 404) {
+          // Fallback to legacy endpoint (Extended Quota Mode)
+          r = await axios.post(
+            `https://api.spotify.com/v1/users/${user.spotifyId}/playlists`,
+            { name, description, public: false },
+            { headers: { ...auth, "Content-Type": "application/json" } }
+          );
+        } else throw e;
+      }
       playlistId = r.data.id;
+      console.log(`✅ Playlist created: ${playlistId} (${name})`);
     } catch (err) {
       console.error(`❌ Spotify create playlist failed:`, err.response?.status, err.response?.data);
       if (err.response?.status === 403) {
@@ -888,14 +902,24 @@ export const createPlaylist = async (req, res) => {
       throw err;
     }
 
-    // Add tracks in batches of 100
+    // Add tracks in batches of 100 — Dev Mode uses /items, legacy uses /tracks
     for (let i = 0; i < trackUris.length; i += 100) {
       const batch = trackUris.slice(i, i + 100);
-      await axios.post(
-        `https://api.spotify.com/v1/playlists/${playlistId}/tracks`,
-        { uris: batch },
-        { headers: { ...auth, "Content-Type": "application/json" } }
-      );
+      try {
+        await axios.post(
+          `https://api.spotify.com/v1/playlists/${playlistId}/items`,
+          { uris: batch },
+          { headers: { ...auth, "Content-Type": "application/json" } }
+        );
+      } catch (e) {
+        if (e.response?.status === 403 || e.response?.status === 404) {
+          await axios.post(
+            `https://api.spotify.com/v1/playlists/${playlistId}/tracks`,
+            { uris: batch },
+            { headers: { ...auth, "Content-Type": "application/json" } }
+          );
+        } else throw e;
+      }
     }
 
     res.json({
@@ -1343,13 +1367,24 @@ export const addToPlaylist = async (req, res) => {
 
     const auth = { Authorization: `Bearer ${result.accessToken}`, "Content-Type": "application/json" };
 
-    // Add in batches of 100
+    // Add in batches of 100 — Dev Mode uses /items, legacy uses /tracks
     for (let i = 0; i < trackUris.length; i += 100) {
-      await axios.post(
-        `https://api.spotify.com/v1/playlists/${playlistId}/tracks`,
-        { uris: trackUris.slice(i, i + 100) },
-        { headers: auth }
-      );
+      const batch = trackUris.slice(i, i + 100);
+      try {
+        await axios.post(
+          `https://api.spotify.com/v1/playlists/${playlistId}/items`,
+          { uris: batch },
+          { headers: auth }
+        );
+      } catch (e) {
+        if (e.response?.status === 403 || e.response?.status === 404) {
+          await axios.post(
+            `https://api.spotify.com/v1/playlists/${playlistId}/tracks`,
+            { uris: batch },
+            { headers: auth }
+          );
+        } else throw e;
+      }
     }
 
     res.json({ added: true });
