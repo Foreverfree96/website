@@ -431,43 +431,10 @@ export const getPlaylistTracks = async (req, res) => {
 // ─── SPOTIFY DISCONNECT ───────────────────────────────────────────────────────
 export const spotifyDisconnect = async (req, res) => {
   try {
-    // Fetch the user's token before clearing so we can revoke it with Spotify
-    const user = await User.findById(req.user.id)
-      .select("+spotifyAccessToken +spotifyRefreshToken")
-      .lean();
-
-    // Revoke the access token with Spotify so the app is removed from the
-    // user's authorized apps list (https://www.spotify.com/account/apps/)
-    if (user?.spotifyAccessToken) {
-      const credentials = Buffer.from(
-        `${process.env.SPOTIFY_CLIENT_ID}:${process.env.SPOTIFY_CLIENT_SECRET}`
-      ).toString("base64");
-
-      // Revoke access token
-      try {
-        await axios.post(
-          "https://accounts.spotify.com/api/token/revoke",
-          new URLSearchParams({ token: user.spotifyAccessToken }),
-          { headers: { Authorization: `Basic ${credentials}`, "Content-Type": "application/x-www-form-urlencoded" } }
-        );
-      } catch (e) {
-        console.error("⚠ Spotify access token revoke failed:", e.response?.status || e.message);
-      }
-
-      // Revoke refresh token too so it can't be reused
-      if (user.spotifyRefreshToken) {
-        try {
-          await axios.post(
-            "https://accounts.spotify.com/api/token/revoke",
-            new URLSearchParams({ token: user.spotifyRefreshToken }),
-            { headers: { Authorization: `Basic ${credentials}`, "Content-Type": "application/x-www-form-urlencoded" } }
-          );
-        } catch (e) {
-          console.error("⚠ Spotify refresh token revoke failed:", e.response?.status || e.message);
-        }
-      }
-    }
-
+    // Clear all Spotify fields from the user's profile.
+    // Note: Spotify does NOT provide a token revocation API, so the app
+    // will remain on the user's authorized apps page (spotify.com/account/apps)
+    // until they manually remove it. This is a Spotify platform limitation.
     await User.findByIdAndUpdate(req.user.id, {
       $unset: {
         spotifyId:           1,
@@ -705,13 +672,54 @@ export const generatePlaylist = async (req, res) => {
     const collected = [];
     const perQuery = Math.ceil((limit + 10) / Math.max(uniqueQueries.length, 1));
 
-    const doSearch = async (query) => {
+    // Resilient search — retries on 429, falls back to client creds on auth errors
+    const doSearch = async (query, retries = 2) => {
       const offset = Math.floor(Math.random() * 20);
-      const r = await axios.get("https://api.spotify.com/v1/search", {
-        params: { q: query, type: "track", limit: Math.min(perQuery + 5, 50), offset },
-        headers: auth,
-      });
-      return r.data.tracks?.items || [];
+      const searchLimit = Math.min(perQuery + 5, 50);
+      for (let attempt = 0; attempt <= retries; attempt++) {
+        try {
+          const r = await axios.get("https://api.spotify.com/v1/search", {
+            params: { q: query, type: "track", limit: searchLimit, offset },
+            headers: auth,
+          });
+          return r.data.tracks?.items || [];
+        } catch (e) {
+          if (e.response?.status === 400) {
+            // Clean special chars and retry once
+            const clean = query.replace(/[^\w\s'-]/g, '').trim();
+            if (clean && clean !== query) {
+              try {
+                const r2 = await axios.get("https://api.spotify.com/v1/search", {
+                  params: { q: clean, type: "track", limit: searchLimit, offset },
+                  headers: auth,
+                });
+                return r2.data.tracks?.items || [];
+              } catch { return []; }
+            }
+            return [];
+          }
+          if (e.response?.status === 429) {
+            const secs = parseInt(e.response.headers?.['retry-after'] || '3', 10);
+            setRateLimit(e.response.headers?.['retry-after']);
+            if (attempt < retries) {
+              await new Promise(r => setTimeout(r, Math.min(secs, 5) * 1000 + 200));
+              continue;
+            }
+          }
+          if ((e.response?.status === 401 || e.response?.status === 403) && !usingClientCreds) {
+            // User token failed — switch to client creds for remaining queries
+            try {
+              const appToken = await getClientCredToken();
+              auth.Authorization = `Bearer ${appToken}`;
+              usingClientCreds = true;
+              continue; // retry with new token
+            } catch { /* client creds also failed */ }
+          }
+          console.error(`❌ Generate search "${query}" failed:`, e.response?.status || e.message);
+          return [];
+        }
+      }
+      return [];
     };
 
     for (let qi = 0; qi < uniqueQueries.length; qi++) {
@@ -724,44 +732,26 @@ export const generatePlaylist = async (req, res) => {
       // Wait out rate limit instead of breaking
       if (Date.now() < _rateLimitedUntil) {
         const waitMs = Math.min(_rateLimitedUntil - Date.now(), 8000);
-        if (Date.now() - startTime + waitMs > TIMEOUT_MS) break; // would exceed timeout
+        if (Date.now() - startTime + waitMs > TIMEOUT_MS) break;
         await new Promise(r => setTimeout(r, waitMs + 100));
       }
 
       const q = uniqueQueries[qi];
-      try {
-        let items;
-        try {
-          items = await doSearch(q);
-        } catch (e) {
-          if (e.response?.status === 400) {
-            const fallback = q.replace(/[^\w\s-]/g, '').trim();
-            if (fallback && fallback !== q) {
-              try { items = await doSearch(fallback); } catch { items = []; }
-            } else {
-              items = [];
-            }
-          } else {
-            throw e;
-          }
-        }
-        for (const t of items) {
-          if (collected.length >= limit) break;
-          if (seenIds.has(t.id)) continue;
-          seenIds.add(t.id);
-          collected.push({
-            id:          t.id,
-            uri:         t.uri,
-            name:        t.name,
-            artist:      t.artists?.map((a) => a.name).join(", ") || "",
-            album:       t.album?.name || "",
-            art:         t.album?.images?.[0]?.url || "",
-            duration_ms: t.duration_ms,
-          });
-        }
-      } catch (e) {
-        if (e.response?.status === 429) setRateLimit(e.response.headers?.['retry-after']);
-        console.error(`❌ Spotify search query "${q}" failed:`, e.response?.status || e.message);
+      const items = await doSearch(q);
+      for (const t of items) {
+        if (collected.length >= limit) break;
+        if (!t?.id) continue;
+        if (seenIds.has(t.id)) continue;
+        seenIds.add(t.id);
+        collected.push({
+          id:          t.id,
+          uri:         t.uri,
+          name:        t.name,
+          artist:      t.artists?.map((a) => a.name).join(", ") || "",
+          album:       t.album?.name || "",
+          art:         t.album?.images?.[0]?.url || "",
+          duration_ms: t.duration_ms,
+        });
       }
 
       // Small delay between queries
