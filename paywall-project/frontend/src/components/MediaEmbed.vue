@@ -14,7 +14,12 @@
         <div class="channel-info">
           <span class="channel-name">{{ channelData.title || extractChannelName }}</span>
           <span v-if="channelData.subscriberCount" class="channel-subs">{{ formatCount(channelData.subscriberCount) }} subscribers</span>
-          <span class="channel-platform">{{ channelPlatformLabel }}</span>
+          <span v-if="channelData.followerCount" class="channel-subs">{{ formatCount(channelData.followerCount) }} followers</span>
+          <div class="channel-meta">
+            <span v-if="channelData.isLive" class="channel-live">LIVE</span>
+            <span class="channel-platform">{{ channelPlatformLabel }}</span>
+          </div>
+          <span v-if="channelData.streamTitle" class="channel-stream-title">{{ channelData.streamTitle }}</span>
         </div>
         <span class="channel-arrow">→</span>
       </div>
@@ -61,6 +66,7 @@
         <div v-if="embedUrl && embedType !== 'spotify' && !active" class="embed-guard" @click="activate">
           <div class="embed-guard-inner">
             <img v-if="ytThumb" :src="ytThumb" class="embed-guard-thumb" />
+            <img v-else-if="twitchThumb" :src="twitchThumb" class="embed-guard-thumb embed-guard-thumb--twitch" />
             <div class="embed-guard-play">▶</div>
           </div>
         </div>
@@ -197,7 +203,10 @@ const onMessage = (e) => {
   } catch { /* ignore parse errors */ }
 };
 
-onMounted(() => window.addEventListener('message', onMessage));
+onMounted(() => {
+  window.addEventListener('message', onMessage);
+  fetchTwitchThumb();
+});
 onUnmounted(() => window.removeEventListener('message', onMessage));
 
 // When mini player closes/pops back in, restore position in post embed
@@ -232,6 +241,25 @@ const ytThumb = computed(() => {
   const id = m?.[1] || m?.[2];
   return id ? `https://img.youtube.com/vi/${id}/hqdefault.jpg` : null;
 });
+
+// ── Twitch thumbnail (uses channel avatar for stream embeds) ─────────────────
+const twitchThumb = ref(null);
+
+const fetchTwitchThumb = async () => {
+  if (props.embedType !== 'twitch') return;
+  const m = props.mediaUrl.match(/twitch\.tv\/([^/?]+)/);
+  if (!m) return;
+  try {
+    const token = localStorage.getItem('jwtToken');
+    const res = await fetch(`${API}/api/twitch/channel/${encodeURIComponent(m[1])}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (res.ok) {
+      const data = await res.json();
+      twitchThumb.value = data.avatar || null;
+    }
+  } catch { /* silent */ }
+};
 
 // ── Iframe height class ───────────────────────────────────────────────────────
 const iframeClass = computed(() => {
@@ -282,7 +310,7 @@ const platformLabel = computed(() => ({ instagram: 'View on Instagram', tiktok: 
 // ── Channel/Profile embed logic ──────────────────────────────────────────────
 const API = import.meta.env.VITE_API_URL;
 const isChannelEmbed = computed(() => ['yt-channel', 'twitch-channel', 'kick-channel'].includes(props.embedType));
-const channelData = ref({ title: '', avatar: '', subscriberCount: '', videoCount: '' });
+const channelData = ref({ title: '', avatar: '', subscriberCount: '', followerCount: '', videoCount: '', isLive: false, streamTitle: '' });
 
 const channelPlatformLabel = computed(() => ({
   'yt-channel': 'YouTube Channel',
@@ -314,6 +342,7 @@ const formatCount = (n) => {
 const openChannel = () => { window.open(props.mediaUrl, '_blank'); };
 
 const fetchChannelData = async () => {
+  const token = localStorage.getItem('jwtToken');
   if (props.embedType === 'yt-channel') {
     const url = props.mediaUrl;
     const handle = url.match(/youtube\.com\/@([^/?]+)/);
@@ -321,18 +350,27 @@ const fetchChannelData = async () => {
     const identifier = handle ? `@${handle[1]}` : channelId?.[1];
     if (!identifier) return;
     try {
-      const token = localStorage.getItem('jwtToken');
       const res = await fetch(`${API}/api/youtube/channel/${encodeURIComponent(identifier)}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) channelData.value = await res.json();
     } catch { /* silent */ }
+  } else if (props.embedType === 'twitch-channel') {
+    const url = props.mediaUrl;
+    const m = url.match(/twitch\.tv\/([^/?]+)/);
+    const username = m?.[1];
+    if (!username) return;
+    try {
+      const res = await fetch(`${API}/api/twitch/channel/${encodeURIComponent(username)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) channelData.value = await res.json();
+    } catch { /* silent */ }
   }
-  // Twitch and Kick: no API integration yet, just show the link card with name
 };
 
 watch(() => props.embedType, (type) => {
-  if (type === 'yt-channel') fetchChannelData();
+  if (type === 'yt-channel' || type === 'twitch-channel') fetchChannelData();
 }, { immediate: true });
 </script>
 
@@ -377,6 +415,18 @@ watch(() => props.embedType, (type) => {
   object-fit: cover;
   opacity: 0.7;
 }
+.embed-guard-thumb--twitch {
+  object-fit: contain;
+  opacity: 0.4;
+  width: 50%;
+  height: auto;
+  inset: auto;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+}
 .embed-guard-play {
   position: relative;
   z-index: 1;
@@ -391,7 +441,7 @@ watch(() => props.embedType, (type) => {
   color: #fff;
   transition: transform 0.15s, background 0.15s;
 }
-.embed-guard:hover .embed-guard-play { background: #1db954; transform: scale(1.1); }
+.embed-guard:hover .embed-guard-play { background: #9146ff; transform: scale(1.1); }
 
 /* Controls bar — OUTSIDE the video, always visible */
 .embed-controls-bar {
@@ -528,12 +578,43 @@ watch(() => props.embedType, (type) => {
   font-weight: 600;
 }
 
+.channel-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .channel-platform {
   color: #888;
   font-size: 0.75rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+}
+
+.channel-live {
+  background: #dc2626;
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 4px;
+  letter-spacing: 0.05em;
+  animation: live-pulse 2s infinite;
+}
+
+@keyframes live-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+.channel-stream-title {
+  color: #aaa;
+  font-size: 0.78rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 300px;
 }
 
 .channel-arrow {
