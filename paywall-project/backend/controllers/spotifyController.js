@@ -280,6 +280,25 @@ let _rateLimitedUntil   = 0;         // app-wide timestamp — Spotify rate limi
 const MAX_BACKOFF_MS    = 10 * 1000; // cap at 10s regardless of Retry-After
 const PLAYLIST_CACHE_TTL = 6 * 60 * 60 * 1000; // 6 hours
 
+// Spotify's allowed genre seeds for /recommendations endpoint
+const SPOTIFY_GENRE_SEEDS = new Set([
+  'acoustic','afrobeat','alt-rock','alternative','ambient','anime','black-metal','bluegrass',
+  'blues','bossanova','brazil','breakbeat','british','cantopop','chicago-house','children',
+  'chill','classical','club','comedy','country','dance','dancehall','death-metal','deep-house',
+  'detroit-techno','disco','disney','drum-and-bass','dub','dubstep','edm','electro','electronic',
+  'emo','folk','forro','french','funk','garage','german','gospel','goth','grindcore','groove',
+  'grunge','guitar','happy','hard-rock','hardcore','hardstyle','heavy-metal','hip-hop','holidays',
+  'honky-tonk','house','idm','indian','indie','indie-pop','industrial','iranian','j-dance',
+  'j-idol','j-pop','j-rock','jazz','k-pop','kids','latin','latino','malay','mandopop','metal',
+  'metal-misc','metalcore','minimal-techno','movies','mpb','new-age','new-release','opera',
+  'pagode','party','philippines-opm','piano','pop','pop-film','post-dubstep','power-pop',
+  'progressive-house','psych-rock','punk','punk-rock','r-n-b','rainy-day','reggae','reggaeton',
+  'road-trip','rock','rock-n-roll','rockabilly','romance','sad','salsa','samba','sertanejo',
+  'show-tunes','singer-songwriter','ska','sleep','songwriter','soul','soundtracks','spanish',
+  'study','summer','swedish','synth-pop','tango','techno','trance','trip-hop','turkish',
+  'work-out','world-music',
+]);
+
 const setRateLimit = (retryAfterHeader) => {
   const secs = Math.min(parseInt(retryAfterHeader || '5', 10), 10); // cap at 10s
   _rateLimitedUntil = Date.now() + secs * 1000;
@@ -546,13 +565,23 @@ export const generatePlaylist = async (req, res) => {
     }
     const auth = { Authorization: `Bearer ${token}` };
 
+    // Clean YouTube channel names helper
+    const cleanArtist = (raw) => (raw || "")
+      .split(",")[0]
+      .replace(/\s*-\s*topic$/i, '')
+      .replace(/\s*VEVO$/i, '')
+      .replace(/\s*Official$/i, '')
+      .replace(/\s*Music$/i, '')
+      .replace(/\s*Records$/i, '')
+      .trim();
+
     // Collect artist names from seed tracks
     const seedArtists = [];
     const seedTrackUris = new Set();
 
     // Use frontend-provided metadata as initial artist source
     seedTrackMeta.forEach((m) => {
-      const artist = (m.artist || "").split(",")[0].trim();
+      const artist = cleanArtist(m.artist);
       if (artist && !seedArtists.includes(artist)) seedArtists.push(artist);
     });
 
@@ -619,7 +648,7 @@ export const generatePlaylist = async (req, res) => {
     // Use seed track metadata names/artists as search queries when no artist names resolved
     if (!seedArtists.length && seedTrackMeta.length) {
       seedTrackMeta.forEach((m) => {
-        const artist = (m.artist || "").split(",")[0].trim();
+        const artist = cleanArtist(m.artist);
         if (artist && !seedArtists.includes(artist)) seedArtists.push(artist);
         else if (m.name && !seedArtists.includes(m.name)) seedArtists.push(m.name);
       });
@@ -629,141 +658,175 @@ export const generatePlaylist = async (req, res) => {
       return res.status(400).json({ message: "Provide at least one seed track or genre" });
     }
 
-    // Build diverse search queries
-    // Spotify search supports: artist:Name, year:YYYY, but NOT genre: filter.
-    // Use genre words as plain text mixed with artist names for variety.
-    const queries = [];
-
-    // Artist-based queries
-    seedArtists.forEach((artist) => {
-      queries.push(artist);
-      genres.forEach((g) => queries.push(`${artist} ${g}`));
-    });
-
-    // Genre-only queries (plain text — Spotify matches against track/artist/album metadata)
-    genres.forEach((g) => {
-      queries.push(g);
-      queries.push(`${g} music`);
-      queries.push(`${g} hits`);
-    });
-
-    // Add cross-pollination queries for more variety
-    if (seedArtists.length >= 2) {
-      queries.push(`${seedArtists[0]} ${seedArtists[1]}`);
-    }
-    if (queries.length < 4 && seedArtists.length) {
-      const years = ['2023', '2024', '2025'];
-      seedArtists.slice(0, 2).forEach((artist) => {
-        const yr = years[Math.floor(Math.random() * years.length)];
-        queries.push(`${artist} ${yr}`);
-      });
-    }
-
-    // Deduplicate, cap queries, and shuffle for variety
-    // Use more queries when generating from a reference playlist alone
-    const maxQueries = seedArtists.length > 5 ? 10 : 6;
-    const uniqueQueries = [...new Set(queries)].slice(0, maxQueries);
-    uniqueQueries.sort(() => Math.random() - 0.5);
-
-    // Search with timeout to stay within Render's 30s limit
     const startTime = Date.now();
-    const TIMEOUT_MS = 22000;
+    const TIMEOUT_MS = 25000;
     const seenIds = new Set(uniqueIds); // exclude seed tracks from results
     const collected = [];
-    const perQuery = Math.ceil((limit + 10) / Math.max(uniqueQueries.length, 1));
 
-    // Resilient search — retries on 429, falls back to client creds on auth errors
-    const doSearch = async (query, retries = 2) => {
-      const offset = Math.floor(Math.random() * 20);
-      const searchLimit = Math.min(perQuery + 5, 50);
-      for (let attempt = 0; attempt <= retries; attempt++) {
-        try {
-          const r = await axios.get("https://api.spotify.com/v1/search", {
-            params: { q: query, type: "track", limit: searchLimit, offset },
-            headers: auth,
-          });
-          return r.data.tracks?.items || [];
-        } catch (e) {
-          if (e.response?.status === 400) {
-            // Clean special chars and retry once
-            const clean = query.replace(/[^\w\s'-]/g, '').trim();
-            if (clean && clean !== query) {
-              try {
-                const r2 = await axios.get("https://api.spotify.com/v1/search", {
-                  params: { q: clean, type: "track", limit: searchLimit, offset },
-                  headers: auth,
-                });
-                return r2.data.tracks?.items || [];
-              } catch { return []; }
-            }
-            return [];
-          }
-          if (e.response?.status === 429) {
-            const secs = parseInt(e.response.headers?.['retry-after'] || '3', 10);
-            setRateLimit(e.response.headers?.['retry-after']);
-            if (attempt < retries) {
-              await new Promise(r => setTimeout(r, Math.min(secs, 5) * 1000 + 200));
-              continue;
-            }
-          }
-          if ((e.response?.status === 401 || e.response?.status === 403) && !usingClientCreds) {
-            // User token failed — switch to client creds for remaining queries
-            try {
-              const appToken = await getClientCredToken();
-              auth.Authorization = `Bearer ${appToken}`;
-              usingClientCreds = true;
-              continue; // retry with new token
-            } catch { /* client creds also failed */ }
-          }
-          console.error(`❌ Generate search "${query}" failed:`, e.response?.status || e.message);
-          return [];
+    // ═══════════════════════════════════════════════════════════════════════
+    // PHASE 1: Use Spotify Recommendations API (best results, up to 5 seeds)
+    // ═══════════════════════════════════════════════════════════════════════
+    if (uniqueIds.length || genres.length) {
+      try {
+        const recParams = { limit: Math.min(limit, 100) };
+        // Spotify allows max 5 total seeds across tracks + artists + genres
+        const spotifyGenres = genres.filter(g => SPOTIFY_GENRE_SEEDS.has(g));
+        const seedSlots = 5;
+        let used = 0;
+        if (uniqueIds.length) {
+          recParams.seed_tracks = uniqueIds.slice(0, Math.min(uniqueIds.length, seedSlots)).join(',');
+          used += Math.min(uniqueIds.length, seedSlots);
         }
-      }
-      return [];
-    };
+        if (used < seedSlots && spotifyGenres.length) {
+          recParams.seed_genres = spotifyGenres.slice(0, seedSlots - used).join(',');
+          used += Math.min(spotifyGenres.length, seedSlots - used);
+        }
 
-    for (let qi = 0; qi < uniqueQueries.length; qi++) {
-      if (collected.length >= limit) break;
-      if (Date.now() - startTime > TIMEOUT_MS) {
-        console.log(`⏱ Generate timeout after ${qi}/${uniqueQueries.length} queries, ${collected.length} tracks`);
-        break;
-      }
-
-      // Wait out rate limit instead of breaking
-      if (Date.now() < _rateLimitedUntil) {
-        const waitMs = Math.min(_rateLimitedUntil - Date.now(), 8000);
-        if (Date.now() - startTime + waitMs > TIMEOUT_MS) break;
-        await new Promise(r => setTimeout(r, waitMs + 100));
-      }
-
-      const q = uniqueQueries[qi];
-      const items = await doSearch(q);
-      for (const t of items) {
-        if (collected.length >= limit) break;
-        if (!t?.id) continue;
-        if (seenIds.has(t.id)) continue;
-        seenIds.add(t.id);
-        collected.push({
-          id:          t.id,
-          uri:         t.uri,
-          name:        t.name,
-          artist:      t.artists?.map((a) => a.name).join(", ") || "",
-          album:       t.album?.name || "",
-          art:         t.album?.images?.[0]?.url || "",
-          duration_ms: t.duration_ms,
-        });
-      }
-
-      // Small delay between queries
-      if (qi < uniqueQueries.length - 1 && collected.length < limit) {
-        await new Promise(r => setTimeout(r, 300));
+        if (recParams.seed_tracks || recParams.seed_genres) {
+          const recRes = await axios.get('https://api.spotify.com/v1/recommendations', {
+            params: recParams, headers: auth,
+          });
+          for (const t of (recRes.data.tracks || [])) {
+            if (!t?.id || seenIds.has(t.id)) continue;
+            seenIds.add(t.id);
+            collected.push({
+              id: t.id, uri: t.uri, name: t.name,
+              artist: t.artists?.map(a => a.name).join(', ') || '',
+              album: t.album?.name || '', art: t.album?.images?.[0]?.url || '',
+              duration_ms: t.duration_ms,
+            });
+          }
+          console.log(`🎯 Recommendations API returned ${collected.length} tracks`);
+        }
+      } catch (e) {
+        console.error('❌ Recommendations API failed:', e.response?.status || e.message);
+        // Fall through to search-based approach
       }
     }
 
-    // Shuffle final results so tracks from different queries are mixed
+    // ═══════════════════════════════════════════════════════════════════════
+    // PHASE 2: Search-based generation (fills remaining or handles YT seeds)
+    // ═══════════════════════════════════════════════════════════════════════
+    if (collected.length < limit) {
+      // Build diverse search queries — prioritize simple artist names first
+      const queries = [];
+
+      // Simple artist queries first (most reliable)
+      seedArtists.forEach(artist => queries.push(artist));
+
+      // Track name + artist combos (good for finding similar tracks)
+      seedTrackMeta.slice(0, 5).forEach(m => {
+        const name = (m.name || '').replace(/\s*[\(\[].*[\)\]]$/g, '').trim();
+        const artist = cleanArtist(m.artist);
+        if (name && artist) queries.push(`${artist} ${name}`);
+      });
+
+      // Artist + genre cross queries
+      seedArtists.slice(0, 3).forEach(artist => {
+        genres.slice(0, 2).forEach(g => queries.push(`${artist} ${g}`));
+      });
+
+      // Genre-only queries
+      genres.forEach(g => {
+        queries.push(g);
+        queries.push(`${g} hits`);
+      });
+
+      // Cross-pollination
+      if (seedArtists.length >= 2) queries.push(`${seedArtists[0]} ${seedArtists[1]}`);
+
+      // Deduplicate and cap — allow more queries when we need more tracks
+      const remaining = limit - collected.length;
+      const maxQueries = remaining > 50 ? 14 : remaining > 20 ? 10 : 8;
+      const uniqueQueries = [...new Set(queries)].slice(0, maxQueries);
+      uniqueQueries.sort(() => Math.random() - 0.5);
+
+      const perQuery = Math.ceil((remaining + 10) / Math.max(uniqueQueries.length, 1));
+
+      // Resilient search — retries on 429, falls back to client creds on auth errors
+      const doSearch = async (query, retries = 2) => {
+        const offset = Math.floor(Math.random() * 5); // small offset for variety, don't skip results
+        const searchLimit = Math.min(perQuery + 5, 50);
+        for (let attempt = 0; attempt <= retries; attempt++) {
+          try {
+            const r = await axios.get("https://api.spotify.com/v1/search", {
+              params: { q: query, type: "track", limit: searchLimit, offset },
+              headers: auth,
+            });
+            return r.data.tracks?.items || [];
+          } catch (e) {
+            if (e.response?.status === 400) {
+              const clean = query.replace(/[^\w\s'-]/g, '').trim();
+              if (clean && clean !== query) {
+                try {
+                  const r2 = await axios.get("https://api.spotify.com/v1/search", {
+                    params: { q: clean, type: "track", limit: searchLimit, offset: 0 },
+                    headers: auth,
+                  });
+                  return r2.data.tracks?.items || [];
+                } catch { return []; }
+              }
+              return [];
+            }
+            if (e.response?.status === 429) {
+              const secs = parseInt(e.response.headers?.['retry-after'] || '3', 10);
+              setRateLimit(e.response.headers?.['retry-after']);
+              if (attempt < retries) {
+                await new Promise(r => setTimeout(r, Math.min(secs, 5) * 1000 + 200));
+                continue;
+              }
+            }
+            if ((e.response?.status === 401 || e.response?.status === 403) && !usingClientCreds) {
+              try {
+                const appToken = await getClientCredToken();
+                auth.Authorization = `Bearer ${appToken}`;
+                usingClientCreds = true;
+                continue;
+              } catch { /* client creds also failed */ }
+            }
+            console.error(`❌ Generate search "${query}" failed:`, e.response?.status || e.message);
+            return [];
+          }
+        }
+        return [];
+      };
+
+      for (let qi = 0; qi < uniqueQueries.length; qi++) {
+        if (collected.length >= limit) break;
+        if (Date.now() - startTime > TIMEOUT_MS) {
+          console.log(`⏱ Generate timeout after ${qi}/${uniqueQueries.length} queries, ${collected.length} tracks`);
+          break;
+        }
+
+        if (Date.now() < _rateLimitedUntil) {
+          const waitMs = Math.min(_rateLimitedUntil - Date.now(), 8000);
+          if (Date.now() - startTime + waitMs > TIMEOUT_MS) break;
+          await new Promise(r => setTimeout(r, waitMs + 100));
+        }
+
+        const items = await doSearch(uniqueQueries[qi]);
+        for (const t of items) {
+          if (collected.length >= limit) break;
+          if (!t?.id || seenIds.has(t.id)) continue;
+          seenIds.add(t.id);
+          collected.push({
+            id: t.id, uri: t.uri, name: t.name,
+            artist: t.artists?.map(a => a.name).join(', ') || '',
+            album: t.album?.name || '', art: t.album?.images?.[0]?.url || '',
+            duration_ms: t.duration_ms,
+          });
+        }
+
+        if (qi < uniqueQueries.length - 1 && collected.length < limit) {
+          await new Promise(r => setTimeout(r, 250));
+        }
+      }
+    }
+
+    // Shuffle final results so tracks from different sources are mixed
     collected.sort(() => Math.random() - 0.5);
 
-    console.log(`✅ Generate: ${uniqueQueries.length} queries → ${collected.length} tracks (requested ${limit}) [${usingClientCreds ? 'client-creds' : 'user-token'}]`);
+    console.log(`✅ Generate: ${collected.length} tracks (requested ${limit}) [${usingClientCreds ? 'client-creds' : 'user-token'}]`);
     res.json({ tracks: collected });
   } catch (err) {
     console.error("❌ Spotify generate error:", err.response?.data || err.message);
