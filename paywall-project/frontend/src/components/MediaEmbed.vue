@@ -26,6 +26,17 @@
     </template>
 
     <template v-else>
+      <!-- Twitch channel header for stream/clip embeds -->
+      <div v-if="embedType === 'twitch' && twitchChannel.title" class="twitch-header" @click="openChannel">
+        <img v-if="twitchChannel.avatar" :src="twitchChannel.avatar" class="twitch-header-avatar" alt="" />
+        <div class="twitch-header-info">
+          <span class="twitch-header-name">{{ twitchChannel.title }}</span>
+          <span v-if="twitchChannel.followerCount" class="twitch-header-followers">{{ formatCount(twitchChannel.followerCount) }} followers</span>
+        </div>
+        <span v-if="twitchChannel.isLive" class="channel-live">LIVE</span>
+        <span class="twitch-header-badge">Twitch</span>
+      </div>
+
       <!-- Actual embed -->
       <div class="embed-wrap">
         <!-- Spotify: SDK player — shows preview card until user clicks Play -->
@@ -242,8 +253,9 @@ const ytThumb = computed(() => {
   return id ? `https://img.youtube.com/vi/${id}/hqdefault.jpg` : null;
 });
 
-// ── Twitch thumbnail (uses channel avatar for stream embeds) ─────────────────
+// ── Twitch thumbnail + channel info (for stream/clip embeds) ─────────────────
 const twitchThumb = ref(null);
+const twitchChannel = ref({ title: '', avatar: '', followerCount: '', isLive: false, streamTitle: '' });
 
 const fetchTwitchThumb = async () => {
   if (props.embedType !== 'twitch') return;
@@ -257,6 +269,7 @@ const fetchTwitchThumb = async () => {
     if (res.ok) {
       const data = await res.json();
       twitchThumb.value = data.avatar || null;
+      twitchChannel.value = data;
     }
   } catch { /* silent */ }
 };
@@ -606,6 +619,63 @@ watch(() => props.embedType, (type) => {
 @keyframes live-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.7; }
+}
+
+/* ── Twitch header (above stream/clip embed) ── */
+.twitch-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: #0e0e10;
+  border: 1px solid #2a2a2a;
+  border-radius: 10px 10px 0 0;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.twitch-header:hover { background: #18181b; }
+.twitch-header + .embed-wrap .embed-iframe { border-radius: 0 0 10px 10px; }
+.twitch-header + .embed-wrap .embed-guard { border-radius: 0 0 10px 10px; }
+
+.twitch-header-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+  border: 2px solid #9146ff;
+}
+
+.twitch-header-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  overflow: hidden;
+}
+
+.twitch-header-name {
+  color: #efeff1;
+  font-weight: 700;
+  font-size: 0.9rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.twitch-header-followers {
+  color: #adadb8;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.twitch-header-badge {
+  color: #9146ff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  flex-shrink: 0;
 }
 
 .channel-stream-title {
