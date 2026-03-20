@@ -215,16 +215,21 @@
           <p v-if="recoverBlocked" class="recover-empty">Recovery is unavailable — this chat was fully wiped.</p>
           <p v-else-if="recoverLoading" class="msg-status">Loading...</p>
           <p v-else-if="!recoverMsgs.length" class="recover-empty">No recoverable messages found.</p>
-          <div v-else class="recover-list">
+          <template v-else>
             <div class="recover-all-row">
               <button class="recover-all-btn" @click="recoverAll">↩ Send All</button>
             </div>
-            <div v-for="(m, i) in recoverMsgs" :key="i" class="recover-item">
-              <span class="recover-body">{{ m.body }}</span>
-              <span class="recover-time">{{ formatTime(m.sentAt) }}</span>
-              <button class="restore-btn" @click="restoreMessage(m.body)">↩ Send</button>
+            <div class="recover-messages">
+              <div v-for="(m, i) in recoverMsgs" :key="i"
+                  class="bubble-wrap mine">
+                <div class="bubble-row">
+                  <div class="bubble">{{ m.body }}</div>
+                  <button class="restore-btn" @click="restoreMessage(m.body)" title="Re-send">↩</button>
+                </div>
+                <span class="timestamp">{{ formatTime(m.sentAt) }}</span>
+              </div>
             </div>
-          </div>
+          </template>
         </div>
 
         <!-- Message input -->
@@ -1623,7 +1628,7 @@ const formatTime = (d) => {
 .recover-panel {
   border-top: 1px solid rgba(0,0,0,0.12);
   padding: 10px 14px;
-  max-height: 200px;
+  max-height: 280px;
   overflow-y: auto;
   background: #f8fff8;
 }
@@ -1635,15 +1640,10 @@ const formatTime = (d) => {
   padding: 12px 0;
 }
 
-.recover-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
 .recover-all-row {
   display: flex;
   justify-content: flex-end;
-  margin-bottom: 4px;
+  margin-bottom: 6px;
 }
 .recover-all-btn {
   padding: 6px 14px;
@@ -1657,47 +1657,27 @@ const formatTime = (d) => {
 }
 .recover-all-btn:hover { background: #1e40af; }
 
-.recover-item {
+.recover-messages {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  background: #fff;
-  border: 2px solid #14532d;
-  border-radius: 10px;
-  padding: 8px 12px;
-}
-
-.recover-body {
-  flex: 1;
-  font-size: 0.88rem;
-  color: #000;
-  word-break: break-word;
-  overflow: hidden;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-  -webkit-box-orient: vertical;
-}
-
-.recover-time {
-  font-size: 0.75rem;
-  color: #888;
-  flex-shrink: 0;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .restore-btn {
-  background: #14532d;
-  color: #fff;
+  background: none;
   border: none;
-  border-radius: 6px;
-  font-size: 0.8rem;
+  color: #14532d;
+  font-size: 1rem;
   font-weight: 700;
-  padding: 4px 10px;
   cursor: pointer;
+  padding: 2px 4px;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s;
   flex-shrink: 0;
-  transition: background 0.15s;
+  line-height: 1;
 }
-.restore-btn:hover { background: #166534; }
+.bubble-wrap:hover .restore-btn { opacity: 1; }
+.restore-btn:hover { color: #1db954; }
 
 .report-count-txt {
   font-size: 0.82rem;

@@ -166,16 +166,21 @@
                         <p v-if="recoverBlocked" class="cw-recover-empty">Recovery is unavailable — this chat was fully wiped.</p>
                         <p v-else-if="recoverLoading" class="cw-status">Loading...</p>
                         <p v-else-if="!recoverMsgs.length" class="cw-recover-empty">No recoverable messages found.</p>
-                        <div v-else class="cw-recover-list">
+                        <template v-else>
                             <div class="cw-recover-all-row">
                                 <button class="cw-recover-all-btn" @click="recoverAll">↩ Send All</button>
                             </div>
-                            <div v-for="(m, i) in recoverMsgs" :key="i" class="cw-recover-item">
-                                <span class="cw-recover-body">{{ m.body }}</span>
-                                <span class="cw-recover-time">{{ formatTime(m.sentAt) }}</span>
-                                <button class="cw-restore-btn" @click="restoreMessage(m.body)">↩ Send</button>
+                            <div class="cw-recover-messages">
+                                <div v-for="(m, i) in recoverMsgs" :key="i"
+                                    class="cw-bubble-wrap mine">
+                                    <div class="cw-bubble-row">
+                                        <div class="cw-bubble">{{ m.body }}</div>
+                                        <button class="cw-restore-btn" @click="restoreMessage(m.body)" title="Re-send">↩</button>
+                                    </div>
+                                    <span class="cw-time">{{ formatTime(m.sentAt) }}</span>
+                                </div>
                             </div>
-                        </div>
+                        </template>
                     </div>
 
                     <!-- Compose area — hidden during report mode -->
@@ -1513,7 +1518,7 @@ const formatTime = (d) => {
 .cw-recover-panel {
     border-top: 1px solid rgba(0,0,0,0.12);
     padding: 8px;
-    max-height: 180px;
+    max-height: 240px;
     overflow-y: auto;
     background: #f8fff8;
 }
@@ -1525,15 +1530,10 @@ const formatTime = (d) => {
     padding: 10px 0;
 }
 
-.cw-recover-list {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-}
 .cw-recover-all-row {
     display: flex;
     justify-content: flex-end;
-    margin-bottom: 4px;
+    margin-bottom: 6px;
 }
 .cw-recover-all-btn {
     padding: 5px 12px;
@@ -1547,47 +1547,27 @@ const formatTime = (d) => {
 }
 .cw-recover-all-btn:hover { background: #1e40af; }
 
-.cw-recover-item {
+.cw-recover-messages {
     display: flex;
-    align-items: center;
+    flex-direction: column;
     gap: 6px;
-    background: #fff;
-    border: 1.5px solid #14532d;
-    border-radius: 8px;
-    padding: 6px 10px;
-}
-
-.cw-recover-body {
-    flex: 1;
-    font-size: 0.8rem;
-    color: #000;
-    word-break: break-word;
-    overflow: hidden;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    line-clamp: 2;
-    -webkit-box-orient: vertical;
-}
-
-.cw-recover-time {
-    font-size: 0.7rem;
-    color: #888;
-    flex-shrink: 0;
 }
 
 .cw-restore-btn {
-    background: #14532d;
-    color: #fff;
+    background: none;
     border: none;
-    border-radius: 5px;
-    font-size: 0.74rem;
+    color: #14532d;
+    font-size: 0.9rem;
     font-weight: 700;
-    padding: 3px 8px;
     cursor: pointer;
+    padding: 2px 4px;
+    opacity: 0;
+    transition: opacity 0.15s, color 0.15s;
     flex-shrink: 0;
-    transition: background 0.15s;
+    line-height: 1;
 }
-.cw-restore-btn:hover { background: #166534; }
+.cw-bubble-wrap:hover .cw-restore-btn { opacity: 1; }
+.cw-restore-btn:hover { color: #1db954; }
 
 .cw-report-count {
     font-size: 0.74rem;
