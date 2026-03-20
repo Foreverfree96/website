@@ -28,6 +28,17 @@ export function useNowPlaying() {
   const isActive = computed(() => !!nowPlaying.value);
 
   const popOut = (data) => {
+    // If something else is already playing, save its position so
+    // the original post embed can restore when isPoppedOut flips false
+    if (nowPlaying.value && nowPlaying.value.url !== data.url) {
+      lastPosition.value = {
+        url:           nowPlaying.value.url,
+        position:      nowPlaying.value.position      || 0,
+        playlistIndex: nowPlaying.value.playlistIndex || 0,
+        trackUri:      nowPlaying.value.trackUri      || '',
+        paused:        nowPlaying.value.paused        || false,
+      };
+    }
     nowPlaying.value = data;
   };
 

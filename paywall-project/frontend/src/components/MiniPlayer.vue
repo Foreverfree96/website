@@ -116,7 +116,7 @@ import { useSpotifySDK } from '../composables/useSpotifySDK.js';
 import { usePlaylistTools } from '../composables/usePlaylistTools.js';
 import SpotifyPlayer from './SpotifyPlayer.vue';
 
-const { nowPlaying, close, popInRequested } = useNowPlaying();
+const { nowPlaying, close, popInRequested, lastPosition } = useNowPlaying();
 const spotifySDK = useSpotifySDK();
 const playlistTools = usePlaylistTools();
 const openPlaylistTools = () => playlistTools.open();
@@ -197,6 +197,19 @@ watch(nowPlaying, (np, old) => {
     playerReady.value = !!(np.resumeOnLoad && np.type !== 'spotify');
     ytPlaylistIndex.value = np.playlistIndex || 0;
   } else if (old.url !== np.url || old.type !== np.type) {
+    // Save the OLD content's fresh position so its MediaEmbed can restore
+    if (old.url) {
+      const saved = { url: old.url, position: 0, playlistIndex: 0, trackUri: '', paused: false };
+      if (old.type === 'youtube') {
+        saved.position      = ytTime.value > 0 ? Math.floor(ytTime.value * 1000) : (old.position || 0);
+        saved.playlistIndex = ytPlaylistIndex.value || old.playlistIndex || 0;
+      } else if (old.type === 'spotify') {
+        saved.position = spotifySDK.position.value || old.position || 0;
+        saved.trackUri = spotifySDK.currentTrackUri.value || old.trackUri || '';
+        saved.paused   = spotifySDK.paused.value ?? false;
+      }
+      lastPosition.value = saved;
+    }
     // Switching to different media — auto-expand and reset YouTube state
     expanded.value         = true;
     playerReady.value      = !!(np.resumeOnLoad && np.type !== 'spotify');
