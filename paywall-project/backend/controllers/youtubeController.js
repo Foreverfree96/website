@@ -201,8 +201,8 @@ export const matchYoutubeTracks = async (req, res) => {
     const { tracks = [] } = req.body;
     if (!tracks.length) return res.status(400).json({ message: "No tracks provided" });
 
-    // Cap at 300 tracks — timeout guard handles the rest
-    const capped = tracks.slice(0, 300);
+    // Process all tracks — timeout guard fills remainder with no-match if needed
+    const capped = tracks;
     console.log(`🔍 Matching ${capped.length} tracks to YouTube...`);
     const startTime = Date.now();
     const TIMEOUT_MS = 55000; // 55s to stay under Render's 60s limit

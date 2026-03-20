@@ -830,9 +830,9 @@ export const matchTracks = async (req, res) => {
     const { tracks = [] } = req.body;
     if (!tracks.length) return res.status(400).json({ message: "No tracks provided" });
 
-    // Cap at 300 tracks — timeout guard fills remainder with no-match
-    const capped = tracks.slice(0, 300);
-    const skipped = tracks.length - capped.length;
+    // Process all tracks — timeout guard fills remainder with no-match if needed
+    const capped = tracks;
+    const skipped = 0;
 
     // Prefer user token (avoids explicit content 400s from client creds)
     const result = await getValidToken(req.user.id, false);
