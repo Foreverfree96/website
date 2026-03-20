@@ -363,16 +363,44 @@ export function usePlaylistTools() {
           const ytId = extractYoutubePlaylistId(seedPlaylistUrl.value);
           if (ytId) {
             try {
+              bgStatus.value = 'Fetching playlist tracks...';
               const ytRes = await fetch(`${API}/api/youtube/playlist/${ytId}/tracks`, { headers: headers(), signal });
               const ytData = await ytRes.json();
               if (ytRes.ok && ytData.items?.length) {
-                const ytSeeds = ytData.items.slice(0, 10).map(t => ({
-                  name: t.title,
-                  artist: t.channelTitle,
-                }));
+                // Sample more tracks when playlist is the only input
+                const isOnlyInput = !body.seedTrackIds.length && !body.genres.length;
+                const sampleSize = isOnlyInput ? Math.min(ytData.items.length, 20) : 10;
+                const sampled = ytData.items.sort(() => Math.random() - 0.5).slice(0, sampleSize);
+                const ytSeeds = sampled.map(t => {
+                  // Clean YouTube channel names
+                  let artist = (t.channelTitle || '')
+                    .replace(/\s*-\s*topic$/i, '')
+                    .replace(/\s*VEVO$/i, '')
+                    .replace(/\s*Official$/i, '')
+                    .replace(/\s*Music$/i, '')
+                    .replace(/\s*Records$/i, '')
+                    .trim();
+                  let name = t.title || '';
+                  // Try to extract artist from "Artist - Song" title pattern
+                  const dash = name.match(/^(.+?)\s*[-–—]\s+(.+)$/);
+                  if (dash) {
+                    name = dash[2].replace(/\s*[\(\[].*[\)\]]$/g, '').trim();
+                    if (!artist) artist = dash[1].trim();
+                  }
+                  return { name, artist };
+                });
                 body.seedTrackMeta = [...body.seedTrackMeta, ...ytSeeds];
+                bgStatus.value = `Generating from ${ytSeeds.length} seed tracks...`;
+              } else {
+                throw new Error('Could not fetch playlist tracks — check the URL');
               }
-            } catch (e) { if (e.name === 'AbortError') throw e; /* proceed without YT seeds */ }
+            } catch (e) {
+              if (e.name === 'AbortError') throw e;
+              // If playlist is the only input and it failed, show error instead of proceeding empty
+              if (!body.seedTrackIds.length && !body.genres.length && !body.seedTrackMeta.length) {
+                throw e;
+              }
+            }
           }
         }
       }
@@ -427,7 +455,12 @@ export function usePlaylistTools() {
 
       generateResults.value = [...generatedTracks.value];
       resultTracks.value = [...generateResults.value];
-      bgStatus.value = `Done! ${generatedTracks.value.length} tracks`;
+      if (!generatedTracks.value.length) {
+        error.value = 'No tracks found — try adding seed tracks or genres for better results';
+        bgStatus.value = 'No results';
+      } else {
+        bgStatus.value = `Done! ${generatedTracks.value.length} tracks`;
+      }
       bgDone.value = true;
       _generateAbort = null;
       _persistResults();
