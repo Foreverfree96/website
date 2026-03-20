@@ -44,6 +44,65 @@ const searchLoading = ref(false);
 const searchError   = ref('');
 let _searchDebounce = null;
 
+// ─── Abort controller for in-flight generate/convert ─────────────────────────
+let _activeAbort = null; // AbortController for the current operation
+
+// ─── Persist results to sessionStorage so they survive refresh ───────────────
+const RESULTS_KEY = 'pt_results';
+
+const _persistResults = () => {
+  try {
+    const state = {
+      activeTab: activeTab.value,
+      generatedTracks: generatedTracks.value,
+      matchedTracks: matchedTracks.value,
+      resultTracks: resultTracks.value,
+      convertDirection: convertDirection.value,
+      convertUrl: convertUrl.value,
+      seedTracks: seedTracks.value,
+      seedPlaylistUrl: seedPlaylistUrl.value,
+      selectedGenres: selectedGenres.value,
+      trackLimit: trackLimit.value,
+      bgStatus: bgStatus.value,
+      bgDone: bgDone.value,
+      savedAt: Date.now(),
+    };
+    sessionStorage.setItem(RESULTS_KEY, JSON.stringify(state));
+  } catch { /* storage full */ }
+};
+
+const _restoreResults = () => {
+  try {
+    const raw = sessionStorage.getItem(RESULTS_KEY);
+    if (!raw) return false;
+    const state = JSON.parse(raw);
+    // Only restore if saved within last 30 minutes
+    if (Date.now() - state.savedAt > 30 * 60 * 1000) {
+      sessionStorage.removeItem(RESULTS_KEY);
+      return false;
+    }
+    // Only restore if there are actual results
+    if (!state.generatedTracks?.length && !state.matchedTracks?.length) return false;
+    activeTab.value = state.activeTab || 'generate';
+    generatedTracks.value = state.generatedTracks || [];
+    matchedTracks.value = state.matchedTracks || [];
+    resultTracks.value = state.resultTracks || [];
+    convertDirection.value = state.convertDirection || null;
+    convertUrl.value = state.convertUrl || '';
+    seedTracks.value = state.seedTracks || [];
+    seedPlaylistUrl.value = state.seedPlaylistUrl || '';
+    selectedGenres.value = state.selectedGenres || [];
+    trackLimit.value = state.trackLimit || 30;
+    bgStatus.value = state.bgStatus || '';
+    bgDone.value = state.bgDone || false;
+    isOpen.value = true;
+    return true;
+  } catch { return false; }
+};
+
+// Restore on module load
+_restoreResults();
+
 // ─── Available genres (categorized) ──────────────────────────────────────────
 const GENRE_CATEGORIES = {
   'Popular':          ['pop', 'hip-hop', 'r-n-b', 'rap', 'trap', 'drill', 'reggaeton'],
@@ -114,10 +173,16 @@ export function usePlaylistTools() {
   };
 
   const close = () => {
+    // Abort any in-flight generate/convert request
+    if (_activeAbort) { _activeAbort.abort(); _activeAbort = null; }
     isOpen.value = false;
     isMinimized.value = false;
     bgStatus.value = '';
     bgDone.value = false;
+    generateLoading.value = false;
+    convertLoading.value = false;
+    // Clear persisted results
+    sessionStorage.removeItem(RESULTS_KEY);
   };
 
   const minimize = () => {
@@ -228,6 +293,12 @@ export function usePlaylistTools() {
     generateLoading.value = true;
     bgStatus.value = 'Generating...';
     bgDone.value = false;
+
+    // Create a shared abort controller so close() can cancel this
+    if (_activeAbort) _activeAbort.abort();
+    _activeAbort = new AbortController();
+    const signal = _activeAbort.signal;
+
     try {
       if (!API) throw new Error('API URL not configured');
 
@@ -245,11 +316,10 @@ export function usePlaylistTools() {
           const spId = extractSpotifyPlaylistId(seedPlaylistUrl.value);
           if (spId) body.seedPlaylistId = spId;
         } else if (platform === 'youtube') {
-          // Fetch YouTube playlist tracks and use them as seed metadata
           const ytId = extractYoutubePlaylistId(seedPlaylistUrl.value);
           if (ytId) {
             try {
-              const ytRes = await fetch(`${API}/api/youtube/playlist/${ytId}/tracks`, { headers: headers() });
+              const ytRes = await fetch(`${API}/api/youtube/playlist/${ytId}/tracks`, { headers: headers(), signal });
               const ytData = await ytRes.json();
               if (ytRes.ok && ytData.items?.length) {
                 const ytSeeds = ytData.items.slice(0, 10).map(t => ({
@@ -258,18 +328,17 @@ export function usePlaylistTools() {
                 }));
                 body.seedTrackMeta = [...body.seedTrackMeta, ...ytSeeds];
               }
-            } catch { /* proceed without YT seeds */ }
+            } catch (e) { if (e.name === 'AbortError') throw e; /* proceed without YT seeds */ }
           }
         }
       }
 
-      const genController = new AbortController();
-      const genTimeout = setTimeout(() => genController.abort(), 60000);
+      const genTimeout = setTimeout(() => { if (!signal.aborted) _activeAbort?.abort(); }, 60000);
       const res = await fetch(`${API}/api/spotify/generate`, {
         method: 'POST',
         headers: headers(),
         body: JSON.stringify(body),
-        signal: genController.signal,
+        signal,
       });
       clearTimeout(genTimeout);
       if (!res.ok) {
@@ -282,7 +351,10 @@ export function usePlaylistTools() {
       resultTracks.value = [...generatedTracks.value];
       bgStatus.value = `Done! ${generatedTracks.value.length} tracks`;
       bgDone.value = true;
+      _activeAbort = null;
+      _persistResults();
     } catch (err) {
+      if (err.name === 'AbortError' && !isOpen.value) return; // user closed, don't show error
       const msg = err.name === 'AbortError'
         ? 'Generation timed out — the server may be waking up, try again'
         : (err.message || 'Generation failed — check your connection');
@@ -302,6 +374,11 @@ export function usePlaylistTools() {
     matchedTracks.value = [];
     sourceTracks.value = [];
 
+    // Create a shared abort controller so close() can cancel this
+    if (_activeAbort) _activeAbort.abort();
+    _activeAbort = new AbortController();
+    const signal = _activeAbort.signal;
+
     try {
       const platform = detectPlatform(convertUrl.value);
       if (!platform) throw new Error('Paste a valid YouTube or Spotify playlist URL');
@@ -312,11 +389,10 @@ export function usePlaylistTools() {
         if (!plId) throw new Error('Could not find playlist ID in URL');
 
         // Fetch YouTube tracks
-        const ytController = new AbortController();
-        const ytTimeout = setTimeout(() => ytController.abort(), 60000);
+        const ytTimeout = setTimeout(() => { if (!signal.aborted) _activeAbort?.abort(); }, 60000);
         const ytRes = await fetch(`${API}/api/youtube/playlist/${plId}/tracks`, {
           headers: headers(),
-          signal: ytController.signal,
+          signal,
         });
         clearTimeout(ytTimeout);
         if (!ytRes.ok) {
@@ -334,15 +410,12 @@ export function usePlaylistTools() {
           title: t.title,
           artist: t.channelTitle,
         }));
-        const spMatchController = new AbortController();
-        const spMatchTimeout = setTimeout(() => spMatchController.abort(), 120000);
         const matchRes = await fetch(`${API}/api/spotify/match`, {
           method: 'POST',
           headers: headers(),
           body: JSON.stringify({ tracks: matchBody }),
-          signal: spMatchController.signal,
+          signal,
         });
-        clearTimeout(spMatchTimeout);
         if (!matchRes.ok) {
           let msg = `Matching failed (${matchRes.status})`;
           try { const d = await matchRes.json(); msg = d.message || msg; } catch { /* non-JSON */ }
@@ -363,20 +436,17 @@ export function usePlaylistTools() {
         if (!plId) throw new Error('Could not find playlist ID in URL');
 
         // Fetch Spotify tracks (retry once on 429 after short delay)
-        const spController = new AbortController();
-        const spTimeout = setTimeout(() => spController.abort(), 60000);
         let spRes = await fetch(`${API}/api/spotify/playlist/${plId}/tracks`, {
           headers: headers(),
-          signal: spController.signal,
+          signal,
         });
         if (spRes.status === 429) {
           await new Promise(r => setTimeout(r, 3000));
           spRes = await fetch(`${API}/api/spotify/playlist/${plId}/tracks`, {
             headers: headers(),
-            signal: spController.signal,
+            signal,
           });
         }
-        clearTimeout(spTimeout);
         if (!spRes.ok) {
           let msg = `Spotify fetch failed (${spRes.status})`;
           try { const d = await spRes.json(); msg = d.message || msg; } catch { /* non-JSON */ }
@@ -398,15 +468,12 @@ export function usePlaylistTools() {
           title: t.title,
           artist: t.artist,
         }));
-        const ytMatchController = new AbortController();
-        const ytMatchTimeout = setTimeout(() => ytMatchController.abort(), 120000);
         const matchRes = await fetch(`${API}/api/youtube/match`, {
           method: 'POST',
           headers: headers(),
           body: JSON.stringify({ tracks: matchBody }),
-          signal: ytMatchController.signal,
+          signal,
         });
-        clearTimeout(ytMatchTimeout);
         if (!matchRes.ok) {
           let msg = `Matching failed (${matchRes.status})`;
           try { const d = await matchRes.json(); msg = d.message || msg; } catch { /* non-JSON */ }
@@ -421,7 +488,10 @@ export function usePlaylistTools() {
         bgStatus.value = `Done! ${matched}/${matchedTracks.value.length} matched`;
         bgDone.value = true;
       }
+      _activeAbort = null;
+      _persistResults();
     } catch (err) {
+      if (err.name === 'AbortError' && !isOpen.value) return; // user closed, don't show error
       const msg = err.name === 'AbortError'
         ? 'Matching timed out — try a smaller playlist'
         : (err.message || 'Conversion failed — check your connection');
