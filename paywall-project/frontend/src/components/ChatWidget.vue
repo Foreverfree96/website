@@ -1684,4 +1684,219 @@ const formatTime = (d) => {
     .cw-messages { padding: 8px 10px; }
     .cw-bubble { font-size: 0.84rem; padding: 6px 10px; }
 }
+
+/* ── Mobile: full-width panel, larger touch targets ── */
+@media (max-width: 600px) {
+    .cw {
+        bottom: 0;
+        right: 0;
+        left: 0;
+        align-items: stretch;
+    }
+
+    .cw-panel {
+        width: 100%;
+        height: 55dvh;
+        min-height: 280px;
+        max-height: 55dvh;
+        border-radius: 0 0 12px 12px;
+        border-left: none;
+        border-right: none;
+    }
+
+    .cw-toggle {
+        width: 54px;
+        height: 54px;
+        align-self: flex-end;
+        margin-right: 14px;
+        margin-bottom: 14px;
+    }
+
+    /* Increase touch targets to 44px minimum */
+    .cw-back {
+        min-width: 44px;
+        min-height: 44px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 6px 12px;
+        font-size: 0.88rem;
+    }
+
+    .cw-close {
+        min-width: 44px;
+        min-height: 44px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.1rem;
+    }
+
+    .cw-clear,
+    .cw-block,
+    .cw-report,
+    .cw-recover,
+    .cw-report-cancel {
+        min-height: 44px;
+        padding: 8px 12px;
+        font-size: 0.8rem;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .cw-header-actions {
+        gap: 8px;
+        flex-wrap: wrap;
+    }
+
+    .cw-send {
+        min-width: 44px;
+        min-height: 44px;
+        padding: 8px 14px;
+    }
+
+    .cw-input {
+        min-height: 44px;
+        padding: 10px 12px;
+    }
+
+    .cw-convo-item {
+        padding: 12px 14px;
+        min-height: 44px;
+    }
+
+    .cw-new-btn {
+        min-height: 44px;
+        padding: 10px;
+        font-size: 0.9rem;
+    }
+
+    .cw-load-more {
+        min-height: 44px;
+        padding: 8px 16px;
+        font-size: 0.84rem;
+    }
+
+    .cw-unsend {
+        min-width: 44px;
+        min-height: 44px;
+        padding: 6px 10px;
+        font-size: 0.76rem;
+        opacity: 1;
+    }
+
+    .cw-restore-btn {
+        min-width: 44px;
+        min-height: 44px;
+        padding: 6px 8px;
+        opacity: 1;
+    }
+
+    .cw-mutual-item {
+        min-height: 44px;
+        padding: 10px 14px;
+        font-size: 0.92rem;
+    }
+
+    .cw-report-submit {
+        min-height: 44px;
+        padding: 8px 16px;
+    }
+
+    .cw-report-select-all {
+        min-height: 44px;
+        padding: 8px 12px;
+    }
+
+    .cw-recover-all-btn {
+        min-height: 44px;
+        padding: 8px 14px;
+    }
+
+    .cw-modal {
+        max-width: calc(100vw - 24px);
+        margin: 0 12px;
+    }
+
+    .cw-convo-preview {
+        max-width: 100%;
+    }
+}
+
+/* ── Small mobile ── */
+@media (max-width: 480px) {
+    .cw-panel {
+        height: 60dvh;
+        max-height: 60dvh;
+        border-radius: 0;
+        border: none;
+        border-bottom: 3px solid #000;
+    }
+
+    .cw-header { padding: 6px 8px; }
+    .cw-messages { padding: 6px 8px; }
+    .cw-input-row { padding: 6px 8px; gap: 5px; }
+
+    .cw-bubble { font-size: 0.82rem; padding: 6px 9px; }
+    .cw-bubble-wrap { max-width: 85%; }
+
+    .cw-title { font-size: 0.88rem; }
+
+    .cw-modal {
+        max-width: 100%;
+        margin: 0 8px;
+        padding: 16px;
+        border-radius: 10px;
+    }
+}
+
+/* ── Extra-small mobile (360px and below) ── */
+@media (max-width: 360px) {
+    .cw-panel {
+        height: 65dvh;
+        max-height: 65dvh;
+    }
+
+    .cw-header { padding: 5px 6px; gap: 3px; }
+    .cw-header-actions { gap: 4px; }
+    .cw-messages { padding: 4px 6px; gap: 4px; }
+    .cw-input-row { padding: 5px 6px; gap: 4px; }
+
+    .cw-clear,
+    .cw-block,
+    .cw-report,
+    .cw-recover,
+    .cw-report-cancel {
+        padding: 6px 8px;
+        font-size: 0.72rem;
+    }
+
+    .cw-title { font-size: 0.82rem; }
+    .cw-bubble { font-size: 0.8rem; padding: 5px 8px; }
+    .cw-bubble-wrap { max-width: 88%; }
+    .cw-input { font-size: 0.84rem; padding: 8px 10px; }
+    .cw-send { padding: 6px 10px; font-size: 0.9rem; }
+
+    .cw-convo-name { font-size: 0.84rem; }
+    .cw-convo-preview { font-size: 0.72rem; max-width: 100%; }
+    .cw-convo-item { padding: 10px; }
+
+    .cw-modal {
+        max-width: 100%;
+        margin: 0 4px;
+        padding: 14px;
+    }
+
+    .cw-report-panel { padding: 6px 8px; }
+    .cw-report-reason { font-size: 0.78rem; padding: 5px 7px; }
+    .cw-report-actions { flex-wrap: wrap; }
+
+    .cw-recover-panel { padding: 6px; }
+
+    .cw-new-btn { margin: 8px 6px; width: calc(100% - 12px); }
+
+    /* Prevent horizontal overflow */
+    .cw-bubble { overflow-wrap: anywhere; }
+}
 </style>
