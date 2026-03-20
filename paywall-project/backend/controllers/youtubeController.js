@@ -4,48 +4,64 @@ import axios from "axios";
 // When one key is exhausted, we rotate to the next.
 const _ytKeys = [];
 let _ytKeyIndex = 0;
-const _exhaustedKeys = new Set(); // keys that hit quota today
+const _exhaustedUntil = new Map(); // key → timestamp when quota resets
 
 const _loadKeys = () => {
   if (_ytKeys.length) return;
   const primary = process.env.YOUTUBE_API_KEY;
   if (primary) _ytKeys.push(primary);
-  // Support YOUTUBE_API_KEY_2, YOUTUBE_API_KEY_3, etc.
   for (let i = 2; i <= 10; i++) {
     const k = process.env[`YOUTUBE_API_KEY_${i}`];
     if (k) _ytKeys.push(k);
   }
+  console.log(`🔑 YouTube: ${_ytKeys.length} API key(s) loaded`);
+};
+
+const _isExhausted = (key) => {
+  const until = _exhaustedUntil.get(key);
+  if (!until) return false;
+  if (Date.now() > until) { _exhaustedUntil.delete(key); return false; }
+  return true;
 };
 
 const API_KEY = () => {
   _loadKeys();
-  // Find a non-exhausted key starting from current index
   for (let i = 0; i < _ytKeys.length; i++) {
     const idx = (_ytKeyIndex + i) % _ytKeys.length;
-    if (!_exhaustedKeys.has(_ytKeys[idx])) return _ytKeys[idx];
+    if (!_isExhausted(_ytKeys[idx])) return _ytKeys[idx];
   }
-  // All exhausted — return first key anyway (will get 403)
   return _ytKeys[0] || null;
 };
 
-const _rotateKey = () => {
+const _isQuotaError = (err) => {
+  const reason = err.response?.data?.error?.errors?.[0]?.reason || '';
+  return reason === 'quotaExceeded' || reason === 'dailyLimitExceeded';
+};
+
+const _rotateKey = (err) => {
   _loadKeys();
   const current = _ytKeys[_ytKeyIndex];
-  if (current) _exhaustedKeys.add(current);
-  // Find next non-exhausted key
+  if (current && _isQuotaError(err)) {
+    // Mark exhausted until next midnight PT (~8am UTC)
+    const now = new Date();
+    const midnightPT = new Date(now.toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }));
+    midnightPT.setDate(midnightPT.getDate() + 1);
+    midnightPT.setHours(0, 0, 0, 0);
+    const msUntilReset = midnightPT.getTime() - now.getTime() + 60000; // +1min buffer
+    _exhaustedUntil.set(current, Date.now() + msUntilReset);
+    console.log(`   Key #${_ytKeyIndex + 1} quota exhausted, blocked for ${Math.round(msUntilReset / 3600000)}h`);
+  }
+  // Find next available key
   for (let i = 1; i < _ytKeys.length; i++) {
     const idx = (_ytKeyIndex + i) % _ytKeys.length;
-    if (!_exhaustedKeys.has(_ytKeys[idx])) {
+    if (!_isExhausted(_ytKeys[idx])) {
       _ytKeyIndex = idx;
-      console.log(`🔄 YouTube API key rotated to key #${idx + 1} (${_ytKeys.length - _exhaustedKeys.size} remaining)`);
+      console.log(`🔄 YouTube API key rotated to key #${idx + 1} (${_ytKeys.length - _exhaustedUntil.size} available)`);
       return true;
     }
   }
-  return false; // all keys exhausted
+  return false;
 };
-
-// Reset exhausted keys daily (quotas reset at midnight PT)
-setInterval(() => _exhaustedKeys.clear(), 60 * 60 * 1000); // check hourly
 
 const BASE    = "https://www.googleapis.com/youtube/v3";
 
@@ -126,27 +142,18 @@ export const searchYoutubeTracks = async (req, res) => {
     if (!q) return res.status(400).json({ message: "Missing query parameter q" });
 
     let r;
-    try {
-      r = await axios.get(`${BASE}/search`, {
-        params: {
-          part: "snippet",
-          type: "video",
-          videoCategoryId: "10", // Music
-          q,
-          maxResults: Math.min(Number(limit), 20),
-          key: API_KEY(),
-        },
-      });
-    } catch (e) {
-      const reason = e.response?.data?.error?.errors?.[0]?.reason || '';
-      if ((reason === 'quotaExceeded' || reason === 'dailyLimitExceeded') && _rotateKey()) {
+    for (let keyAttempt = 0; keyAttempt < _ytKeys.length; keyAttempt++) {
+      try {
         r = await axios.get(`${BASE}/search`, {
           params: { part: "snippet", type: "video", videoCategoryId: "10", q, maxResults: Math.min(Number(limit), 20), key: API_KEY() },
         });
-      } else {
+        break;
+      } catch (e) {
+        if (_isQuotaError(e) && _rotateKey(e)) continue;
         throw e;
       }
     }
+    if (!r) throw new Error('All YouTube API keys exhausted');
 
     const items = (r.data.items || []).map((i) => ({
       title:        i.snippet.title,
@@ -302,44 +309,31 @@ export const matchYoutubeTracks = async (req, res) => {
 
     const searchYT = async (query) => {
       if (_quotaExhausted) return [];
-      try {
-        const r = await axios.get(`${BASE}/search`, {
-          params: {
-            part: "snippet",
-            type: "video",
-            q: query,
-            maxResults: 15,
-            key: API_KEY(),
-          },
-        });
-        return r.data.items || [];
-      } catch (e) {
-        if (e.response?.status === 403) {
-          const reason = e.response?.data?.error?.errors?.[0]?.reason || '';
-          if (reason === 'quotaExceeded' || reason === 'dailyLimitExceeded' || reason === 'rateLimitExceeded') {
-            // Try rotating to next API key
-            if (_rotateKey()) {
-              console.log(`   Retrying "${query}" with new key...`);
-              try {
-                const r2 = await axios.get(`${BASE}/search`, {
-                  params: { part: "snippet", type: "video", q: query, maxResults: 15, key: API_KEY() },
-                });
-                return r2.data.items || [];
-              } catch (e2) {
-                const reason2 = e2.response?.data?.error?.errors?.[0]?.reason || '';
-                if (reason2 === 'quotaExceeded' || reason2 === 'dailyLimitExceeded') {
-                  _rotateKey(); // exhaust this one too
-                }
-              }
+      // Try each available key until one works
+      for (let keyAttempt = 0; keyAttempt < _ytKeys.length; keyAttempt++) {
+        const key = API_KEY();
+        if (!key) break;
+        try {
+          const r = await axios.get(`${BASE}/search`, {
+            params: { part: "snippet", type: "video", q: query, maxResults: 15, key },
+          });
+          return r.data.items || [];
+        } catch (e) {
+          if (e.response?.status === 403 && _isQuotaError(e)) {
+            if (_rotateKey(e)) {
+              console.log(`   Retrying "${query}" with key #${_ytKeyIndex + 1}...`);
+              continue; // try next key
             }
             console.error('❌ YouTube API quota exhausted — all keys used');
             _quotaExhausted = true;
             return [];
           }
+          console.error(`❌ YouTube search failed for "${query}":`, e.response?.status || e.message);
+          return [];
         }
-        console.error(`❌ YouTube search failed for "${query}":`, e.response?.status || e.message);
-        return [];
       }
+      _quotaExhausted = true;
+      return [];
     };
 
     const matchOne = async (src) => {
