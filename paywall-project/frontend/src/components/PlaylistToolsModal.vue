@@ -550,7 +550,12 @@ const debounceSwapSearch = () => {
       });
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
-        swapSearchError.value = errData.message || `Search failed (${res.status})`;
+        if (res.status === 429) {
+          const secs = errData.retryAfter || parseInt(res.headers.get('retry-after') || '5', 10);
+          swapSearchError.value = `Rate limited — wait ${secs}s and try again`;
+        } else {
+          swapSearchError.value = errData.message || `Search failed (${res.status})`;
+        }
         swapResults.value = [];
         swapSearchLoading.value = false;
         return;

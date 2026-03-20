@@ -466,6 +466,7 @@ export const searchTracks = async (req, res) => {
     // Only respect search-specific rate limit, not the global one
     if (Date.now() < _searchRateLimitUntil) {
       const retryAfter = Math.ceil((_searchRateLimitUntil - Date.now()) / 1000);
+      res.set('Retry-After', String(retryAfter));
       return res.status(429).json({ tracks: [], retryAfter, message: 'Rate limited' });
     }
 
@@ -487,6 +488,7 @@ export const searchTracks = async (req, res) => {
       if (e.response?.status === 429) {
         const secs = Math.min(parseInt(e.response.headers?.['retry-after'] || '5', 10), 30);
         _searchRateLimitUntil = Date.now() + secs * 1000;
+        res.set('Retry-After', String(secs));
         return res.status(429).json({ tracks: [], retryAfter: secs, message: 'Rate limited — try again shortly' });
       } else if (e.response?.status === 401 || e.response?.status === 403) {
         // Client creds token expired — get a fresh one
@@ -516,6 +518,7 @@ export const searchTracks = async (req, res) => {
     if (err.response?.status === 429) {
       const secs = Math.min(parseInt(err.response.headers?.['retry-after'] || '5', 10), 10);
       _searchRateLimitUntil = Date.now() + secs * 1000;
+      res.set('Retry-After', String(secs));
       return res.status(429).json({ tracks: [], retryAfter: secs, message: 'Rate limited — try again shortly' });
     }
     res.status(err.response?.status || 500).json({ message: "Search failed" });

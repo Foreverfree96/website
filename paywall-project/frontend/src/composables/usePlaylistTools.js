@@ -790,8 +790,11 @@ export function usePlaylistTools() {
             break;
           }
           if (res.status === 429) {
-            // Parse retry-after or use escalating backoff
-            const retryAfter = parseInt(res.headers.get('retry-after') || '0', 10);
+            // Parse retry-after from header or JSON body
+            let retryAfter = parseInt(res.headers.get('retry-after') || '0', 10);
+            if (!retryAfter) {
+              try { const j = await res.json(); retryAfter = j.retryAfter || 0; } catch {}
+            }
             const waitMs = Math.max(retryAfter * 1000, delay * (attempt + 2));
             autofillProgress.value = `${b + 1}/${noneIndices.length} (waiting ${Math.round(waitMs / 1000)}s)`;
             await new Promise(r => setTimeout(r, waitMs));
