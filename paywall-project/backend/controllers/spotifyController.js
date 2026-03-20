@@ -431,6 +431,43 @@ export const getPlaylistTracks = async (req, res) => {
 // ─── SPOTIFY DISCONNECT ───────────────────────────────────────────────────────
 export const spotifyDisconnect = async (req, res) => {
   try {
+    // Fetch the user's token before clearing so we can revoke it with Spotify
+    const user = await User.findById(req.user.id)
+      .select("+spotifyAccessToken +spotifyRefreshToken")
+      .lean();
+
+    // Revoke the access token with Spotify so the app is removed from the
+    // user's authorized apps list (https://www.spotify.com/account/apps/)
+    if (user?.spotifyAccessToken) {
+      const credentials = Buffer.from(
+        `${process.env.SPOTIFY_CLIENT_ID}:${process.env.SPOTIFY_CLIENT_SECRET}`
+      ).toString("base64");
+
+      // Revoke access token
+      try {
+        await axios.post(
+          "https://accounts.spotify.com/api/token/revoke",
+          new URLSearchParams({ token: user.spotifyAccessToken }),
+          { headers: { Authorization: `Basic ${credentials}`, "Content-Type": "application/x-www-form-urlencoded" } }
+        );
+      } catch (e) {
+        console.error("⚠ Spotify access token revoke failed:", e.response?.status || e.message);
+      }
+
+      // Revoke refresh token too so it can't be reused
+      if (user.spotifyRefreshToken) {
+        try {
+          await axios.post(
+            "https://accounts.spotify.com/api/token/revoke",
+            new URLSearchParams({ token: user.spotifyRefreshToken }),
+            { headers: { Authorization: `Basic ${credentials}`, "Content-Type": "application/x-www-form-urlencoded" } }
+          );
+        } catch (e) {
+          console.error("⚠ Spotify refresh token revoke failed:", e.response?.status || e.message);
+        }
+      }
+    }
+
     await User.findByIdAndUpdate(req.user.id, {
       $unset: {
         spotifyId:           1,
