@@ -443,7 +443,7 @@ export const spotifyDisconnect = async (req, res) => {
         spotifyRefreshToken: 1,
         spotifyTokenExpiry:  1,
       },
-      spotifyIsPremium: false,
+      $set: { spotifyIsPremium: false },
     });
     res.json({ message: "Spotify disconnected" });
   } catch {
@@ -690,8 +690,8 @@ export const generatePlaylist = async (req, res) => {
     console.log(`   perQuery=${perQuery}, rateLimited=${Date.now() < _rateLimitedUntil ? 'YES until ' + new Date(_rateLimitedUntil).toISOString() : 'no'}`);
 
     // Resilient search — on ANY failure, try switching tokens before giving up
-    let _switchedToken = false; // track if we already tried the other token type
     const doSearch = async (query, retries = 2) => {
+      let _switchedToken = false; // reset per-query so each query can try switching
       const offset = Math.floor(Math.random() * 5);
       const searchLimit = Math.min(perQuery + 5, 50);
       for (let attempt = 0; attempt <= retries; attempt++) {
@@ -811,11 +811,12 @@ export const generatePlaylist = async (req, res) => {
       }
     }
 
-    emitProgress(85, 'Finalizing...');
+    emitProgress(90, 'Finalizing...');
 
     // Shuffle final results so tracks from different sources are mixed
     collected.sort(() => Math.random() - 0.5);
 
+    emitProgress(100, `Done! ${collected.length} tracks`);
     console.log(`✅ Generate: ${collected.length} tracks (requested ${limit}) [${usingClientCreds ? 'client-creds' : 'user-token'}]`);
     res.json({ tracks: collected });
   } catch (err) {
@@ -1221,6 +1222,7 @@ export const matchTracks = async (req, res) => {
 
     const exact = matches.filter(m => m.confidence === 'exact').length;
     const close = matches.filter(m => m.confidence === 'close').length;
+    emitProgress(100, `Done! ${exact + close}/${capped.length} matched`);
     console.log(`✅ Matched ${capped.length} tracks: ${exact} exact, ${close} close, ${capped.length - exact - close} none`);
 
     res.json({ matches });

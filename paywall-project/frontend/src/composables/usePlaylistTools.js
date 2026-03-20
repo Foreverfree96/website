@@ -41,13 +41,12 @@ const isMinimized = ref(false);
 const bgStatus    = ref('');   // 'Generating...', 'Converting...', 'Done! 30 tracks', 'Error'
 const bgDone      = ref(false);
 
-// Progress tracking (0-100)
+// Progress tracking (0-100) — driven purely by backend Socket.io events
 const generateProgress = ref(0);
 const convertProgress  = ref(0);
-let _genProgressTimer  = null;
-let _convProgressTimer = null;
 let _socketListenerActive = false;
 let _activeProgressRef = null; // which progress ref to update from socket
+let _progressHandler = null;   // stored reference for cleanup
 
 const _setupSocketProgress = () => {
   if (_socketListenerActive) return;
@@ -55,44 +54,42 @@ const _setupSocketProgress = () => {
     const { getSocket } = useNotifications();
     const sock = getSocket();
     if (!sock) return;
-    sock.on('playlist:progress', (data) => {
-      if (_activeProgressRef && data.percent > _activeProgressRef.value) {
-        _activeProgressRef.value = data.percent;
+    _progressHandler = (data) => {
+      if (_activeProgressRef && typeof data.percent === 'number') {
+        // Only move forward, never backward
+        if (data.percent > _activeProgressRef.value) {
+          _activeProgressRef.value = data.percent;
+        }
       }
-    });
+    };
+    sock.on('playlist:progress', _progressHandler);
     _socketListenerActive = true;
   } catch { /* socket not ready yet */ }
 };
 
-const _startProgress = (progressRef, timerKey) => {
+const _cleanupSocketProgress = () => {
+  if (!_socketListenerActive) return;
+  try {
+    const { getSocket } = useNotifications();
+    const sock = getSocket();
+    if (sock && _progressHandler) {
+      sock.off('playlist:progress', _progressHandler);
+    }
+  } catch { /* silent */ }
+  _socketListenerActive = false;
+  _progressHandler = null;
+};
+
+const _startProgress = (progressRef) => {
   progressRef.value = 1;
   _activeProgressRef = progressRef;
   _setupSocketProgress();
-
-  // Fallback timer — nudges progress when socket events are sparse/absent
-  const start = Date.now();
-  const id = setInterval(() => {
-    const elapsed = (Date.now() - start) / 1000;
-    const cur = progressRef.value;
-    if (cur >= 99) return;
-    // Gentle nudge — only moves if socket hasn't pushed ahead
-    const remaining = 99 - cur;
-    let nudge;
-    if (elapsed < 3)       nudge = 1.5;
-    else if (elapsed < 10) nudge = 0.6;
-    else if (elapsed < 25) nudge = 0.3;
-    else                   nudge = Math.max(remaining * 0.02, 0.05);
-    progressRef.value = Math.min(99, cur + nudge);
-  }, 200);
-  if (timerKey === 'gen') { clearInterval(_genProgressTimer); _genProgressTimer = id; }
-  else { clearInterval(_convProgressTimer); _convProgressTimer = id; }
 };
 
-const _stopProgress = (progressRef, timerKey, success) => {
-  if (timerKey === 'gen') { clearInterval(_genProgressTimer); _genProgressTimer = null; }
-  else { clearInterval(_convProgressTimer); _convProgressTimer = null; }
+const _stopProgress = (progressRef, success) => {
   progressRef.value = success ? 100 : 0;
   _activeProgressRef = null;
+  _cleanupSocketProgress();
 };
 
 // Autofill state
@@ -415,7 +412,7 @@ export function usePlaylistTools() {
   const cancelGenerate = () => {
     if (_generateAbort) { _generateAbort.abort(); _generateAbort = null; }
     generateLoading.value = false;
-    _stopProgress(generateProgress, 'gen', false);
+    _stopProgress(generateProgress, false);
     bgStatus.value = '';
     bgDone.value = false;
   };
@@ -423,7 +420,7 @@ export function usePlaylistTools() {
   const cancelConvert = () => {
     if (_convertAbort) { _convertAbort.abort(); _convertAbort = null; }
     convertLoading.value = false;
-    _stopProgress(convertProgress, 'conv', false);
+    _stopProgress(convertProgress, false);
     bgStatus.value = '';
     bgDone.value = false;
   };
@@ -446,7 +443,7 @@ export function usePlaylistTools() {
     generateLoading.value = true;
     bgStatus.value = 'Generating...';
     bgDone.value = false;
-    _startProgress(generateProgress, 'gen');
+    _startProgress(generateProgress);
 
     // Own abort controller — doesn't cancel a running convert
     if (_generateAbort) _generateAbort.abort();
@@ -501,7 +498,6 @@ export function usePlaylistTools() {
                 });
                 body.seedTrackMeta = [...body.seedTrackMeta, ...ytSeeds];
                 bgStatus.value = `Generating from ${ytSeeds.length} seed tracks...`;
-                generateProgress.value = Math.max(generateProgress.value, 25);
               } else {
                 throw new Error('Could not fetch playlist tracks — check the URL');
               }
@@ -516,7 +512,6 @@ export function usePlaylistTools() {
         }
       }
 
-      generateProgress.value = Math.max(generateProgress.value, 20);
       console.log('[Generate] Sending request:', { seedTrackIds: body.seedTrackIds?.length, seedTrackMeta: body.seedTrackMeta?.length, genres: body.genres, limit: body.limit, playlist: body.seedPlaylistId || 'none' });
       const genTimeout = setTimeout(() => { if (!signal.aborted) _generateAbort?.abort(); }, 360000);
       const res = await fetch(`${API}/api/spotify/generate`, {
@@ -536,12 +531,10 @@ export function usePlaylistTools() {
       const data = await res.json();
       const spTracks = data.tracks || [];
       console.log('[Generate] Got', spTracks.length, 'tracks from backend');
-      generateProgress.value = Math.max(generateProgress.value, 75);
 
       if (generateTarget.value === 'youtube' && spTracks.length) {
         // Match Spotify recommendations to YouTube
         bgStatus.value = `Matching ${spTracks.length} tracks to YouTube...`;
-        generateProgress.value = 80;
         const matchBody = spTracks.map(t => ({ title: t.name, artist: t.artist }));
         const matchRes = await fetch(`${API}/api/youtube/match`, {
           method: 'POST',
@@ -576,16 +569,16 @@ export function usePlaylistTools() {
       if (!generatedTracks.value.length) {
         error.value = 'No tracks found — try different inputs for better results';
         bgStatus.value = 'No results';
-        _stopProgress(generateProgress, 'gen', false);
+        _stopProgress(generateProgress, false);
       } else {
         bgStatus.value = `Done! ${generatedTracks.value.length} tracks`;
-        _stopProgress(generateProgress, 'gen', true);
+        _stopProgress(generateProgress, true);
       }
       bgDone.value = true;
       _generateAbort = null;
       _persistResults();
     } catch (err) {
-      _stopProgress(generateProgress, 'gen', false);
+      _stopProgress(generateProgress, false);
       if (err.name === 'AbortError' && !isOpen.value) return;
       const msg = err.name === 'AbortError'
         ? 'Generation timed out — the server may be waking up, try again'
@@ -605,7 +598,7 @@ export function usePlaylistTools() {
     bgDone.value = false;
     matchedTracks.value = [];
     sourceTracks.value = [];
-    _startProgress(convertProgress, 'conv');
+    _startProgress(convertProgress);
 
     // Own abort controller — doesn't cancel a running generate
     if (_convertAbort) _convertAbort.abort();
@@ -635,7 +628,6 @@ export function usePlaylistTools() {
         }
         const ytData = await ytRes.json();
         sourceTracks.value = ytData.items || [];
-        convertProgress.value = Math.max(convertProgress.value, 30);
 
         bgStatus.value = `Matching ${sourceTracks.value.length} tracks...`;
 
@@ -664,7 +656,7 @@ export function usePlaylistTools() {
         const matched = matchedTracks.value.filter(m => m.confidence !== 'none').length;
         bgStatus.value = `Done! ${matched}/${matchedTracks.value.length} matched`;
         bgDone.value = true;
-        _stopProgress(convertProgress, 'conv', true);
+        _stopProgress(convertProgress, true);
 
       } else {
         convertDirection.value = 'spotify-to-yt';
@@ -696,7 +688,6 @@ export function usePlaylistTools() {
           uri: i.track?.uri || '',
           art: i.track?.album?.images?.[0]?.url || '',
         }));
-        convertProgress.value = Math.max(convertProgress.value, 30);
 
         bgStatus.value = `Matching ${sourceTracks.value.length} tracks...`;
 
@@ -725,7 +716,7 @@ export function usePlaylistTools() {
         const matched = matchedTracks.value.filter(m => m.confidence !== 'none').length;
         bgStatus.value = `Done! ${matched}/${matchedTracks.value.length} matched`;
         bgDone.value = true;
-        _stopProgress(convertProgress, 'conv', true);
+        _stopProgress(convertProgress, true);
         if (matchData.quotaExhausted) {
           error.value = 'YouTube API quota reached — some tracks could not be searched. Unmatched tracks can be autofilled later.';
         }
@@ -733,7 +724,7 @@ export function usePlaylistTools() {
       _convertAbort = null;
       _persistResults();
     } catch (err) {
-      _stopProgress(convertProgress, 'conv', false);
+      _stopProgress(convertProgress, false);
       if (err.name === 'AbortError' && !isOpen.value) return;
       const msg = err.name === 'AbortError'
         ? 'Matching timed out — try a smaller playlist'

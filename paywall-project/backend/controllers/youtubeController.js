@@ -412,6 +412,7 @@ export const matchYoutubeTracks = async (req, res) => {
 
     const exact = matches.filter(m => m.confidence === 'exact').length;
     const close = matches.filter(m => m.confidence === 'close').length;
+    emitProgress(100, `Done! ${exact + close}/${capped.length} matched`);
     console.log(`✅ YouTube matched ${capped.length} tracks: ${exact} exact, ${close} close, ${capped.length - exact - close} none${_quotaExhausted ? ' (quota exhausted)' : ''}`);
     res.json({ matches, quotaExhausted: _quotaExhausted });
   } catch (err) {
