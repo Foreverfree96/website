@@ -104,7 +104,7 @@ const appendSpotifyParams = (baseUrl, params) => {
 };
 
 // ─── SPOTIFY LOGIN ────────────────────────────────────────────────────────────
-export const spotifyLogin = (req, res) => {
+export const spotifyLogin = async (req, res) => {
   const { token, returnTo } = req.query;
   if (!token) return res.status(401).json({ message: "Not authenticated" });
 
@@ -115,6 +115,14 @@ export const spotifyLogin = (req, res) => {
   } catch {
     return res.status(401).json({ message: "Invalid token" });
   }
+
+  // Check if user already has Spotify connected — if not, force the consent dialog
+  // so they can authorize (or re-authorize after a disconnect)
+  let showDialog = "true";
+  try {
+    const user = await User.findById(userId).select("spotifyId").lean();
+    if (user?.spotifyId) showDialog = "false"; // already connected, skip dialog
+  } catch { /* default to showing dialog */ }
 
   // Encode userId + safe returnTo URL in state so callback can redirect back.
   // Use base64url (not base64) — regular base64 has +/= chars that URL encoding mangles.
@@ -127,7 +135,7 @@ export const spotifyLogin = (req, res) => {
     scope:         SCOPES,
     redirect_uri:  process.env.SPOTIFY_REDIRECT_URI,
     state,
-    show_dialog:   "false",
+    show_dialog:   showDialog,
   });
 
   res.redirect(`https://accounts.spotify.com/authorize?${params}`);
