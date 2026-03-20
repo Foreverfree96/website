@@ -1113,7 +1113,7 @@ export const matchTracks = async (req, res) => {
       if (!queries.includes(cleaned)) queries.push(cleaned);
 
       // Dedupe queries — scale with playlist size
-      const maxQ = tracks.length > 500 ? 2 : tracks.length > 200 ? 3 : tracks.length > 50 ? 5 : 7;
+      const maxQ = tracks.length > 200 ? 2 : tracks.length > 50 ? 3 : 4;
       const uniqueQueries = [...new Set(queries)].slice(0, maxQ);
 
       if (!uniqueQueries.length) return { source: src, bestMatch: null, confidence: "none", alternatives: [] };
@@ -1173,9 +1173,8 @@ export const matchTracks = async (req, res) => {
             };
           });
           allCandidates = allCandidates.concat(candidates);
-          // Stop early only if we have a very strong match AND enough alternatives
-          const queryIdx = uniqueQueries.indexOf(query);
-          if (queryIdx >= 1 && allCandidates.length >= 6 && candidates.some(c => c.score >= 0.75)) break;
+          // Stop early if we have a strong match — save API calls
+          if (allCandidates.length >= 3 && candidates.some(c => c.score >= 0.65)) break;
         }
       }
 
@@ -1212,14 +1211,12 @@ export const matchTracks = async (req, res) => {
       io?.to(userId).emit('playlist:progress', { percent: Math.round(pct), status });
     };
 
-    // Process in parallel batches — larger batches + shorter delays for big playlists
+    // Process tracks sequentially to avoid flooding Spotify API
     const startTime = Date.now();
     const TIMEOUT_MS = 290000; // ~5 min for large playlists (up to 1000 tracks)
     const matches = [];
-    const BATCH = tracks.length > 200 ? 5 : tracks.length > 50 ? 4 : 3;
-    const DELAY = tracks.length > 200 ? 400 : 600;
     emitProgress(5, `Matching ${tracks.length} tracks...`);
-    for (let i = 0; i < tracks.length; i += BATCH) {
+    for (let i = 0; i < tracks.length; i++) {
       if (Date.now() - startTime > TIMEOUT_MS) {
         console.log(`⏱ Spotify match timeout after ${matches.length}/${tracks.length} tracks`);
         for (let j = i; j < tracks.length; j++) {
@@ -1232,14 +1229,14 @@ export const matchTracks = async (req, res) => {
         if (Date.now() - startTime + waitMs > TIMEOUT_MS) break;
         await new Promise(r => setTimeout(r, waitMs + 200));
       }
-      const batch = tracks.slice(i, i + BATCH);
-      const results = await Promise.all(batch.map(matchOne));
-      matches.push(...results);
+      const result = await matchOne(tracks[i]);
+      matches.push(result);
 
       const pct = 5 + (matches.length / tracks.length) * 90;
       emitProgress(pct, `Matched ${matches.length}/${tracks.length}...`);
 
-      if (i + BATCH < tracks.length) await new Promise(r => setTimeout(r, DELAY));
+      // Small delay between tracks to stay under rate limits
+      if (i < tracks.length - 1) await new Promise(r => setTimeout(r, 150));
     }
 
     const exact = matches.filter(m => m.confidence === 'exact').length;
