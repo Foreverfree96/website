@@ -815,14 +815,29 @@ export const createPlaylist = async (req, res) => {
     if (!name) return res.status(400).json({ message: "Playlist name is required" });
     if (!trackUris.length) return res.status(400).json({ message: "No tracks provided" });
 
-    const result = await getValidToken(req.user.id, false);
+    // Force refresh to ensure we have latest scopes
+    const result = await getValidToken(req.user.id, true);
     if (result.error) return res.status(result.error).json({ message: result.message });
 
     const auth = { Authorization: `Bearer ${result.accessToken}` };
 
-    // Get Spotify user ID
+    // Get Spotify user ID — also verify token identity matches
     const user = await User.findById(req.user.id).select("spotifyId");
     if (!user?.spotifyId) return res.status(400).json({ message: "Spotify not connected" });
+
+    // Verify the token actually belongs to this Spotify user
+    try {
+      const me = await axios.get("https://api.spotify.com/v1/me", { headers: auth });
+      console.log(`🔑 Create playlist: token user=${me.data.id}, stored spotifyId=${user.spotifyId}`);
+      if (me.data.id !== user.spotifyId) {
+        // Fix the mismatch — update stored ID to match the token
+        console.log(`⚠️ Fixing spotifyId mismatch: ${user.spotifyId} → ${me.data.id}`);
+        await User.findByIdAndUpdate(req.user.id, { spotifyId: me.data.id });
+        user.spotifyId = me.data.id;
+      }
+    } catch (e) {
+      console.error(`❌ /me check failed:`, e.response?.status, e.response?.data);
+    }
 
     // Create the playlist
     let playlistId;
