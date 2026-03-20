@@ -999,8 +999,9 @@ export const matchTracks = async (req, res) => {
       // Raw cleaned title as last resort
       if (!queries.includes(cleaned)) queries.push(cleaned);
 
-      // Dedupe queries, allow more attempts
-      const uniqueQueries = [...new Set(queries)].slice(0, 6);
+      // Dedupe queries — for large playlists use fewer queries per track
+      const maxQ = capped.length > 200 ? 2 : capped.length > 50 ? 4 : 6;
+      const uniqueQueries = [...new Set(queries)].slice(0, maxQ);
 
       if (!uniqueQueries.length) return { source: src, bestMatch: null, confidence: "none", alternatives: [] };
 
@@ -1059,8 +1060,9 @@ export const matchTracks = async (req, res) => {
             };
           });
           allCandidates = allCandidates.concat(candidates);
-          // If we got a great match AND have run at least 2 queries, stop
-          if (allCandidates.length >= 5 && candidates.some(c => c.score >= 0.85)) break;
+          // Stop early if we already have a strong match
+          if (candidates.some(c => c.score >= 0.7)) break;
+          if (allCandidates.length >= 5 && candidates.some(c => c.score >= 0.5)) break;
         }
       }
 
@@ -1089,11 +1091,12 @@ export const matchTracks = async (req, res) => {
       await new Promise(r => setTimeout(r, waitMs + 200));
     }
 
-    // Process in parallel batches of 5 with 200ms delay between batches
+    // Process in parallel batches — larger batches + shorter delays for big playlists
     const startTime = Date.now();
     const TIMEOUT_MS = 290000; // ~5 min for large playlists (up to 1000 tracks)
     const matches = [];
-    const BATCH = 5;
+    const BATCH = capped.length > 200 ? 10 : capped.length > 50 ? 8 : 5;
+    const DELAY = capped.length > 200 ? 100 : 200;
     for (let i = 0; i < capped.length; i += BATCH) {
       if (Date.now() - startTime > TIMEOUT_MS) {
         console.log(`⏱ Spotify match timeout after ${matches.length}/${capped.length} tracks`);
@@ -1112,7 +1115,7 @@ export const matchTracks = async (req, res) => {
       const batch = capped.slice(i, i + BATCH);
       const results = await Promise.all(batch.map(matchOne));
       matches.push(...results);
-      if (i + BATCH < capped.length) await new Promise(r => setTimeout(r, 200));
+      if (i + BATCH < capped.length) await new Promise(r => setTimeout(r, DELAY));
     }
 
     const exact = matches.filter(m => m.confidence === 'exact').length;

@@ -50,8 +50,9 @@ const searchLoading = ref(false);
 const searchError   = ref('');
 let _searchDebounce = null;
 
-// ─── Abort controller for in-flight generate/convert ─────────────────────────
-let _activeAbort = null; // AbortController for the current operation
+// ─── Separate abort controllers so generate and convert can run independently ─
+let _generateAbort = null;
+let _convertAbort  = null;
 
 // ─── Persist results to sessionStorage so they survive refresh ───────────────
 const RESULTS_KEY = 'pt_results';
@@ -190,8 +191,9 @@ export function usePlaylistTools() {
   };
 
   const close = () => {
-    // Abort any in-flight generate/convert request
-    if (_activeAbort) { _activeAbort.abort(); _activeAbort = null; }
+    // Abort any in-flight generate/convert requests
+    if (_generateAbort) { _generateAbort.abort(); _generateAbort = null; }
+    if (_convertAbort)  { _convertAbort.abort();  _convertAbort = null; }
     isOpen.value = false;
     isMinimized.value = false;
     bgStatus.value = '';
@@ -315,10 +317,10 @@ export function usePlaylistTools() {
     bgStatus.value = 'Generating...';
     bgDone.value = false;
 
-    // Create a shared abort controller so close() can cancel this
-    if (_activeAbort) _activeAbort.abort();
-    _activeAbort = new AbortController();
-    const signal = _activeAbort.signal;
+    // Own abort controller — doesn't cancel a running convert
+    if (_generateAbort) _generateAbort.abort();
+    _generateAbort = new AbortController();
+    const signal = _generateAbort.signal;
 
     try {
       if (!API) throw new Error('API URL not configured');
@@ -354,7 +356,7 @@ export function usePlaylistTools() {
         }
       }
 
-      const genTimeout = setTimeout(() => { if (!signal.aborted) _activeAbort?.abort(); }, 360000);
+      const genTimeout = setTimeout(() => { if (!signal.aborted) _generateAbort?.abort(); }, 360000);
       const res = await fetch(`${API}/api/spotify/generate`, {
         method: 'POST',
         headers: headers(),
@@ -373,7 +375,7 @@ export function usePlaylistTools() {
       resultTracks.value = [...generateResults.value];
       bgStatus.value = `Done! ${generatedTracks.value.length} tracks`;
       bgDone.value = true;
-      _activeAbort = null;
+      _generateAbort = null;
       _persistResults();
     } catch (err) {
       if (err.name === 'AbortError' && !isOpen.value) return; // user closed, don't show error
@@ -396,10 +398,10 @@ export function usePlaylistTools() {
     matchedTracks.value = [];
     sourceTracks.value = [];
 
-    // Create a shared abort controller so close() can cancel this
-    if (_activeAbort) _activeAbort.abort();
-    _activeAbort = new AbortController();
-    const signal = _activeAbort.signal;
+    // Own abort controller — doesn't cancel a running generate
+    if (_convertAbort) _convertAbort.abort();
+    _convertAbort = new AbortController();
+    const signal = _convertAbort.signal;
 
     try {
       const platform = detectPlatform(convertUrl.value);
@@ -411,7 +413,7 @@ export function usePlaylistTools() {
         if (!plId) throw new Error('Could not find playlist ID in URL');
 
         // Fetch YouTube tracks
-        const ytTimeout = setTimeout(() => { if (!signal.aborted) _activeAbort?.abort(); }, 360000);
+        const ytTimeout = setTimeout(() => { if (!signal.aborted) _convertAbort?.abort(); }, 360000);
         const ytRes = await fetch(`${API}/api/youtube/playlist/${plId}/tracks`, {
           headers: headers(),
           signal,
@@ -512,7 +514,7 @@ export function usePlaylistTools() {
         bgStatus.value = `Done! ${matched}/${matchedTracks.value.length} matched`;
         bgDone.value = true;
       }
-      _activeAbort = null;
+      _convertAbort = null;
       _persistResults();
     } catch (err) {
       if (err.name === 'AbortError' && !isOpen.value) return; // user closed, don't show error

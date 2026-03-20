@@ -273,7 +273,8 @@ export const matchYoutubeTracks = async (req, res) => {
         queries.push(`${title} audio`);
         queries.push(title);
       }
-      const uniqueQueries = [...new Set(queries)].slice(0, 4);
+      const maxQ = capped.length > 200 ? 2 : capped.length > 50 ? 3 : 4;
+      const uniqueQueries = [...new Set(queries)].slice(0, maxQ);
 
       let allItems = [];
       for (const query of uniqueQueries) {
@@ -354,9 +355,10 @@ export const matchYoutubeTracks = async (req, res) => {
       return { source: src, bestMatch: best, confidence, alternatives: allCandidates.slice(1, 5) };
     };
 
-    // Process in parallel batches of 5 with 300ms delay (1 query per track now, so faster)
+    // Dynamic batch size & delay based on playlist size
     const matches = [];
-    const BATCH = 5;
+    const BATCH = capped.length > 200 ? 10 : capped.length > 50 ? 8 : 5;
+    const DELAY = capped.length > 200 ? 100 : 300;
     for (let i = 0; i < capped.length; i += BATCH) {
       if (Date.now() - startTime > TIMEOUT_MS) {
         console.log(`⏱ YouTube match timeout after ${matches.length}/${capped.length} tracks`);
@@ -369,7 +371,7 @@ export const matchYoutubeTracks = async (req, res) => {
       const batch = capped.slice(i, i + BATCH);
       const results = await Promise.all(batch.map(matchOne));
       matches.push(...results);
-      if (i + BATCH < capped.length) await new Promise(r => setTimeout(r, 300));
+      if (i + BATCH < capped.length) await new Promise(r => setTimeout(r, DELAY));
     }
 
     const exact = matches.filter(m => m.confidence === 'exact').length;
