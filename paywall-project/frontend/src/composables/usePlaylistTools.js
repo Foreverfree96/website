@@ -48,16 +48,16 @@ let _convProgressTimer = null;
 
 const _startProgress = (progressRef, timerKey) => {
   progressRef.value = 1;
-  let phase = 0; // 0=init, 1=working, 2=finishing
   const start = Date.now();
   const id = setInterval(() => {
     const elapsed = (Date.now() - start) / 1000;
     const cur = progressRef.value;
-    if (cur >= 95) { clearInterval(id); return; }
-    // Fast 0-15% (first 2s), steady 15-80% (2-20s), slow 80-95% (20s+)
-    if (elapsed < 2) progressRef.value = Math.min(15, cur + 2);
-    else if (elapsed < 20) progressRef.value = Math.min(80, cur + (80 - cur) * 0.04);
-    else progressRef.value = Math.min(95, cur + (95 - cur) * 0.01);
+    if (cur >= 97) { clearInterval(id); return; }
+    // Steady pace throughout: ~3%/tick early, ~1.5%/tick mid, ~0.5%/tick late
+    if (elapsed < 3) progressRef.value = Math.min(25, cur + 3);
+    else if (elapsed < 15) progressRef.value = Math.min(85, cur + 1.5);
+    else if (elapsed < 30) progressRef.value = Math.min(95, cur + 0.5);
+    else progressRef.value = Math.min(97, cur + 0.2);
   }, 200);
   if (timerKey === 'gen') { clearInterval(_genProgressTimer); _genProgressTimer = id; }
   else { clearInterval(_convProgressTimer); _convProgressTimer = id; }
