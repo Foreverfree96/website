@@ -421,7 +421,7 @@ const spotifyReconnectUrl = computed(() => {
   const url = new URL(window.location.href);
   url.searchParams.delete('spotify');
   url.searchParams.delete('premium');
-  return `${API}/api/spotify/login?token=${token}&returnTo=${encodeURIComponent(url.toString())}`;
+  return `${API}/api/spotify/login?token=${token}&force=1&returnTo=${encodeURIComponent(url.toString())}`;
 });
 
 const showSaveDialog   = ref(false);
