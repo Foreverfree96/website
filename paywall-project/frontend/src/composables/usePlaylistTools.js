@@ -207,7 +207,9 @@ const extractYoutubePlaylistId = (url) => {
 };
 
 const extractSpotifyPlaylistId = (url) => {
-  const m = url.match(/playlist\/([a-zA-Z0-9]+)/);
+  // Reject track/album/artist URLs — only accept playlist URLs
+  if (/\/(track|album|artist)\//.test(url)) return null;
+  const m = url.match(/(?:playlist\/|spotify:playlist:)([a-zA-Z0-9]+)/);
   return m?.[1] || null;
 };
 
