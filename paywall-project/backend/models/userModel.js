@@ -53,6 +53,9 @@ const userSchema = new mongoose.Schema(
     /** Whether the user has admin privileges (can moderate posts, manage users). */
     isAdmin: { type: Boolean, default: false },
 
+    /** Whether the user bypasses all rate limits entirely. */
+    isUnlimited: { type: Boolean, default: false },
+
     /** Cumulative dollar amount this user has donated to creators. */
     donationsTotal: { type: Number, default: 0, min: 0 },
 

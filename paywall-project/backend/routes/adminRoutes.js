@@ -58,6 +58,7 @@ import {
   getAdminLogs,          // GET    /logs                         — admin action audit log
   dismissLog,            // DELETE /logs/:logId                  — dismiss a single log entry
   clearLogs,             // DELETE /logs                         — clear all or trim logs (?keepLast=N)
+  toggleUnlimited,       // PUT    /users/:userId/unlimited     — toggle rate-limit bypass
 } from "../controllers/adminController.js";
 
 const router = express.Router();
@@ -151,6 +152,7 @@ router.delete("/users/:userId", adminDeleteUser);
 router.put("/users/:userId/verify", forceVerifyUser);
 router.put("/users/:userId/restrict", restrictUser);
 router.put("/users/:userId/ban", banUser);
+router.put("/users/:userId/unlimited", toggleUnlimited);
 
 // =============================================================================
 // DM report management routes

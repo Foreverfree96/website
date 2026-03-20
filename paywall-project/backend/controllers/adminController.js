@@ -488,6 +488,26 @@ export const forceVerifyUser = async (req, res) => {
   }
 };
 
+// ─── TOGGLE UNLIMITED ────────────────────────────────────────────────────────
+
+/**
+ * PUT /api/admin/users/:userId/unlimited  (admin)
+ * Toggles unlimited (rate-limit bypass) status for a user.
+ */
+export const toggleUnlimited = async (req, res) => {
+  try {
+    const user = await User.findById(req.params.userId);
+    if (!user) return res.status(404).json({ message: "User not found" });
+    user.isUnlimited = !user.isUnlimited;
+    await user.save();
+    log(req, user.isUnlimited ? "Granted unlimited" : "Revoked unlimited", user);
+    res.json({ message: `@${user.username} is now ${user.isUnlimited ? 'unlimited' : 'limited'}.`, isUnlimited: user.isUnlimited });
+  } catch (err) {
+    console.error("❌ Admin toggleUnlimited Error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
 // ─── RESTRICT USER ────────────────────────────────────────────────────────────
 
 /**

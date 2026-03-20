@@ -46,6 +46,11 @@ config();
 // Connect to MongoDB — await so routes don't run before DB is ready
 await connectDatabase();
 
+// One-time: ensure owner account has unlimited status
+try {
+  await User.updateOne({ email: "itsmeabc411@gmail.com" }, { $set: { isUnlimited: true, isAdmin: true } });
+} catch { /* silent */ }
+
 const app = express();
 
 // Trust the first proxy hop — required for accurate rate-limiting and IP detection
@@ -176,22 +181,35 @@ app.use(express.urlencoded({ extended: true, limit: "500kb" }));
  * Allows up to 10,000 requests per 15-minute window per IP.
  * Returns standardised headers (RateLimit-*) and a JSON error on breach.
  */
+// Skip rate limiting for unlimited users (checks JWT from Authorization header)
+const isUnlimitedUser = async (req) => {
+  try {
+    const auth = req.headers.authorization;
+    if (!auth?.startsWith('Bearer ')) return false;
+    const decoded = jwt.verify(auth.split(' ')[1], process.env.JWT_SECRET);
+    const user = await User.findById(decoded.id).select('isUnlimited').lean();
+    return !!user?.isUnlimited;
+  } catch { return false; }
+};
+
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10000,
+  max: 50000,
   message: { message: "Too many requests, please try again later." },
-  standardHeaders: true,  // include RateLimit-* headers in responses
-  legacyHeaders: false,   // omit deprecated X-RateLimit-* headers
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: isUnlimitedUser,
 });
 
 /**
  * Stricter rate limiter specifically for PayPal endpoints.
- * Allows up to 500 requests per minute to prevent payment-endpoint abuse.
+ * Allows up to 2000 requests per minute to prevent payment-endpoint abuse.
  */
 const paypalLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
-  max: 500,
+  max: 2000,
   message: { message: "Too many payment requests, slow down." },
+  skip: isUnlimitedUser,
 });
 
 // ─── ROUTES ───────────────────────────────────────────────────────────────────
