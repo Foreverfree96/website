@@ -689,7 +689,8 @@ export const generatePlaylist = async (req, res) => {
     console.log(`   Queries (${uniqueQueries.length}): ${uniqueQueries.slice(0, 6).join(' | ')}${uniqueQueries.length > 6 ? ' ...' : ''}`);
     console.log(`   perQuery=${perQuery}, rateLimited=${Date.now() < _rateLimitedUntil ? 'YES until ' + new Date(_rateLimitedUntil).toISOString() : 'no'}`);
 
-    // Resilient search — retries on 429, falls back to client creds on auth errors
+    // Resilient search — on ANY failure, try switching tokens before giving up
+    let _switchedToken = false; // track if we already tried the other token type
     const doSearch = async (query, retries = 2) => {
       const offset = Math.floor(Math.random() * 5);
       const searchLimit = Math.min(perQuery + 5, 50);
@@ -699,11 +700,12 @@ export const generatePlaylist = async (req, res) => {
             params: { q: query, type: "track", limit: searchLimit, offset },
             headers: auth,
           });
-          const items = r.data.tracks?.items || [];
-          return items;
+          return r.data.tracks?.items || [];
         } catch (e) {
-          console.error(`   ⚠ Search "${query}" attempt ${attempt}: ${e.response?.status || e.message}`);
-          if (e.response?.status === 400) {
+          const status = e.response?.status;
+          console.error(`   ⚠ Search "${query}" attempt ${attempt}: ${status || e.message}`);
+
+          if (status === 400) {
             const clean = query.replace(/[^\w\s'-]/g, '').trim();
             if (clean && clean !== query) {
               try {
@@ -716,30 +718,55 @@ export const generatePlaylist = async (req, res) => {
             }
             return [];
           }
-          if (e.response?.status === 429) {
+
+          // On 429/401/403: switch to the OTHER token type and retry
+          if ((status === 429 || status === 401 || status === 403) && !_switchedToken) {
+            try {
+              if (usingClientCreds) {
+                // Currently on client creds and rate-limited — try user token
+                const userResult = await getValidToken(req.user.id, false);
+                if (!userResult.error) {
+                  console.log(`   Switching to user-token after ${status}`);
+                  auth.Authorization = `Bearer ${userResult.accessToken}`;
+                  usingClientCreds = false;
+                  _switchedToken = true;
+                  continue;
+                }
+              } else {
+                // Currently on user token and rate-limited — try client creds
+                console.log(`   Switching to client-creds after ${status}`);
+                const appToken = await getClientCredToken();
+                auth.Authorization = `Bearer ${appToken}`;
+                usingClientCreds = true;
+                _switchedToken = true;
+                continue;
+              }
+            } catch { /* fallback failed */ }
+          }
+
+          // If still on 429 after token switch, wait and retry
+          if (status === 429 && attempt < retries) {
             const secs = parseInt(e.response.headers?.['retry-after'] || '3', 10);
             setRateLimit(e.response.headers?.['retry-after']);
-            if (attempt < retries) {
-              await new Promise(r => setTimeout(r, Math.min(secs, 5) * 1000 + 200));
-              continue;
-            }
+            await new Promise(r => setTimeout(r, Math.min(secs, 5) * 1000 + 200));
+            continue;
           }
-          if ((e.response?.status === 401 || e.response?.status === 403) && !usingClientCreds) {
-            try {
-              console.log(`   Switching to client-creds after ${e.response?.status}`);
-              const appToken = await getClientCredToken();
-              auth.Authorization = `Bearer ${appToken}`;
-              usingClientCreds = true;
-              continue;
-            } catch (ce) {
-              console.error(`   ❌ Client creds fallback failed:`, ce.message);
-            }
-          }
+
           return [];
         }
       }
       return [];
     };
+
+    // Emit real-time progress via Socket.io
+    const { getIo } = await import("../utils/socketEmitter.js");
+    const io = getIo();
+    const userId = req.user.id;
+    const emitProgress = (pct, status) => {
+      io?.to(userId).emit('playlist:progress', { percent: Math.round(pct), status });
+    };
+
+    emitProgress(10, 'Searching...');
 
     for (let qi = 0; qi < uniqueQueries.length; qi++) {
       if (collected.length >= limit) break;
@@ -754,6 +781,7 @@ export const generatePlaylist = async (req, res) => {
           console.log(`   ⏱ Rate limit wait (${waitMs}ms) would exceed timeout, breaking`);
           break;
         }
+        emitProgress(10 + (qi / uniqueQueries.length) * 70, 'Waiting for rate limit...');
         await new Promise(r => setTimeout(r, waitMs + 100));
       }
 
@@ -773,10 +801,17 @@ export const generatePlaylist = async (req, res) => {
       }
       if (qi < 3 || added === 0) console.log(`   Query ${qi}: "${uniqueQueries[qi]}" → ${items.length} results, +${added} new`);
 
+      // Emit progress: 10-80% based on query progress, or track fill %
+      const queryPct = 10 + ((qi + 1) / uniqueQueries.length) * 70;
+      const fillPct = 10 + (collected.length / limit) * 70;
+      emitProgress(Math.max(queryPct, fillPct), `Found ${collected.length} tracks...`);
+
       if (qi < uniqueQueries.length - 1 && collected.length < limit) {
         await new Promise(r => setTimeout(r, 200));
       }
     }
+
+    emitProgress(85, 'Finalizing...');
 
     // Shuffle final results so tracks from different sources are mixed
     collected.sort(() => Math.random() - 0.5);
@@ -1146,22 +1181,29 @@ export const matchTracks = async (req, res) => {
       await new Promise(r => setTimeout(r, waitMs + 200));
     }
 
+    // Emit real-time progress via Socket.io
+    const { getIo } = await import("../utils/socketEmitter.js");
+    const io = getIo();
+    const userId = req.user.id;
+    const emitProgress = (pct, status) => {
+      io?.to(userId).emit('playlist:progress', { percent: Math.round(pct), status });
+    };
+
     // Process in parallel batches — larger batches + shorter delays for big playlists
     const startTime = Date.now();
     const TIMEOUT_MS = 290000; // ~5 min for large playlists (up to 1000 tracks)
     const matches = [];
     const BATCH = capped.length > 200 ? 10 : capped.length > 50 ? 8 : 5;
     const DELAY = capped.length > 200 ? 100 : 200;
+    emitProgress(5, `Matching ${capped.length} tracks...`);
     for (let i = 0; i < capped.length; i += BATCH) {
       if (Date.now() - startTime > TIMEOUT_MS) {
         console.log(`⏱ Spotify match timeout after ${matches.length}/${capped.length} tracks`);
-        // Fill remaining with no-match so frontend still gets results
         for (let j = i; j < capped.length; j++) {
           matches.push({ source: capped[j], bestMatch: null, confidence: "none", alternatives: [] });
         }
         break;
       }
-      // If rate-limited mid-run, wait it out instead of stopping
       if (Date.now() < _rateLimitedUntil) {
         const waitMs = Math.min(_rateLimitedUntil - Date.now(), 10000);
         if (Date.now() - startTime + waitMs > TIMEOUT_MS) break;
@@ -1170,6 +1212,10 @@ export const matchTracks = async (req, res) => {
       const batch = capped.slice(i, i + BATCH);
       const results = await Promise.all(batch.map(matchOne));
       matches.push(...results);
+
+      const pct = 5 + (matches.length / capped.length) * 90;
+      emitProgress(pct, `Matched ${matches.length}/${capped.length}...`);
+
       if (i + BATCH < capped.length) await new Promise(r => setTimeout(r, DELAY));
     }
 

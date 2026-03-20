@@ -1,4 +1,5 @@
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
+import { useNotifications } from './useNotifications.js';
 
 const API = import.meta.env.VITE_API_URL;
 const headers = () => ({
@@ -45,25 +46,44 @@ const generateProgress = ref(0);
 const convertProgress  = ref(0);
 let _genProgressTimer  = null;
 let _convProgressTimer = null;
+let _socketListenerActive = false;
+let _activeProgressRef = null; // which progress ref to update from socket
+
+const _setupSocketProgress = () => {
+  if (_socketListenerActive) return;
+  try {
+    const { getSocket } = useNotifications();
+    const sock = getSocket();
+    if (!sock) return;
+    sock.on('playlist:progress', (data) => {
+      if (_activeProgressRef && data.percent > _activeProgressRef.value) {
+        _activeProgressRef.value = data.percent;
+      }
+    });
+    _socketListenerActive = true;
+  } catch { /* socket not ready yet */ }
+};
 
 const _startProgress = (progressRef, timerKey) => {
   progressRef.value = 1;
+  _activeProgressRef = progressRef;
+  _setupSocketProgress();
+
+  // Fallback timer — nudges progress when socket events are sparse/absent
   const start = Date.now();
   const id = setInterval(() => {
     const elapsed = (Date.now() - start) / 1000;
     const cur = progressRef.value;
     if (cur >= 99) return;
-    // Smooth asymptotic curve — always moving, never stops, never hits 100
-    // Approaches 99 but decelerates naturally like a real loading bar
-    const target = 99;
-    const remaining = target - cur;
-    let speed;
-    if (elapsed < 2)       speed = 4;            // 0-2s:  fast start
-    else if (elapsed < 8)  speed = 2;            // 2-8s:  steady
-    else if (elapsed < 20) speed = 0.8;          // 8-20s: slowing
-    else                   speed = remaining * 0.03; // 20s+: asymptotic (always moving)
-    progressRef.value = Math.min(target, cur + Math.max(speed, 0.05));
-  }, 150);
+    // Gentle nudge — only moves if socket hasn't pushed ahead
+    const remaining = 99 - cur;
+    let nudge;
+    if (elapsed < 3)       nudge = 1.5;
+    else if (elapsed < 10) nudge = 0.6;
+    else if (elapsed < 25) nudge = 0.3;
+    else                   nudge = Math.max(remaining * 0.02, 0.05);
+    progressRef.value = Math.min(99, cur + nudge);
+  }, 200);
   if (timerKey === 'gen') { clearInterval(_genProgressTimer); _genProgressTimer = id; }
   else { clearInterval(_convProgressTimer); _convProgressTimer = id; }
 };
@@ -72,6 +92,7 @@ const _stopProgress = (progressRef, timerKey, success) => {
   if (timerKey === 'gen') { clearInterval(_genProgressTimer); _genProgressTimer = null; }
   else { clearInterval(_convProgressTimer); _convProgressTimer = null; }
   progressRef.value = success ? 100 : 0;
+  _activeProgressRef = null;
 };
 
 // Autofill state

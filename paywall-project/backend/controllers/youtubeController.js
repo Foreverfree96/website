@@ -378,15 +378,23 @@ export const matchYoutubeTracks = async (req, res) => {
       return { source: src, bestMatch: best, confidence, alternatives: allCandidates.slice(1, 7) };
     };
 
+    // Emit real-time progress via Socket.io
+    const { getIo } = await import("../utils/socketEmitter.js");
+    const io = getIo();
+    const userId = req.user?.id;
+    const emitProgress = (pct, status) => {
+      if (userId) io?.to(userId).emit('playlist:progress', { percent: Math.round(pct), status });
+    };
+
     // Dynamic batch size & delay based on playlist size
     const matches = [];
     const BATCH = capped.length > 200 ? 10 : capped.length > 50 ? 8 : 5;
     const DELAY = capped.length > 200 ? 100 : 300;
+    emitProgress(5, `Matching ${capped.length} tracks...`);
     for (let i = 0; i < capped.length; i += BATCH) {
       if (_quotaExhausted || Date.now() - startTime > TIMEOUT_MS) {
         const reason = _quotaExhausted ? 'quota exhausted' : 'timeout';
         console.log(`⏱ YouTube match stopped (${reason}) after ${matches.length}/${capped.length} tracks`);
-        // Fill remaining with no-match
         for (let j = i; j < capped.length; j++) {
           matches.push({ source: capped[j], bestMatch: null, confidence: "none", alternatives: [] });
         }
@@ -395,6 +403,10 @@ export const matchYoutubeTracks = async (req, res) => {
       const batch = capped.slice(i, i + BATCH);
       const results = await Promise.all(batch.map(matchOne));
       matches.push(...results);
+
+      const pct = 5 + (matches.length / capped.length) * 90;
+      emitProgress(pct, `Matched ${matches.length}/${capped.length}...`);
+
       if (i + BATCH < capped.length) await new Promise(r => setTimeout(r, DELAY));
     }
 
