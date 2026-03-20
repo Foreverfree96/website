@@ -146,17 +146,40 @@ export const getChannelInfo = async (req, res) => {
 
 const cleanTitle = (title) =>
   title
-    .replace(/\s*[\(\[](official\s*(video|audio|music\s*video|lyric\s*video)|lyrics?|audio|hd|hq|remaster(ed)?|live|visuali[sz]er|explicit|clean|mv|m\/v|4k|video\s*oficial|original mix|radio edit|extended mix)[\)\]]/gi, "")
+    .replace(/\s*[\(\[](official\s*(video|audio|music\s*video|lyric\s*video)|lyrics?|audio|hd|hq|remaster(ed)?|live|visuali[sz]er|explicit|clean|mv|m\/v|4k|video\s*oficial|original mix|radio edit|extended mix|slowed|sped up|reverb|bass boosted|nightcore)[\)\]]/gi, "")
     .replace(/\s*[\(\[]feat\.?[^\)\]]*[\)\]]/gi, "")
     .replace(/\s*[\(\[]ft\.?[^\)\]]*[\)\]]/gi, "")
     .replace(/\s*[\(\[]prod\.?[^\)\]]*[\)\]]/gi, "")
     .replace(/\s*[\(\[]with\s+[^\)\]]*[\)\]]/gi, "")
+    .replace(/\s+feat\.?\s+.*/i, "")
+    .replace(/\s+ft\.?\s+.*/i, "")
+    .replace(/\s+prod\.?\s+(by\s+)?.*/i, "")
     .replace(/\s*-\s*topic$/i, "")
     .replace(/\s*\|\s*.*$/, "")
     .replace(/\s*\/\/\s*.*$/, "")
     .replace(/\s*#\w+/g, "")
+    .replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#39;/g, "'")
     .replace(/\s+/g, " ")
     .trim();
+
+const normalize = (s) => s.toLowerCase().replace(/[^a-z0-9\s]/g, "").replace(/\s+/g, " ").trim();
+
+const wordSimilarity = (a, b) => {
+  if (!a || !b) return 0;
+  const aw = new Set(normalize(a).split(" ").filter(Boolean));
+  const bw = new Set(normalize(b).split(" ").filter(Boolean));
+  if (!aw.size || !bw.size) return 0;
+  let overlap = 0;
+  for (const w of aw) if (bw.has(w)) overlap++;
+  return overlap / Math.min(aw.size, bw.size);
+};
+
+const containsBonus = (a, b) => {
+  const an = normalize(a);
+  const bn = normalize(b);
+  if (an.includes(bn) || bn.includes(an)) return 0.3;
+  return 0;
+};
 
 const levenshtein = (a, b) => {
   const m = a.length, n = b.length;
@@ -178,13 +201,21 @@ const levenshtein = (a, b) => {
   return dp[m][n];
 };
 
-const similarity = (a, b) => {
+const charSimilarity = (a, b) => {
   if (!a || !b) return 0;
-  const al = a.toLowerCase().trim();
-  const bl = b.toLowerCase().trim();
+  const al = normalize(a);
+  const bl = normalize(b);
   if (al === bl) return 1;
   const maxLen = Math.max(al.length, bl.length);
   return maxLen ? 1 - levenshtein(al, bl) / maxLen : 0;
+};
+
+const similarity = (a, b) => {
+  if (!a || !b) return 0;
+  const cs = charSimilarity(a, b);
+  const ws = wordSimilarity(a, b);
+  const cb = containsBonus(a, b);
+  return Math.min(1, Math.max(cs, ws * 0.9) + cb);
 };
 
 // Clean Spotify artist names for better YouTube search
@@ -231,26 +262,54 @@ export const matchYoutubeTracks = async (req, res) => {
       const artist = cleanArtistForYT(src.artist || "");
       if (!title && !artist) return { source: src, bestMatch: null, confidence: "none", alternatives: [] };
 
-      // Try primary query, then fallback if no good results
+      // Build multiple search queries for better coverage
       const queries = [];
-      if (title && artist) queries.push(`${title} ${artist}`);
-      if (title) queries.push(`${title} official audio`);
+      if (title && artist) {
+        queries.push(`${title} ${artist}`);
+        queries.push(`${title} ${artist} official audio`);
+      }
+      if (title) {
+        queries.push(`${title} official audio`);
+        queries.push(title);
+      }
+      const uniqueQueries = [...new Set(queries)].slice(0, 4);
 
       let allItems = [];
-      for (const query of queries) {
+      for (const query of uniqueQueries) {
         const items = await searchYT(query);
         allItems = allItems.concat(items);
-        // If first query got results, skip fallback
-        if (items.length >= 3) break;
+        // If we got good results, skip remaining queries
+        if (items.length >= 5) break;
       }
-      const items = allItems;
+
+      // Deduplicate by videoId
+      const seenVids = new Set();
+      const items = allItems.filter(i => {
+        const vid = i.id?.videoId;
+        if (!vid || seenVids.has(vid)) return false;
+        seenVids.add(vid);
+        return true;
+      });
 
       const allCandidates = items.map((i) => {
         const ytTitle   = cleanTitle(i.snippet.title || "");
-        const titleSim  = similarity(title, ytTitle);
-        const channelName = (i.snippet.channelTitle || "").replace(/\s*-\s*topic$/i, "").replace(/\s*VEVO$/i, "").trim();
+        const channelName = (i.snippet.channelTitle || "")
+          .replace(/\s*-\s*topic$/i, "")
+          .replace(/\s*VEVO$/i, "")
+          .replace(/\s*Official$/i, "")
+          .replace(/\s*Music$/i, "")
+          .trim();
+
+        // Check title similarity — also try "title artist" combined against YT title
+        const titleSim = similarity(title, ytTitle);
+        const combinedSim = artist ? similarity(`${title} ${artist}`, ytTitle) : 0;
+        const bestTitleSim = Math.max(titleSim, combinedSim);
+
         const artistSim = artist ? similarity(artist, channelName) : 0.5;
-        const score = artist ? titleSim * 0.65 + artistSim * 0.35 : titleSim * 0.9 + 0.1;
+        const score = artist
+          ? bestTitleSim * 0.6 + artistSim * 0.4
+          : bestTitleSim * 0.9 + 0.1;
+
         return {
           title:        i.snippet.title,
           channelTitle: i.snippet.channelTitle || "",
@@ -263,9 +322,14 @@ export const matchYoutubeTracks = async (req, res) => {
       allCandidates.sort((a, b) => b.score - a.score);
 
       const best = allCandidates[0] || null;
-      const confidence = !best ? "none" : best.score >= 0.6 ? "exact" : best.score >= 0.25 ? "close" : "none";
+      const confidence = !best ? "none"
+        : best.score >= 0.7 ? "exact"
+        : best.score >= 0.4 ? "close"
+        : best.score >= 0.2 ? "similar"
+        : "none";
 
-      return { source: src, bestMatch: best, confidence, alternatives: allCandidates.slice(1, 4) };
+      // Always return alternatives so user can swap
+      return { source: src, bestMatch: best, confidence, alternatives: allCandidates.slice(1, 5) };
     };
 
     // Process in parallel batches of 5 with 300ms delay (1 query per track now, so faster)

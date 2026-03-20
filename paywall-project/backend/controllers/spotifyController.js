@@ -565,12 +565,24 @@ export const generatePlaylist = async (req, res) => {
         if (!items) items = [];
       }
       if (items?.length) {
+        // If reference playlist is the main/only input, sample more aggressively
+        const isStandalone = !seedTrackIds.length && !genres.length && !seedTrackMeta.length;
+        const sampleSize = isStandalone ? Math.min(items.length, 15) : 5;
         const shuffled = items.sort(() => Math.random() - 0.5);
-        shuffled.slice(0, 5).forEach((i) => {
+        shuffled.slice(0, sampleSize).forEach((i) => {
           const artist = i.track?.artists?.[0]?.name;
           if (artist && !seedArtists.includes(artist)) seedArtists.push(artist);
           if (i.track?.id) seedTrackIds.push(i.track.id);
         });
+        // For standalone, also extract track names for search queries
+        if (isStandalone) {
+          shuffled.slice(0, 8).forEach((i) => {
+            const name = i.track?.name;
+            if (name) {
+              seedTrackMeta.push({ name, artist: i.track?.artists?.[0]?.name || "" });
+            }
+          });
+        }
       }
     }
 
@@ -633,8 +645,10 @@ export const generatePlaylist = async (req, res) => {
       });
     }
 
-    // Deduplicate, cap at 6 queries, and shuffle for variety
-    const uniqueQueries = [...new Set(queries)].slice(0, 6);
+    // Deduplicate, cap queries, and shuffle for variety
+    // Use more queries when generating from a reference playlist alone
+    const maxQueries = seedArtists.length > 5 ? 10 : 6;
+    const uniqueQueries = [...new Set(queries)].slice(0, maxQueries);
     uniqueQueries.sort(() => Math.random() - 0.5);
 
     // Search with timeout to stay within Render's 30s limit
@@ -784,17 +798,48 @@ export const createPlaylist = async (req, res) => {
 
 const cleanTitle = (title) =>
   title
-    .replace(/\s*[\(\[](official\s*(video|audio|music\s*video|lyric\s*video)|lyrics?|audio|hd|hq|remaster(ed)?|live|visuali[sz]er|explicit|clean|mv|m\/v|4k|video\s*oficial|original mix|radio edit|extended mix)[\)\]]/gi, "")
+    // Bracketed tags
+    .replace(/\s*[\(\[](official\s*(video|audio|music\s*video|lyric\s*video)|lyrics?|audio|hd|hq|remaster(ed)?|live|visuali[sz]er|explicit|clean|mv|m\/v|4k|video\s*oficial|original mix|radio edit|extended mix|slowed|sped up|reverb|bass boosted|nightcore)[\)\]]/gi, "")
     .replace(/\s*[\(\[]feat\.?[^\)\]]*[\)\]]/gi, "")
     .replace(/\s*[\(\[]ft\.?[^\)\]]*[\)\]]/gi, "")
     .replace(/\s*[\(\[]prod\.?[^\)\]]*[\)\]]/gi, "")
     .replace(/\s*[\(\[]with\s+[^\)\]]*[\)\]]/gi, "")
+    // Non-bracketed feat/ft patterns
+    .replace(/\s+feat\.?\s+.*/i, "")
+    .replace(/\s+ft\.?\s+.*/i, "")
+    .replace(/\s+prod\.?\s+(by\s+)?.*/i, "")
+    // Channel/platform noise
     .replace(/\s*-\s*topic$/i, "")
     .replace(/\s*\|\s*.*$/, "")
     .replace(/\s*\/\/\s*.*$/, "")
     .replace(/\s*#\w+/g, "")
+    // HTML entities
+    .replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#39;/g, "'")
     .replace(/\s+/g, " ")
     .trim();
+
+// Normalize for comparison — strip all non-alphanumeric
+const normalize = (s) => s.toLowerCase().replace(/[^a-z0-9\s]/g, "").replace(/\s+/g, " ").trim();
+
+// Word-level similarity — handles word order differences
+const wordSimilarity = (a, b) => {
+  if (!a || !b) return 0;
+  const aw = new Set(normalize(a).split(" ").filter(Boolean));
+  const bw = new Set(normalize(b).split(" ").filter(Boolean));
+  if (!aw.size || !bw.size) return 0;
+  let overlap = 0;
+  for (const w of aw) if (bw.has(w)) overlap++;
+  // Jaccard-ish but weighted toward the smaller set (source title)
+  return overlap / Math.min(aw.size, bw.size);
+};
+
+// Substring containment — if one fully contains the other
+const containsBonus = (a, b) => {
+  const an = normalize(a);
+  const bn = normalize(b);
+  if (an.includes(bn) || bn.includes(an)) return 0.3;
+  return 0;
+};
 
 const levenshtein = (a, b) => {
   const m = a.length, n = b.length;
@@ -816,13 +861,22 @@ const levenshtein = (a, b) => {
   return dp[m][n];
 };
 
-const similarity = (a, b) => {
+const charSimilarity = (a, b) => {
   if (!a || !b) return 0;
-  const al = a.toLowerCase().trim();
-  const bl = b.toLowerCase().trim();
+  const al = normalize(a);
+  const bl = normalize(b);
   if (al === bl) return 1;
   const maxLen = Math.max(al.length, bl.length);
   return maxLen ? 1 - levenshtein(al, bl) / maxLen : 0;
+};
+
+// Combined similarity — takes the best of char-level, word-level, and containment
+const similarity = (a, b) => {
+  if (!a || !b) return 0;
+  const cs = charSimilarity(a, b);
+  const ws = wordSimilarity(a, b);
+  const cb = containsBonus(a, b);
+  return Math.min(1, Math.max(cs, ws * 0.9) + cb);
 };
 
 export const matchTracks = async (req, res) => {
@@ -881,14 +935,17 @@ export const matchTracks = async (req, res) => {
         .replace(/\s*Records$/i, "")
         .replace(/\s*TV$/i, "")
         .replace(/\s*Channel$/i, "")
-        .split(/[,&×x]/)[0] // take first artist from multi-artist channels
+        .replace(/&amp;/g, "&")
+        .split(/[,×]/)[0] // take first artist, but keep & (could be part of name)
         .trim();
     };
 
-    // Extract artist from title patterns like "Artist - Title" or "Artist: Title"
+    // Extract artist from title patterns like "Artist - Song" or "Song - Artist"
     const extractArtistFromTitle = (title) => {
-      const m = title.match(/^(.+?)\s*[-–—:]\s+(.+)$/);
-      return m ? { artist: m[1].trim(), title: m[2].trim() } : null;
+      const m = title.match(/^(.+?)\s*[-–—]\s+(.+)$/);
+      if (!m) return null;
+      // Could be "Artist - Title" or "Title - Artist" — return both sides
+      return { side1: m[1].trim(), side2: m[2].trim() };
     };
 
     const matchOne = async (src) => {
@@ -896,42 +953,96 @@ export const matchTracks = async (req, res) => {
       const cleaned = cleanTitle(rawTitle);
       const artist = cleanArtist(src.artist || "");
 
-      // Try to extract artist from title if "Artist - Song" pattern
+      // Try to extract artist/title from "Artist - Song" patterns
       const extracted = extractArtistFromTitle(cleaned);
-      const effectiveTitle = extracted ? extracted.title : cleaned;
-      const effectiveArtist = artist || (extracted ? extracted.artist : "");
 
-      // Try multiple query strategies — most specific first
-      const queries = [];
-      if (effectiveTitle && effectiveArtist) {
-        queries.push(`track:${effectiveTitle} artist:${effectiveArtist}`); // Spotify search operators
-        queries.push(`${effectiveTitle} ${effectiveArtist}`); // plain text fallback
+      // Build multiple interpretations of what the title/artist might be
+      const interpretations = [];
+      if (extracted) {
+        // "Artist - Title" interpretation
+        interpretations.push({ title: extracted.side2, artist: artist || extracted.side1 });
+        // "Title - Artist" interpretation
+        interpretations.push({ title: extracted.side1, artist: artist || extracted.side2 });
       }
-      if (effectiveTitle) queries.push(effectiveTitle); // title-only fallback
-      if (!queries.length) return { source: src, bestMatch: null, confidence: "none", alternatives: [] };
+      // Original as-is
+      interpretations.push({ title: cleaned, artist });
+      // If no artist at all, still try
+      if (!artist && !extracted) interpretations.push({ title: cleaned, artist: "" });
+
+      // Dedupe interpretations
+      const interpSet = new Set();
+      const uniqueInterps = interpretations.filter(i => {
+        const key = `${i.title}|${i.artist}`;
+        if (interpSet.has(key)) return false;
+        interpSet.add(key);
+        return true;
+      });
+
+      // Build search queries from all interpretations
+      const queries = [];
+      for (const interp of uniqueInterps) {
+        if (interp.title && interp.artist) {
+          queries.push(`track:${interp.title} artist:${interp.artist}`);
+          queries.push(`${interp.title} ${interp.artist}`);
+        }
+        if (interp.title) queries.push(interp.title);
+      }
+      // Also try the raw cleaned title as last resort
+      if (!queries.includes(cleaned)) queries.push(cleaned);
+
+      // Dedupe queries
+      const uniqueQueries = [...new Set(queries)].slice(0, 5);
+
+      if (!uniqueQueries.length) return { source: src, bestMatch: null, confidence: "none", alternatives: [] };
 
       let allCandidates = [];
 
-      for (const query of queries) {
+      for (const query of uniqueQueries) {
         const items = await searchSpotify(query);
         if (items.length) {
           const candidates = items.map((t) => {
-            const titleSim  = similarity(effectiveTitle, cleanTitle(t.name || ""));
-            const artistSim = effectiveArtist ? similarity(effectiveArtist, t.artists?.[0]?.name || "") : 0.5; // neutral if no artist
+            const spTitle = cleanTitle(t.name || "");
+            const spArtists = (t.artists || []).map(a => a.name);
+            const spAllArtists = spArtists.join(", ");
+
+            // Title similarity — try against all interpretations, take best
+            let bestTitleSim = 0;
+            let bestArtistSim = 0;
+            for (const interp of uniqueInterps) {
+              const ts = similarity(interp.title, spTitle);
+              if (ts > bestTitleSim) bestTitleSim = ts;
+
+              // Artist similarity — check against ALL Spotify artists, not just first
+              if (interp.artist) {
+                for (const spa of spArtists) {
+                  const as = similarity(interp.artist, spa);
+                  if (as > bestArtistSim) bestArtistSim = as;
+                }
+                // Also try against joined artist string
+                const joinedSim = similarity(interp.artist, spAllArtists);
+                if (joinedSim > bestArtistSim) bestArtistSim = joinedSim;
+              }
+            }
+
+            // If no artist info at all, give neutral score
+            const hasArtist = uniqueInterps.some(i => i.artist);
+            if (!hasArtist) bestArtistSim = 0.5;
+
             let durationBonus = 0;
             if (src.duration_ms && t.duration_ms) {
               const diff = Math.abs(src.duration_ms - t.duration_ms);
               durationBonus = diff < 5000 ? 1 : diff < 15000 ? 0.5 : 0;
             }
-            // Weight title higher since YT channel names are unreliable as artist
-            const score = effectiveArtist
-              ? titleSim * 0.55 + artistSim * 0.35 + durationBonus * 0.1
-              : titleSim * 0.85 + durationBonus * 0.15;
+
+            const score = hasArtist
+              ? bestTitleSim * 0.5 + bestArtistSim * 0.4 + durationBonus * 0.1
+              : bestTitleSim * 0.85 + durationBonus * 0.15;
+
             return {
               id:          t.id,
               uri:         t.uri,
               name:        t.name,
-              artist:      t.artists?.map((a) => a.name).join(", ") || "",
+              artist:      spAllArtists,
               album:       t.album?.name || "",
               art:         t.album?.images?.[0]?.url || "",
               duration_ms: t.duration_ms,
@@ -939,7 +1050,8 @@ export const matchTracks = async (req, res) => {
             };
           });
           allCandidates = allCandidates.concat(candidates);
-          if (candidates[0]?.score >= 0.7) break; // good enough, skip fallback query
+          // If we got a great match, stop searching
+          if (candidates.some(c => c.score >= 0.85)) break;
         }
       }
 
@@ -949,9 +1061,14 @@ export const matchTracks = async (req, res) => {
       allCandidates.sort((a, b) => b.score - a.score);
 
       const best = allCandidates[0] || null;
-      const confidence = !best ? "none" : best.score >= 0.65 ? "exact" : best.score >= 0.3 ? "close" : "none";
+      const confidence = !best ? "none"
+        : best.score >= 0.7 ? "exact"
+        : best.score >= 0.4 ? "close"
+        : best.score >= 0.2 ? "similar"
+        : "none";
 
-      return { source: src, bestMatch: best, confidence, alternatives: allCandidates.slice(1, 4) };
+      // Always return alternatives (even for "none") so user can swap
+      return { source: src, bestMatch: best, confidence, alternatives: allCandidates.slice(1, 5) };
     };
 
     // Wait out rate limit if active (up to 10s), otherwise proceed

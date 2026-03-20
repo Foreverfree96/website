@@ -217,7 +217,7 @@
               <!-- Match results -->
               <div v-if="pt.matchedTracks.value.length" class="pt-results">
                 <div class="pt-results-header">
-                  <span>{{ matchStats.exact }} exact, {{ matchStats.close }} close, {{ matchStats.none }} unmatched</span>
+                  <span>{{ matchStats.exact }} exact, {{ matchStats.close }} close{{ matchStats.similar ? `, ${matchStats.similar} similar` : '' }}, {{ matchStats.none }} unmatched</span>
                 </div>
                 <div class="pt-track-list">
                   <div v-for="(m, i) in pt.matchedTracks.value" :key="i" class="pt-match-row">
@@ -457,9 +457,10 @@ const detectedPlatform = computed(() => {
 const matchStats = computed(() => {
   const m = pt.matchedTracks.value;
   return {
-    exact: m.filter((x) => x.confidence === 'exact').length,
-    close: m.filter((x) => x.confidence === 'close' || x.confidence === 'manual').length,
-    none:  m.filter((x) => x.confidence === 'none').length,
+    exact:   m.filter((x) => x.confidence === 'exact').length,
+    close:   m.filter((x) => x.confidence === 'close' || x.confidence === 'manual').length,
+    similar: m.filter((x) => x.confidence === 'similar').length,
+    none:    m.filter((x) => x.confidence === 'none').length,
   };
 });
 
@@ -981,6 +982,7 @@ const handleAddToExisting = (playlistId) => {
 }
 .pt-confidence.exact { background: #166534; color: #86efac; }
 .pt-confidence.close, .pt-confidence.manual { background: #713f12; color: #fde047; }
+.pt-confidence.similar { background: #4a3728; color: #f5c78e; }
 .pt-confidence.none { background: #7f1d1d; color: #fca5a5; }
 
 /* ─── Alternatives ────────────────────────────────────────────────────────── */
