@@ -217,7 +217,15 @@
               <!-- Match results -->
               <div v-if="pt.matchedTracks.value.length" class="pt-results">
                 <div class="pt-results-header">
-                  <span>{{ matchStats.exact }} exact, {{ matchStats.close }} close{{ matchStats.similar ? `, ${matchStats.similar} similar` : '' }}, {{ matchStats.none }} unmatched</span>
+                  <span>{{ matchStats.exact }} exact, {{ matchStats.close }} close{{ matchStats.similar ? `, ${matchStats.similar} similar` : '' }}{{ matchStats.autofill ? `, ${matchStats.autofill} autofilled` : '' }}, {{ matchStats.none }} unmatched</span>
+                  <button
+                    v-if="matchStats.none > 0"
+                    class="pt-autofill-btn"
+                    @click="pt.autofillUnmatched()"
+                    :disabled="pt.autofillLoading.value"
+                  >
+                    {{ pt.autofillLoading.value ? `Autofilling ${pt.autofillProgress.value}` : `Autofill ${matchStats.none} unmatched` }}
+                  </button>
                 </div>
                 <div class="pt-track-list">
                   <div v-for="(m, i) in pt.matchedTracks.value" :key="i" class="pt-match-row">
@@ -457,10 +465,11 @@ const detectedPlatform = computed(() => {
 const matchStats = computed(() => {
   const m = pt.matchedTracks.value;
   return {
-    exact:   m.filter((x) => x.confidence === 'exact').length,
-    close:   m.filter((x) => x.confidence === 'close' || x.confidence === 'manual').length,
-    similar: m.filter((x) => x.confidence === 'similar').length,
-    none:    m.filter((x) => x.confidence === 'none').length,
+    exact:    m.filter((x) => x.confidence === 'exact').length,
+    close:    m.filter((x) => x.confidence === 'close' || x.confidence === 'manual').length,
+    similar:  m.filter((x) => x.confidence === 'similar').length,
+    autofill: m.filter((x) => x.confidence === 'autofill').length,
+    none:     m.filter((x) => x.confidence === 'none').length,
   };
 });
 
@@ -857,7 +866,27 @@ const handleAddToExisting = (playlistId) => {
   color: #888;
   padding: 4px 0;
   border-bottom: 1px solid #222;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
 }
+
+.pt-autofill-btn {
+  background: #1e3a5f;
+  border: 1px solid #2563eb;
+  border-radius: 16px;
+  padding: 4px 14px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #93c5fd;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, transform 0.1s;
+}
+.pt-autofill-btn:hover:not(:disabled) { background: #1d4ed8; color: #fff; transform: scale(1.03); }
+.pt-autofill-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 
 .pt-track-list {
   max-height: 320px;
@@ -983,6 +1012,7 @@ const handleAddToExisting = (playlistId) => {
 .pt-confidence.exact { background: #166534; color: #86efac; }
 .pt-confidence.close, .pt-confidence.manual { background: #713f12; color: #fde047; }
 .pt-confidence.similar { background: #4a3728; color: #f5c78e; }
+.pt-confidence.autofill { background: #1e3a5f; color: #93c5fd; }
 .pt-confidence.none { background: #7f1d1d; color: #fca5a5; }
 
 /* ─── Alternatives ────────────────────────────────────────────────────────── */

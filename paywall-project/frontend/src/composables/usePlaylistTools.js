@@ -39,6 +39,10 @@ const isMinimized = ref(false);
 const bgStatus    = ref('');   // 'Generating...', 'Converting...', 'Done! 30 tracks', 'Error'
 const bgDone      = ref(false);
 
+// Autofill state
+const autofillLoading  = ref(false);
+const autofillProgress = ref(''); // e.g. "3/12"
+
 // Search state
 const searchQuery   = ref('');
 const searchResults = ref([]);
@@ -227,6 +231,8 @@ export function usePlaylistTools() {
     isMinimized.value = false;
     bgStatus.value = '';
     bgDone.value = false;
+    autofillLoading.value = false;
+    autofillProgress.value = '';
   };
 
   // ── Seed track search ───────────────────────────────────────────────────
@@ -539,6 +545,75 @@ export function usePlaylistTools() {
     resultTracks.value = [...convertResults.value];
   };
 
+  // Autofill — automatically search & fill all unmatched ("none") tracks
+  const autofillUnmatched = async () => {
+    const noneIndices = matchedTracks.value
+      .map((m, i) => (m.confidence === 'none' ? i : -1))
+      .filter(i => i >= 0);
+    if (!noneIndices.length) return;
+
+    autofillLoading.value = true;
+    autofillProgress.value = `0/${noneIndices.length}`;
+    const isYt = convertDirection.value === 'spotify-to-yt';
+    let filled = 0;
+
+    // Process in small batches to avoid hammering the API
+    const BATCH = 3;
+    for (let b = 0; b < noneIndices.length; b += BATCH) {
+      const batch = noneIndices.slice(b, b + BATCH);
+      await Promise.all(batch.map(async (idx) => {
+        const m = matchedTracks.value[idx];
+        const q = [m.source.title, m.source.artist || m.source.channelTitle]
+          .filter(Boolean).join(' ').trim();
+        if (!q) return;
+
+        try {
+          const endpoint = isYt
+            ? `${API}/api/youtube/search?q=${encodeURIComponent(q)}&limit=5`
+            : `${API}/api/spotify/search?q=${encodeURIComponent(q)}&limit=5`;
+          const res = await fetch(endpoint, { headers: headers() });
+          if (!res.ok) return;
+          const data = await res.json();
+
+          let top = null;
+          if (isYt) {
+            const items = data.items || [];
+            if (items.length) top = { ...items[0], url: `https://www.youtube.com/watch?v=${items[0].videoId}` };
+          } else {
+            const tracks = data.tracks || [];
+            if (tracks.length) top = tracks[0];
+          }
+
+          if (top) {
+            matchedTracks.value[idx] = {
+              ...matchedTracks.value[idx],
+              bestMatch: top,
+              confidence: 'autofill',
+              alternatives: isYt
+                ? (data.items || []).slice(1, 5).map(t => ({ ...t, url: `https://www.youtube.com/watch?v=${t.videoId}` }))
+                : (data.tracks || []).slice(1, 5),
+            };
+            filled++;
+          }
+        } catch { /* skip failed searches */ }
+      }));
+      autofillProgress.value = `${Math.min(b + BATCH, noneIndices.length)}/${noneIndices.length}`;
+      // Small delay between batches
+      if (b + BATCH < noneIndices.length) await new Promise(r => setTimeout(r, 400));
+    }
+
+    // Force reactivity
+    matchedTracks.value = [...matchedTracks.value];
+    convertResults.value = matchedTracks.value
+      .filter((m) => m.bestMatch)
+      .map((m) => m.bestMatch);
+    resultTracks.value = [...convertResults.value];
+
+    autofillProgress.value = `Done! ${filled}/${noneIndices.length} filled`;
+    autofillLoading.value = false;
+    _persistResults();
+  };
+
   // Remove a track from results
   const removeResult = (index) => {
     resultTracks.value.splice(index, 1);
@@ -721,6 +796,7 @@ export function usePlaylistTools() {
     convertUrl, convertDirection, sourceTracks, matchedTracks, convertLoading,
     resultTracks, saving, saveResult, error, scopeMissing,
     searchQuery, searchResults, searchLoading, searchError,
+    autofillLoading, autofillProgress,
     GENRES, GENRE_CATEGORIES, genreFilter,
 
     likedIds, userPlaylists, playlistsLoading,
@@ -728,7 +804,7 @@ export function usePlaylistTools() {
     // Methods
     open, close, minimize, reset, setTab,
     searchSeeds, addSeed, removeSeed, toggleGenre, addCustomGenre,
-    generate, startConvert, swapMatch, removeResult,
+    generate, startConvert, swapMatch, autofillUnmatched, removeResult,
     likeTrack, fetchUserPlaylists, addToExistingPlaylist,
     saveToSpotify, saveState, restoreState,
   };
