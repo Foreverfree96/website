@@ -436,23 +436,49 @@ export const searchTracks = async (req, res) => {
     const { q, limit = 10 } = req.query;
     if (!q) return res.status(400).json({ message: "Missing query parameter q" });
 
-    // Wait out short rate limits
+    // If rate-limited, return empty immediately — don't block the UI
     if (Date.now() < _rateLimitedUntil) {
-      const waitMs = _rateLimitedUntil - Date.now();
-      if (waitMs > 5000) return res.json({ tracks: [] }); // don't block search UI
-      await new Promise(r => setTimeout(r, waitMs + 100));
+      const retryAfter = Math.ceil((_rateLimitedUntil - Date.now()) / 1000);
+      return res.status(429).json({ tracks: [], retryAfter, message: 'Rate limited' });
     }
 
+    // Try user token first, then client credentials
     let token;
     const result = await getValidToken(req.user.id, false);
-    token = result.error ? await getClientCredToken() : result.accessToken;
+    token = result.error ? null : result.accessToken;
 
-    const r = await axios.get("https://api.spotify.com/v1/search", {
-      params: { q, type: "track", limit: Math.min(Number(limit), 50) },
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const doSearch = async (t) => {
+      const r = await axios.get("https://api.spotify.com/v1/search", {
+        params: { q, type: "track", limit: Math.min(Number(limit), 50) },
+        headers: { Authorization: `Bearer ${t}` },
+      });
+      return r.data.tracks?.items || [];
+    };
 
-    const tracks = (r.data.tracks?.items || []).map((t) => ({
+    let items;
+    try {
+      items = await doSearch(token || await getClientCredToken());
+    } catch (e) {
+      if (e.response?.status === 429) {
+        setRateLimit(e.response.headers?.['retry-after']);
+        // Fallback to client credentials if user token was rate-limited
+        if (token) {
+          try { items = await doSearch(await getClientCredToken()); }
+          catch { items = []; }
+        } else {
+          const retryAfter = Math.ceil((_rateLimitedUntil - Date.now()) / 1000);
+          return res.status(429).json({ tracks: [], retryAfter, message: 'Rate limited — try again shortly' });
+        }
+      } else if (e.response?.status === 401 && token) {
+        // User token expired, try client creds
+        try { items = await doSearch(await getClientCredToken()); }
+        catch { items = []; }
+      } else {
+        throw e;
+      }
+    }
+
+    const tracks = (items || []).map((t) => ({
       id:          t.id,
       uri:         t.uri,
       name:        t.name,
@@ -465,6 +491,10 @@ export const searchTracks = async (req, res) => {
     res.json({ tracks });
   } catch (err) {
     console.error("❌ Spotify search error:", err.response?.data || err.message);
+    if (err.response?.status === 429) {
+      setRateLimit(err.response.headers?.['retry-after']);
+      return res.status(429).json({ tracks: [], message: 'Rate limited — try again shortly' });
+    }
     res.status(err.response?.status || 500).json({ message: "Search failed" });
   }
 };

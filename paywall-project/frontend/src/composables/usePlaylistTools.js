@@ -150,41 +150,52 @@ export function usePlaylistTools() {
   };
 
   // ── Seed track search ───────────────────────────────────────────────────
+  let _searchRateLimitUntil = 0;
+
   const searchSeeds = (query) => {
     searchQuery.value = query;
     searchError.value = '';
     clearTimeout(_searchDebounce);
     if (!query.trim()) { searchResults.value = []; searchLoading.value = false; return; }
+
+    // Don't spam requests during rate limit
+    if (Date.now() < _searchRateLimitUntil) {
+      searchError.value = 'Rate limited — wait a moment';
+      return;
+    }
+
     searchLoading.value = true;
     _searchDebounce = setTimeout(async () => {
+      // Re-check query hasn't been cleared during debounce
+      if (!searchQuery.value.trim()) { searchLoading.value = false; return; }
       try {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 10000);
-        const res = await fetch(`${API}/api/spotify/search?q=${encodeURIComponent(query)}&limit=8`, {
+        const res = await fetch(`${API}/api/spotify/search?q=${encodeURIComponent(searchQuery.value)}&limit=8`, {
           headers: headers(),
           signal: controller.signal,
         });
         clearTimeout(timeout);
-        if (!res.ok) {
-          const msg = res.status === 401 ? 'Login required' : `Search failed (${res.status})`;
-          searchError.value = msg;
+        if (res.status === 429) {
+          const data = await res.json().catch(() => ({}));
+          const retryAfter = (data.retryAfter || 5) * 1000;
+          _searchRateLimitUntil = Date.now() + retryAfter;
+          searchError.value = 'Rate limited — wait a moment';
           searchResults.value = [];
-          console.error('Seed search error:', res.status);
+        } else if (!res.ok) {
+          searchError.value = res.status === 401 ? 'Login required' : `Search failed (${res.status})`;
+          searchResults.value = [];
         } else {
           const data = await res.json();
           searchResults.value = data.tracks || [];
-          searchError.value = '';
-          if (!searchResults.value.length && query.trim()) {
-            searchError.value = 'No results found';
-          }
+          searchError.value = searchResults.value.length ? '' : 'No results found';
         }
       } catch (err) {
         searchError.value = err.name === 'AbortError' ? 'Search timed out' : 'Search failed — check connection';
         searchResults.value = [];
-        console.error('Seed search error:', err.message);
       }
       searchLoading.value = false;
-    }, 300);
+    }, 600);
   };
 
   const addSeed = (track) => {
