@@ -369,11 +369,18 @@ export const getPlaylistTracks = async (req, res) => {
         // 403 = token lacks playlist-read-private scope, fall through to parent object
       }
 
-      // 2. GET /v1/playlists/{id} — parent object, no scope needed for public playlists
+      // 2. GET /v1/playlists/{id} — parent object, then paginate remaining tracks
       try {
         const r = await axios.get(`https://api.spotify.com/v1/playlists/${playlistId}`, { headers: auth });
-        const items = parseItems(r.data.tracks || {});
-        if (items.length) return cacheAndReturn(items);
+        const firstItems = parseItems(r.data.tracks || {});
+        // Paginate remaining pages if the playlist has more tracks
+        const nextUrl = r.data.tracks?.next || null;
+        let allItems = firstItems;
+        if (nextUrl) {
+          const remaining = await fetchAllPages(nextUrl, auth);
+          allItems = allItems.concat(remaining);
+        }
+        if (allItems.length) return cacheAndReturn(allItems);
       } catch (err) {
         if (err.response?.status === 429) setRateLimit(err.response.headers?.['retry-after']);
         if (err.response?.status !== 403) console.error("❌ Spotify GET playlist failed:", err.response?.status);

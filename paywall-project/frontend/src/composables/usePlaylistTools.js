@@ -513,6 +513,9 @@ export function usePlaylistTools() {
         const matched = matchedTracks.value.filter(m => m.confidence !== 'none').length;
         bgStatus.value = `Done! ${matched}/${matchedTracks.value.length} matched`;
         bgDone.value = true;
+        if (matchData.quotaExhausted) {
+          error.value = 'YouTube API quota reached — some tracks could not be searched. Unmatched tracks can be autofilled later.';
+        }
       }
       _convertAbort = null;
       _persistResults();

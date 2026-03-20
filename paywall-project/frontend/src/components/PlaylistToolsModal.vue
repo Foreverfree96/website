@@ -217,7 +217,7 @@
               <!-- Match results -->
               <div v-if="pt.matchedTracks.value.length" class="pt-results">
                 <div class="pt-results-header">
-                  <span>{{ matchStats.exact }} exact, {{ matchStats.close }} close{{ matchStats.similar ? `, ${matchStats.similar} similar` : '' }}{{ matchStats.autofill ? `, ${matchStats.autofill} autofilled` : '' }}, {{ matchStats.none }} unmatched</span>
+                  <span>{{ matchStats.total }} tracks: {{ matchStats.exact }} exact, {{ matchStats.close }} close{{ matchStats.similar ? `, ${matchStats.similar} similar` : '' }}{{ matchStats.autofill ? `, ${matchStats.autofill} autofilled` : '' }}, {{ matchStats.none }} unmatched</span>
                   <button
                     v-if="matchStats.none > 0"
                     class="pt-autofill-btn"
@@ -465,6 +465,7 @@ const detectedPlatform = computed(() => {
 const matchStats = computed(() => {
   const m = pt.matchedTracks.value;
   return {
+    total:    m.length,
     exact:    m.filter((x) => x.confidence === 'exact').length,
     close:    m.filter((x) => x.confidence === 'close' || x.confidence === 'manual').length,
     similar:  m.filter((x) => x.confidence === 'similar').length,

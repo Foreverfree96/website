@@ -238,19 +238,30 @@ export const matchYoutubeTracks = async (req, res) => {
     const startTime = Date.now();
     const TIMEOUT_MS = 290000; // ~5 min for large playlists (up to 1000 tracks)
 
+    let _quotaExhausted = false;
+
     const searchYT = async (query) => {
+      if (_quotaExhausted) return [];
       try {
         const r = await axios.get(`${BASE}/search`, {
           params: {
             part: "snippet",
             type: "video",
             q: query,
-            maxResults: 15,
+            maxResults: 10,
             key: API_KEY(),
           },
         });
         return r.data.items || [];
       } catch (e) {
+        if (e.response?.status === 403) {
+          const reason = e.response?.data?.error?.errors?.[0]?.reason || '';
+          if (reason === 'quotaExceeded' || reason === 'dailyLimitExceeded' || reason === 'rateLimitExceeded') {
+            console.error('❌ YouTube API quota exhausted — stopping match');
+            _quotaExhausted = true;
+            return [];
+          }
+        }
         console.error(`❌ YouTube search failed for "${query}":`, e.response?.status || e.message);
         return [];
       }
@@ -273,7 +284,7 @@ export const matchYoutubeTracks = async (req, res) => {
         queries.push(`${title} audio`);
         queries.push(title);
       }
-      const maxQ = capped.length > 200 ? 2 : capped.length > 50 ? 3 : 4;
+      const maxQ = capped.length > 200 ? 1 : capped.length > 50 ? 2 : 3;
       const uniqueQueries = [...new Set(queries)].slice(0, maxQ);
 
       let allItems = [];
@@ -360,8 +371,9 @@ export const matchYoutubeTracks = async (req, res) => {
     const BATCH = capped.length > 200 ? 10 : capped.length > 50 ? 8 : 5;
     const DELAY = capped.length > 200 ? 100 : 300;
     for (let i = 0; i < capped.length; i += BATCH) {
-      if (Date.now() - startTime > TIMEOUT_MS) {
-        console.log(`⏱ YouTube match timeout after ${matches.length}/${capped.length} tracks`);
+      if (_quotaExhausted || Date.now() - startTime > TIMEOUT_MS) {
+        const reason = _quotaExhausted ? 'quota exhausted' : 'timeout';
+        console.log(`⏱ YouTube match stopped (${reason}) after ${matches.length}/${capped.length} tracks`);
         // Fill remaining with no-match
         for (let j = i; j < capped.length; j++) {
           matches.push({ source: capped[j], bestMatch: null, confidence: "none", alternatives: [] });
@@ -376,8 +388,8 @@ export const matchYoutubeTracks = async (req, res) => {
 
     const exact = matches.filter(m => m.confidence === 'exact').length;
     const close = matches.filter(m => m.confidence === 'close').length;
-    console.log(`✅ YouTube matched ${capped.length} tracks: ${exact} exact, ${close} close, ${capped.length - exact - close} none`);
-    res.json({ matches });
+    console.log(`✅ YouTube matched ${capped.length} tracks: ${exact} exact, ${close} close, ${capped.length - exact - close} none${_quotaExhausted ? ' (quota exhausted)' : ''}`);
+    res.json({ matches, quotaExhausted: _quotaExhausted });
   } catch (err) {
     console.error("❌ YouTube match error:", err.response?.data || err.message);
     res.status(500).json({ message: "Matching failed" });
