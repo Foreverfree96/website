@@ -767,49 +767,55 @@ export function usePlaylistTools() {
     const isYt = convertDirection.value === 'spotify-to-yt';
     let filled = 0;
 
-    // Process in small batches to avoid hammering the API
-    const BATCH = 3;
-    for (let b = 0; b < noneIndices.length; b += BATCH) {
-      const batch = noneIndices.slice(b, b + BATCH);
-      await Promise.all(batch.map(async (idx) => {
-        const m = matchedTracks.value[idx];
-        const q = [m.source.title, m.source.artist || m.source.channelTitle]
-          .filter(Boolean).join(' ').trim();
-        if (!q) return;
+    // Process one at a time to avoid rate limiting
+    for (let b = 0; b < noneIndices.length; b++) {
+      const idx = noneIndices[b];
+      const m = matchedTracks.value[idx];
+      const q = [m.source.title, m.source.artist || m.source.channelTitle]
+        .filter(Boolean).join(' ').trim();
+      if (!q) { autofillProgress.value = `${b + 1}/${noneIndices.length}`; continue; }
 
-        try {
-          const endpoint = isYt
-            ? `${API}/api/youtube/search?q=${encodeURIComponent(q)}&limit=5`
-            : `${API}/api/spotify/search?q=${encodeURIComponent(q)}&limit=5`;
-          const res = await fetch(endpoint, { headers: headers() });
-          if (!res.ok) return;
-          const data = await res.json();
+      try {
+        const endpoint = isYt
+          ? `${API}/api/youtube/search?q=${encodeURIComponent(q)}&limit=5`
+          : `${API}/api/spotify/search?q=${encodeURIComponent(q)}&limit=5`;
+        const res = await fetch(endpoint, { headers: headers() });
+        if (res.status === 429) {
+          // Wait and retry once
+          await new Promise(r => setTimeout(r, 5000));
+          const retry = await fetch(endpoint, { headers: headers() });
+          if (!retry.ok) { autofillProgress.value = `${b + 1}/${noneIndices.length}`; continue; }
+          var data = await retry.json();
+        } else if (!res.ok) {
+          autofillProgress.value = `${b + 1}/${noneIndices.length}`; continue;
+        } else {
+          var data = await res.json();
+        }
 
-          let top = null;
-          if (isYt) {
-            const items = data.items || [];
-            if (items.length) top = { ...items[0], url: `https://www.youtube.com/watch?v=${items[0].videoId}` };
-          } else {
-            const tracks = data.tracks || [];
-            if (tracks.length) top = tracks[0];
-          }
+        let top = null;
+        if (isYt) {
+          const items = data.items || [];
+          if (items.length) top = { ...items[0], url: `https://www.youtube.com/watch?v=${items[0].videoId}` };
+        } else {
+          const tracks = data.tracks || [];
+          if (tracks.length) top = tracks[0];
+        }
 
-          if (top) {
-            matchedTracks.value[idx] = {
-              ...matchedTracks.value[idx],
-              bestMatch: top,
-              confidence: 'autofill',
-              alternatives: isYt
-                ? (data.items || []).slice(1, 5).map(t => ({ ...t, url: `https://www.youtube.com/watch?v=${t.videoId}` }))
-                : (data.tracks || []).slice(1, 5),
-            };
-            filled++;
-          }
-        } catch { /* skip failed searches */ }
-      }));
-      autofillProgress.value = `${Math.min(b + BATCH, noneIndices.length)}/${noneIndices.length}`;
-      // Small delay between batches
-      if (b + BATCH < noneIndices.length) await new Promise(r => setTimeout(r, 400));
+        if (top) {
+          matchedTracks.value[idx] = {
+            ...matchedTracks.value[idx],
+            bestMatch: top,
+            confidence: 'autofill',
+            alternatives: isYt
+              ? (data.items || []).slice(1, 5).map(t => ({ ...t, url: `https://www.youtube.com/watch?v=${t.videoId}` }))
+              : (data.tracks || []).slice(1, 5),
+          };
+          filled++;
+        }
+      } catch { /* skip failed searches */ }
+      autofillProgress.value = `${b + 1}/${noneIndices.length}`;
+      // Delay between each search to avoid rate limiting
+      if (b < noneIndices.length - 1) await new Promise(r => setTimeout(r, 600));
     }
 
     // Force reactivity

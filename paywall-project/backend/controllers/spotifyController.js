@@ -856,6 +856,7 @@ export const createPlaylist = async (req, res) => {
       );
       playlistId = r.data.id;
     } catch (err) {
+      console.error(`❌ Spotify create playlist failed:`, err.response?.status, err.response?.data);
       if (err.response?.status === 403) {
         return res.status(403).json({
           error: "scope_missing",
