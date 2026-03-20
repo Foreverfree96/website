@@ -469,11 +469,8 @@ export const searchTracks = async (req, res) => {
       return res.status(429).json({ tracks: [], retryAfter, message: 'Rate limited' });
     }
 
-    // Try user token first, then client credentials
-    let token;
-    const result = await getValidToken(req.user.id, false);
-    token = result.error ? null : result.accessToken;
-
+    // Always use client credentials for search — keeps it on a separate
+    // rate limit bucket from generate/match (which use the user token)
     const doSearch = async (t) => {
       const r = await axios.get("https://api.spotify.com/v1/search", {
         params: { q, type: "track", limit: Math.min(Number(limit), 50) },
@@ -484,22 +481,28 @@ export const searchTracks = async (req, res) => {
 
     let items;
     try {
-      items = await doSearch(token || await getClientCredToken());
+      items = await doSearch(await getClientCredToken());
     } catch (e) {
       if (e.response?.status === 429) {
-        const secs = Math.min(parseInt(e.response.headers?.['retry-after'] || '5', 10), 10);
+        const secs = Math.min(parseInt(e.response.headers?.['retry-after'] || '5', 10), 30);
         _searchRateLimitUntil = Date.now() + secs * 1000;
-        // Fallback to client credentials if user token was rate-limited
-        if (token) {
-          try { items = await doSearch(await getClientCredToken()); }
-          catch { items = []; }
-        } else {
+        // Fallback to user token if client creds are rate-limited
+        try {
+          const result = await getValidToken(req.user.id, false);
+          if (!result.error) {
+            items = await doSearch(result.accessToken);
+          } else {
+            return res.status(429).json({ tracks: [], retryAfter: secs, message: 'Rate limited — try again shortly' });
+          }
+        } catch {
           return res.status(429).json({ tracks: [], retryAfter: secs, message: 'Rate limited — try again shortly' });
         }
       } else if (e.response?.status === 401 || e.response?.status === 403) {
-        // Token expired/invalid — try client creds
-        try { items = await doSearch(await getClientCredToken()); }
-        catch { items = []; }
+        try {
+          const result = await getValidToken(req.user.id, false);
+          if (!result.error) items = await doSearch(result.accessToken);
+          else items = [];
+        } catch { items = []; }
       } else {
         console.error('❌ Search unexpected error:', e.response?.status || e.message);
         items = [];
