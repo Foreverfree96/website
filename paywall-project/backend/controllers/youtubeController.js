@@ -221,8 +221,12 @@ const similarity = (a, b) => {
 // Clean Spotify artist names for better YouTube search
 const cleanArtistForYT = (artist) => {
   if (!artist) return "";
-  // Take only the first artist from comma-separated list
-  return artist.split(",")[0].trim();
+  return artist
+    .split(",")[0]
+    .replace(/\s*-\s*topic$/i, "")
+    .replace(/\s*VEVO$/i, "")
+    .replace(/\s*Official$/i, "")
+    .trim();
 };
 
 export const matchYoutubeTracks = async (req, res) => {
@@ -248,7 +252,7 @@ export const matchYoutubeTracks = async (req, res) => {
             part: "snippet",
             type: "video",
             q: query,
-            maxResults: 10,
+            maxResults: 15,
             key: API_KEY(),
           },
         });
@@ -268,31 +272,39 @@ export const matchYoutubeTracks = async (req, res) => {
     };
 
     const matchOne = async (src) => {
-      const title = (src.title || "").trim();
+      const rawTitle = (src.title || "").trim();
+      const title = cleanTitle(rawTitle);
       const artist = cleanArtistForYT(src.artist || "");
       if (!title && !artist) return { source: src, bestMatch: null, confidence: "none", alternatives: [] };
 
       // Build multiple search queries for better coverage
       const queries = [];
       if (title && artist) {
-        queries.push(`${artist} ${title}`);           // Most natural: "Drake Hotline Bling"
-        queries.push(`${title} ${artist}`);           // Reversed
-        queries.push(`${artist} - ${title}`);         // Dash format common on YouTube
-        queries.push(`${title} ${artist} audio`);     // Audio version
+        queries.push(`${artist} ${title}`);               // Most natural: "Drake Hotline Bling"
+        queries.push(`${artist} - ${title}`);              // Dash format common on YouTube
+        queries.push(`${title} ${artist}`);                // Reversed
+        queries.push(`${artist} ${title} official audio`); // Official audio
+        queries.push(`${artist} ${title} lyrics`);         // Lyrics video (often available)
       }
       if (title) {
-        queries.push(`${title} audio`);
+        queries.push(`${title} official audio`);
         queries.push(title);
       }
-      const maxQ = capped.length > 200 ? 1 : capped.length > 50 ? 2 : 3;
+      // Short title + artist (helps with long titles)
+      if (title && artist) {
+        const shortTitle = title.split(/\s+/).slice(0, 3).join(' ');
+        if (shortTitle !== title) queries.push(`${artist} ${shortTitle}`);
+      }
+      const maxQ = capped.length > 500 ? 1 : capped.length > 200 ? 2 : capped.length > 50 ? 3 : 4;
       const uniqueQueries = [...new Set(queries)].slice(0, maxQ);
 
       let allItems = [];
       for (const query of uniqueQueries) {
+        if (_quotaExhausted) break;
         const items = await searchYT(query);
         allItems = allItems.concat(items);
-        // If we got good results, skip remaining queries
-        if (items.length >= 5) break;
+        // Only stop early if we have plenty of results from 2+ queries
+        if (allItems.length >= 10 && uniqueQueries.indexOf(query) >= 1) break;
       }
 
       // Deduplicate by videoId

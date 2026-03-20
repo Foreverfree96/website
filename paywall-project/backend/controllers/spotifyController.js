@@ -1014,14 +1014,10 @@ export const matchTracks = async (req, res) => {
       // Build multiple interpretations of what the title/artist might be
       const interpretations = [];
       if (extracted) {
-        // "Artist - Title" interpretation
         interpretations.push({ title: extracted.side2, artist: artist || extracted.side1 });
-        // "Title - Artist" interpretation
         interpretations.push({ title: extracted.side1, artist: artist || extracted.side2 });
       }
-      // Original as-is
       interpretations.push({ title: cleaned, artist });
-      // If no artist at all, still try
       if (!artist && !extracted) interpretations.push({ title: cleaned, artist: "" });
 
       // Dedupe interpretations
@@ -1033,29 +1029,32 @@ export const matchTracks = async (req, res) => {
         return true;
       });
 
-      // Build search queries — plain text first (most reliable), operators as fallback
+      // Build search queries — multiple strategies for maximum coverage
       const queries = [];
       for (const interp of uniqueInterps) {
-        // Plain text queries first — Spotify matches these broadly
         if (interp.title && interp.artist) {
+          // Most reliable: plain "artist title"
+          queries.push(`${interp.artist} ${interp.title}`);
+          // Reversed: "title artist"
           queries.push(`${interp.title} ${interp.artist}`);
-        }
-      }
-      // Title-only fallback
-      for (const interp of uniqueInterps) {
-        if (interp.title) queries.push(interp.title);
-      }
-      // Structured operators last — strict but precise when they work
-      for (const interp of uniqueInterps) {
-        if (interp.title && interp.artist) {
+          // Structured: track: + artist: operators
           queries.push(`track:${interp.title} artist:${interp.artist}`);
         }
       }
-      // Raw cleaned title as last resort
+      // Title-only queries (catches cases where artist name is wrong/noisy)
+      for (const interp of uniqueInterps) {
+        if (interp.title) queries.push(interp.title);
+      }
+      // First few words of title + artist (helps with long/garbled titles)
+      if (cleaned && artist) {
+        const shortTitle = cleaned.split(/\s+/).slice(0, 3).join(' ');
+        if (shortTitle !== cleaned) queries.push(`${artist} ${shortTitle}`);
+      }
+      // Raw title as last resort
       if (!queries.includes(cleaned)) queries.push(cleaned);
 
-      // Dedupe queries — for large playlists use fewer queries per track
-      const maxQ = capped.length > 200 ? 2 : capped.length > 50 ? 4 : 6;
+      // Dedupe queries — scale with playlist size
+      const maxQ = capped.length > 500 ? 2 : capped.length > 200 ? 3 : capped.length > 50 ? 5 : 7;
       const uniqueQueries = [...new Set(queries)].slice(0, maxQ);
 
       if (!uniqueQueries.length) return { source: src, bestMatch: null, confidence: "none", alternatives: [] };
@@ -1115,10 +1114,9 @@ export const matchTracks = async (req, res) => {
             };
           });
           allCandidates = allCandidates.concat(candidates);
-          // Stop early if we have enough candidates (always run at least 2 queries for swap variety)
+          // Stop early only if we have a very strong match AND enough alternatives
           const queryIdx = uniqueQueries.indexOf(query);
-          if (queryIdx >= 1 && candidates.some(c => c.score >= 0.7)) break;
-          if (allCandidates.length >= 8 && candidates.some(c => c.score >= 0.5)) break;
+          if (queryIdx >= 1 && allCandidates.length >= 6 && candidates.some(c => c.score >= 0.75)) break;
         }
       }
 
