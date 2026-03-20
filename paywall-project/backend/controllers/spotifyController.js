@@ -804,10 +804,10 @@ const cleanTitle = (title) =>
     .replace(/\s*[\(\[]ft\.?[^\)\]]*[\)\]]/gi, "")
     .replace(/\s*[\(\[]prod\.?[^\)\]]*[\)\]]/gi, "")
     .replace(/\s*[\(\[]with\s+[^\)\]]*[\)\]]/gi, "")
-    // Non-bracketed feat/ft patterns
-    .replace(/\s+feat\.?\s+.*/i, "")
-    .replace(/\s+ft\.?\s+.*/i, "")
-    .replace(/\s+prod\.?\s+(by\s+)?.*/i, "")
+    // Non-bracketed feat/ft — only strip the featured artist part, keep before it
+    .replace(/\s+feat\.?\s+[^-|]+/i, "")
+    .replace(/\s+ft\.?\s+[^-|]+/i, "")
+    .replace(/\s+prod\.?\s+(by\s+)?[^-|]+/i, "")
     // Channel/platform noise
     .replace(/\s*-\s*topic$/i, "")
     .replace(/\s*\|\s*.*$/, "")
@@ -899,18 +899,18 @@ export const matchTracks = async (req, res) => {
     const searchSpotify = async (query) => {
       try {
         const r = await axios.get("https://api.spotify.com/v1/search", {
-          params: { q: query, type: "track", limit: 8 },
+          params: { q: query, type: "track", limit: 20 },
           headers: auth,
         });
         return r.data.tracks?.items || [];
       } catch (e) {
         if (e.response?.status === 400) {
-          // Retry with cleaned query (explicit content blocked by client creds)
+          // Retry with cleaned query (strip special chars that Spotify rejects)
           const clean = query.replace(/[^\w\s'-]/g, '').trim();
           if (clean && clean !== query) {
             try {
               const r2 = await axios.get("https://api.spotify.com/v1/search", {
-                params: { q: clean, type: "track", limit: 8 },
+                params: { q: clean, type: "track", limit: 20 },
                 headers: auth,
               });
               return r2.data.tracks?.items || [];
@@ -978,20 +978,29 @@ export const matchTracks = async (req, res) => {
         return true;
       });
 
-      // Build search queries from all interpretations
+      // Build search queries — plain text first (most reliable), operators as fallback
       const queries = [];
+      for (const interp of uniqueInterps) {
+        // Plain text queries first — Spotify matches these broadly
+        if (interp.title && interp.artist) {
+          queries.push(`${interp.title} ${interp.artist}`);
+        }
+      }
+      // Title-only fallback
+      for (const interp of uniqueInterps) {
+        if (interp.title) queries.push(interp.title);
+      }
+      // Structured operators last — strict but precise when they work
       for (const interp of uniqueInterps) {
         if (interp.title && interp.artist) {
           queries.push(`track:${interp.title} artist:${interp.artist}`);
-          queries.push(`${interp.title} ${interp.artist}`);
         }
-        if (interp.title) queries.push(interp.title);
       }
-      // Also try the raw cleaned title as last resort
+      // Raw cleaned title as last resort
       if (!queries.includes(cleaned)) queries.push(cleaned);
 
-      // Dedupe queries
-      const uniqueQueries = [...new Set(queries)].slice(0, 5);
+      // Dedupe queries, allow more attempts
+      const uniqueQueries = [...new Set(queries)].slice(0, 6);
 
       if (!uniqueQueries.length) return { source: src, bestMatch: null, confidence: "none", alternatives: [] };
 
@@ -1050,8 +1059,8 @@ export const matchTracks = async (req, res) => {
             };
           });
           allCandidates = allCandidates.concat(candidates);
-          // If we got a great match, stop searching
-          if (candidates.some(c => c.score >= 0.85)) break;
+          // If we got a great match AND have run at least 2 queries, stop
+          if (allCandidates.length >= 5 && candidates.some(c => c.score >= 0.85)) break;
         }
       }
 
@@ -1062,12 +1071,12 @@ export const matchTracks = async (req, res) => {
 
       const best = allCandidates[0] || null;
       const confidence = !best ? "none"
-        : best.score >= 0.7 ? "exact"
-        : best.score >= 0.4 ? "close"
-        : best.score >= 0.2 ? "similar"
+        : best.score >= 0.65 ? "exact"
+        : best.score >= 0.35 ? "close"
+        : best.score >= 0.1 ? "similar"
         : "none";
 
-      // Always return alternatives (even for "none") so user can swap
+      // Always return alternatives so user can swap — even low scores are useful as options
       return { source: src, bestMatch: best, confidence, alternatives: allCandidates.slice(1, 5) };
     };
 

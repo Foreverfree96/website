@@ -151,9 +151,9 @@ const cleanTitle = (title) =>
     .replace(/\s*[\(\[]ft\.?[^\)\]]*[\)\]]/gi, "")
     .replace(/\s*[\(\[]prod\.?[^\)\]]*[\)\]]/gi, "")
     .replace(/\s*[\(\[]with\s+[^\)\]]*[\)\]]/gi, "")
-    .replace(/\s+feat\.?\s+.*/i, "")
-    .replace(/\s+ft\.?\s+.*/i, "")
-    .replace(/\s+prod\.?\s+(by\s+)?.*/i, "")
+    .replace(/\s+feat\.?\s+[^-|]+/i, "")
+    .replace(/\s+ft\.?\s+[^-|]+/i, "")
+    .replace(/\s+prod\.?\s+(by\s+)?[^-|]+/i, "")
     .replace(/\s*-\s*topic$/i, "")
     .replace(/\s*\|\s*.*$/, "")
     .replace(/\s*\/\/\s*.*$/, "")
@@ -244,9 +244,8 @@ export const matchYoutubeTracks = async (req, res) => {
           params: {
             part: "snippet",
             type: "video",
-            videoCategoryId: "10",
             q: query,
-            maxResults: 8,
+            maxResults: 15,
             key: API_KEY(),
           },
         });
@@ -265,11 +264,13 @@ export const matchYoutubeTracks = async (req, res) => {
       // Build multiple search queries for better coverage
       const queries = [];
       if (title && artist) {
-        queries.push(`${title} ${artist}`);
-        queries.push(`${title} ${artist} official audio`);
+        queries.push(`${artist} ${title}`);           // Most natural: "Drake Hotline Bling"
+        queries.push(`${title} ${artist}`);           // Reversed
+        queries.push(`${artist} - ${title}`);         // Dash format common on YouTube
+        queries.push(`${title} ${artist} audio`);     // Audio version
       }
       if (title) {
-        queries.push(`${title} official audio`);
+        queries.push(`${title} audio`);
         queries.push(title);
       }
       const uniqueQueries = [...new Set(queries)].slice(0, 4);
@@ -292,7 +293,8 @@ export const matchYoutubeTracks = async (req, res) => {
       });
 
       const allCandidates = items.map((i) => {
-        const ytTitle   = cleanTitle(i.snippet.title || "");
+        const rawYtTitle = i.snippet.title || "";
+        const ytTitle   = cleanTitle(rawYtTitle);
         const channelName = (i.snippet.channelTitle || "")
           .replace(/\s*-\s*topic$/i, "")
           .replace(/\s*VEVO$/i, "")
@@ -300,12 +302,32 @@ export const matchYoutubeTracks = async (req, res) => {
           .replace(/\s*Music$/i, "")
           .trim();
 
-        // Check title similarity — also try "title artist" combined against YT title
+        // Check title similarity multiple ways
         const titleSim = similarity(title, ytTitle);
+        // Try "title artist" combined against YT title (YT titles often include both)
         const combinedSim = artist ? similarity(`${title} ${artist}`, ytTitle) : 0;
-        const bestTitleSim = Math.max(titleSim, combinedSim);
+        // Try "artist title" order too
+        const reverseSim = artist ? similarity(`${artist} ${title}`, ytTitle) : 0;
+        // Check if the YT title contains "Artist - Song" pattern and extract
+        const ytParts = ytTitle.match(/^(.+?)\s*[-–—]\s+(.+)$/);
+        let parsedSim = 0;
+        if (ytParts) {
+          // Try both orders: "Artist - Song" and "Song - Artist"
+          parsedSim = Math.max(
+            similarity(title, ytParts[2]) * 0.7 + (artist ? similarity(artist, ytParts[1]) * 0.3 : 0.15),
+            similarity(title, ytParts[1]) * 0.7 + (artist ? similarity(artist, ytParts[2]) * 0.3 : 0.15)
+          );
+        }
+        const bestTitleSim = Math.max(titleSim, combinedSim, reverseSim, parsedSim);
 
-        const artistSim = artist ? similarity(artist, channelName) : 0.5;
+        // Artist similarity — check channel name and also if artist appears in YT title
+        let artistSim = 0.5;
+        if (artist) {
+          const channelSim = similarity(artist, channelName);
+          const inTitleSim = normalize(ytTitle).includes(normalize(artist)) ? 0.8 : 0;
+          artistSim = Math.max(channelSim, inTitleSim);
+        }
+
         const score = artist
           ? bestTitleSim * 0.6 + artistSim * 0.4
           : bestTitleSim * 0.9 + 0.1;
@@ -323,9 +345,9 @@ export const matchYoutubeTracks = async (req, res) => {
 
       const best = allCandidates[0] || null;
       const confidence = !best ? "none"
-        : best.score >= 0.7 ? "exact"
-        : best.score >= 0.4 ? "close"
-        : best.score >= 0.2 ? "similar"
+        : best.score >= 0.6 ? "exact"
+        : best.score >= 0.3 ? "close"
+        : best.score >= 0.1 ? "similar"
         : "none";
 
       // Always return alternatives so user can swap
