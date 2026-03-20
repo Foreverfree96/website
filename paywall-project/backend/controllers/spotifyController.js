@@ -646,7 +646,7 @@ export const generatePlaylist = async (req, res) => {
     }
 
     const startTime = Date.now();
-    const TIMEOUT_MS = 25000;
+    const TIMEOUT_MS = 120000; // 2 min — allows time for rate-limit waits
     const seenIds = new Set(uniqueIds); // exclude seed tracks from results
     const collected = [];
 
@@ -689,12 +689,12 @@ export const generatePlaylist = async (req, res) => {
     console.log(`   Queries (${uniqueQueries.length}): ${uniqueQueries.slice(0, 6).join(' | ')}${uniqueQueries.length > 6 ? ' ...' : ''}`);
     console.log(`   perQuery=${perQuery}, rateLimited=${Date.now() < _rateLimitedUntil ? 'YES until ' + new Date(_rateLimitedUntil).toISOString() : 'no'}`);
 
-    // Resilient search — on ANY failure, try switching tokens before giving up
-    const doSearch = async (query, retries = 2) => {
-      let _switchedToken = false; // reset per-query so each query can try switching
+    // Resilient search — switch tokens on 429, wait for rate limit to clear
+    const doSearch = async (query) => {
+      let _switchedToken = false;
       const offset = Math.floor(Math.random() * 5);
       const searchLimit = Math.min(perQuery + 5, 50);
-      for (let attempt = 0; attempt <= retries; attempt++) {
+      for (let attempt = 0; attempt < 5; attempt++) {
         try {
           const r = await axios.get("https://api.spotify.com/v1/search", {
             params: { q: query, type: "track", limit: searchLimit, offset },
@@ -703,7 +703,7 @@ export const generatePlaylist = async (req, res) => {
           return r.data.tracks?.items || [];
         } catch (e) {
           const status = e.response?.status;
-          console.error(`   ⚠ Search "${query}" attempt ${attempt}: ${status || e.message}`);
+          if (attempt < 2) console.error(`   ⚠ Search "${query}" attempt ${attempt}: ${status || e.message}`);
 
           if (status === 400) {
             const clean = query.replace(/[^\w\s'-]/g, '').trim();
@@ -719,21 +719,19 @@ export const generatePlaylist = async (req, res) => {
             return [];
           }
 
-          // On 429/401/403: switch to the OTHER token type and retry
+          // On 429/401/403: switch to the OTHER token type first (free retry, no wait)
           if ((status === 429 || status === 401 || status === 403) && !_switchedToken) {
             try {
               if (usingClientCreds) {
-                // Currently on client creds and rate-limited — try user token
                 const userResult = await getValidToken(req.user.id, false);
                 if (!userResult.error) {
                   console.log(`   Switching to user-token after ${status}`);
                   auth.Authorization = `Bearer ${userResult.accessToken}`;
                   usingClientCreds = false;
                   _switchedToken = true;
-                  continue;
+                  continue; // immediate retry with other token
                 }
               } else {
-                // Currently on user token and rate-limited — try client creds
                 console.log(`   Switching to client-creds after ${status}`);
                 const appToken = await getClientCredToken();
                 auth.Authorization = `Bearer ${appToken}`;
@@ -741,14 +739,16 @@ export const generatePlaylist = async (req, res) => {
                 _switchedToken = true;
                 continue;
               }
-            } catch { /* fallback failed */ }
+            } catch { /* switch failed */ }
           }
 
-          // If still on 429 after token switch, wait and retry
-          if (status === 429 && attempt < retries) {
-            const secs = parseInt(e.response.headers?.['retry-after'] || '3', 10);
+          // Both tokens rate-limited — actually wait for the cooldown
+          if (status === 429 && attempt < 4) {
+            const secs = parseInt(e.response.headers?.['retry-after'] || '5', 10);
+            const waitMs = Math.min(secs, 30) * 1000 + 500;
             setRateLimit(e.response.headers?.['retry-after']);
-            await new Promise(r => setTimeout(r, Math.min(secs, 5) * 1000 + 200));
+            console.log(`   ⏳ Both tokens rate-limited, waiting ${Math.round(waitMs / 1000)}s...`);
+            await new Promise(r => setTimeout(r, waitMs));
             continue;
           }
 
@@ -807,7 +807,7 @@ export const generatePlaylist = async (req, res) => {
       emitProgress(Math.max(queryPct, fillPct), `Found ${collected.length} tracks...`);
 
       if (qi < uniqueQueries.length - 1 && collected.length < limit) {
-        await new Promise(r => setTimeout(r, 200));
+        await new Promise(r => setTimeout(r, 500));
       }
     }
 
@@ -986,7 +986,7 @@ export const matchTracks = async (req, res) => {
 
     const searchSpotify = async (query) => {
       let _switched = false;
-      for (let attempt = 0; attempt < 3; attempt++) {
+      for (let attempt = 0; attempt < 5; attempt++) {
         try {
           const q = attempt === 0 ? query : query.replace(/[^\w\s'-]/g, '').trim();
           if (!q) return [];
@@ -997,9 +997,9 @@ export const matchTracks = async (req, res) => {
           return r.data.tracks?.items || [];
         } catch (e) {
           const status = e.response?.status;
-          if (status === 400 && attempt === 0) continue; // retry with cleaned query
+          if (status === 400 && attempt === 0) continue;
 
-          // On 429/401/403: switch to the OTHER token type and retry
+          // On 429/401/403: switch to the OTHER token type first
           if ((status === 429 || status === 401 || status === 403) && !_switched) {
             try {
               if (usingClientCreds) {
@@ -1020,13 +1020,16 @@ export const matchTracks = async (req, res) => {
             } catch { /* switch failed */ }
           }
 
-          if (status === 429 && attempt < 2) {
-            const secs = parseInt(e.response.headers?.['retry-after'] || '3', 10);
+          // Both tokens rate-limited — wait for cooldown
+          if (status === 429 && attempt < 4) {
+            const secs = parseInt(e.response.headers?.['retry-after'] || '5', 10);
+            const waitMs = Math.min(secs, 30) * 1000 + 500;
             setRateLimit(e.response.headers?.['retry-after']);
-            await new Promise(r => setTimeout(r, Math.min(secs, 5) * 1000 + 200));
+            if (attempt < 2) console.log(`   ⏳ Match: both tokens rate-limited, waiting ${Math.round(waitMs / 1000)}s for "${query}"...`);
+            await new Promise(r => setTimeout(r, waitMs));
             continue;
           }
-          if (attempt === 0 || status !== 400) {
+          if (attempt < 2 && status !== 400) {
             console.error(`❌ Match search failed for "${query}":`, status || e.message);
           }
           return [];
@@ -1213,8 +1216,8 @@ export const matchTracks = async (req, res) => {
     const startTime = Date.now();
     const TIMEOUT_MS = 290000; // ~5 min for large playlists (up to 1000 tracks)
     const matches = [];
-    const BATCH = tracks.length > 200 ? 10 : tracks.length > 50 ? 8 : 5;
-    const DELAY = tracks.length > 200 ? 100 : 200;
+    const BATCH = tracks.length > 200 ? 5 : tracks.length > 50 ? 4 : 3;
+    const DELAY = tracks.length > 200 ? 400 : 600;
     emitProgress(5, `Matching ${tracks.length} tracks...`);
     for (let i = 0; i < tracks.length; i += BATCH) {
       if (Date.now() - startTime > TIMEOUT_MS) {
