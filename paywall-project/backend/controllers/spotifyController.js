@@ -280,25 +280,6 @@ let _rateLimitedUntil   = 0;         // app-wide timestamp — Spotify rate limi
 const MAX_BACKOFF_MS    = 10 * 1000; // cap at 10s regardless of Retry-After
 const PLAYLIST_CACHE_TTL = 6 * 60 * 60 * 1000; // 6 hours
 
-// Spotify's allowed genre seeds for /recommendations endpoint
-const SPOTIFY_GENRE_SEEDS = new Set([
-  'acoustic','afrobeat','alt-rock','alternative','ambient','anime','black-metal','bluegrass',
-  'blues','bossanova','brazil','breakbeat','british','cantopop','chicago-house','children',
-  'chill','classical','club','comedy','country','dance','dancehall','death-metal','deep-house',
-  'detroit-techno','disco','disney','drum-and-bass','dub','dubstep','edm','electro','electronic',
-  'emo','folk','forro','french','funk','garage','german','gospel','goth','grindcore','groove',
-  'grunge','guitar','happy','hard-rock','hardcore','hardstyle','heavy-metal','hip-hop','holidays',
-  'honky-tonk','house','idm','indian','indie','indie-pop','industrial','iranian','j-dance',
-  'j-idol','j-pop','j-rock','jazz','k-pop','kids','latin','latino','malay','mandopop','metal',
-  'metal-misc','metalcore','minimal-techno','movies','mpb','new-age','new-release','opera',
-  'pagode','party','philippines-opm','piano','pop','pop-film','post-dubstep','power-pop',
-  'progressive-house','psych-rock','punk','punk-rock','r-n-b','rainy-day','reggae','reggaeton',
-  'road-trip','rock','rock-n-roll','rockabilly','romance','sad','salsa','samba','sertanejo',
-  'show-tunes','singer-songwriter','ska','sleep','songwriter','soul','soundtracks','spanish',
-  'study','summer','swedish','synth-pop','tango','techno','trance','trip-hop','turkish',
-  'work-out','world-music',
-]);
-
 const setRateLimit = (retryAfterHeader) => {
   const secs = Math.min(parseInt(retryAfterHeader || '5', 10), 10); // cap at 10s
   _rateLimitedUntil = Date.now() + secs * 1000;
@@ -547,13 +528,15 @@ export const searchTracks = async (req, res) => {
 // POST /api/spotify/generate
 // Body: { seedTrackIds: [], seedPlaylistId?, genres: [], limit: 30 }
 //
-// Spotify deprecated /recommendations in Nov 2024. This uses a search-based
-// approach: fetch seed track artists, build varied search queries from
-// artist names + genres, collect and deduplicate results.
+// Search-based playlist generation: fetch seed track artists, build varied
+// search queries from artist names + genres, collect and deduplicate results.
 export const generatePlaylist = async (req, res) => {
   try {
     let { seedTrackIds = [], seedTrackMeta = [], seedPlaylistId, genres = [], limit = 30 } = req.body;
     limit = Math.max(1, Math.min(Number(limit) || 30, 100));
+
+    console.log(`🎵 Generate request: ${seedTrackIds.length} trackIds, ${seedTrackMeta.length} meta, ${genres.length} genres, limit=${limit}, playlist=${seedPlaylistId || 'none'}`);
+    if (seedTrackMeta.length) console.log(`   Meta:`, seedTrackMeta.slice(0, 3).map(m => `${m.name} - ${m.artist}`));
 
     // Prefer user token (no content restrictions); fall back to client creds only if not connected
     const result = await getValidToken(req.user.id, false);
@@ -563,6 +546,7 @@ export const generatePlaylist = async (req, res) => {
       token = await getClientCredToken();
       usingClientCreds = true;
     }
+    console.log(`   Token: ${usingClientCreds ? 'client-creds' : 'user-token'} (${token ? 'valid' : 'NULL'})`);
     const auth = { Authorization: `Bearer ${token}` };
 
     // Clean YouTube channel names helper
@@ -654,6 +638,8 @@ export const generatePlaylist = async (req, res) => {
       });
     }
 
+    console.log(`   Seeds resolved: ${seedArtists.length} artists [${seedArtists.slice(0, 5).join(', ')}], ${uniqueIds.length} trackIds, ${genres.length} genres`);
+
     if (!seedArtists.length && !genres.length && !uniqueIds.length) {
       return res.status(400).json({ message: "Provide at least one seed track or genre" });
     }
@@ -663,163 +649,131 @@ export const generatePlaylist = async (req, res) => {
     const seenIds = new Set(uniqueIds); // exclude seed tracks from results
     const collected = [];
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // PHASE 1: Use Spotify Recommendations API (best results, up to 5 seeds)
-    // ═══════════════════════════════════════════════════════════════════════
-    if (uniqueIds.length || genres.length) {
-      try {
-        const recParams = { limit: Math.min(limit, 100) };
-        // Spotify allows max 5 total seeds across tracks + artists + genres
-        const spotifyGenres = genres.filter(g => SPOTIFY_GENRE_SEEDS.has(g));
-        const seedSlots = 5;
-        let used = 0;
-        if (uniqueIds.length) {
-          recParams.seed_tracks = uniqueIds.slice(0, Math.min(uniqueIds.length, seedSlots)).join(',');
-          used += Math.min(uniqueIds.length, seedSlots);
-        }
-        if (used < seedSlots && spotifyGenres.length) {
-          recParams.seed_genres = spotifyGenres.slice(0, seedSlots - used).join(',');
-          used += Math.min(spotifyGenres.length, seedSlots - used);
-        }
+    // Build diverse search queries — prioritize simple artist names first
+    const queries = [];
 
-        if (recParams.seed_tracks || recParams.seed_genres) {
-          const recRes = await axios.get('https://api.spotify.com/v1/recommendations', {
-            params: recParams, headers: auth,
+    // Simple artist queries first (most reliable)
+    seedArtists.forEach(artist => queries.push(artist));
+
+    // Track name + artist combos (good for finding similar tracks)
+    seedTrackMeta.slice(0, 5).forEach(m => {
+      const name = (m.name || '').replace(/\s*[\(\[].*[\)\]]$/g, '').trim();
+      const artist = cleanArtist(m.artist);
+      if (name && artist) queries.push(`${artist} ${name}`);
+      else if (name) queries.push(name);
+    });
+
+    // Artist + genre cross queries
+    seedArtists.slice(0, 3).forEach(artist => {
+      genres.slice(0, 2).forEach(g => queries.push(`${artist} ${g}`));
+    });
+
+    // Genre-only queries
+    genres.forEach(g => {
+      queries.push(g);
+      queries.push(`${g} hits`);
+      queries.push(`best ${g}`);
+    });
+
+    // Cross-pollination
+    if (seedArtists.length >= 2) queries.push(`${seedArtists[0]} ${seedArtists[1]}`);
+
+    // Deduplicate and cap — allow more queries when we need more tracks
+    const maxQueries = limit > 50 ? 16 : limit > 20 ? 12 : 10;
+    const uniqueQueries = [...new Set(queries)].slice(0, maxQueries);
+    uniqueQueries.sort(() => Math.random() - 0.5);
+
+    const perQuery = Math.ceil((limit + 10) / Math.max(uniqueQueries.length, 1));
+
+    console.log(`   Queries (${uniqueQueries.length}): ${uniqueQueries.slice(0, 6).join(' | ')}${uniqueQueries.length > 6 ? ' ...' : ''}`);
+    console.log(`   perQuery=${perQuery}, rateLimited=${Date.now() < _rateLimitedUntil ? 'YES until ' + new Date(_rateLimitedUntil).toISOString() : 'no'}`);
+
+    // Resilient search — retries on 429, falls back to client creds on auth errors
+    const doSearch = async (query, retries = 2) => {
+      const offset = Math.floor(Math.random() * 5);
+      const searchLimit = Math.min(perQuery + 5, 50);
+      for (let attempt = 0; attempt <= retries; attempt++) {
+        try {
+          const r = await axios.get("https://api.spotify.com/v1/search", {
+            params: { q: query, type: "track", limit: searchLimit, offset },
+            headers: auth,
           });
-          for (const t of (recRes.data.tracks || [])) {
-            if (!t?.id || seenIds.has(t.id)) continue;
-            seenIds.add(t.id);
-            collected.push({
-              id: t.id, uri: t.uri, name: t.name,
-              artist: t.artists?.map(a => a.name).join(', ') || '',
-              album: t.album?.name || '', art: t.album?.images?.[0]?.url || '',
-              duration_ms: t.duration_ms,
-            });
-          }
-          console.log(`🎯 Recommendations API returned ${collected.length} tracks`);
-        }
-      } catch (e) {
-        console.error('❌ Recommendations API failed:', e.response?.status || e.message);
-        // Fall through to search-based approach
-      }
-    }
-
-    // ═══════════════════════════════════════════════════════════════════════
-    // PHASE 2: Search-based generation (fills remaining or handles YT seeds)
-    // ═══════════════════════════════════════════════════════════════════════
-    if (collected.length < limit) {
-      // Build diverse search queries — prioritize simple artist names first
-      const queries = [];
-
-      // Simple artist queries first (most reliable)
-      seedArtists.forEach(artist => queries.push(artist));
-
-      // Track name + artist combos (good for finding similar tracks)
-      seedTrackMeta.slice(0, 5).forEach(m => {
-        const name = (m.name || '').replace(/\s*[\(\[].*[\)\]]$/g, '').trim();
-        const artist = cleanArtist(m.artist);
-        if (name && artist) queries.push(`${artist} ${name}`);
-      });
-
-      // Artist + genre cross queries
-      seedArtists.slice(0, 3).forEach(artist => {
-        genres.slice(0, 2).forEach(g => queries.push(`${artist} ${g}`));
-      });
-
-      // Genre-only queries
-      genres.forEach(g => {
-        queries.push(g);
-        queries.push(`${g} hits`);
-      });
-
-      // Cross-pollination
-      if (seedArtists.length >= 2) queries.push(`${seedArtists[0]} ${seedArtists[1]}`);
-
-      // Deduplicate and cap — allow more queries when we need more tracks
-      const remaining = limit - collected.length;
-      const maxQueries = remaining > 50 ? 14 : remaining > 20 ? 10 : 8;
-      const uniqueQueries = [...new Set(queries)].slice(0, maxQueries);
-      uniqueQueries.sort(() => Math.random() - 0.5);
-
-      const perQuery = Math.ceil((remaining + 10) / Math.max(uniqueQueries.length, 1));
-
-      // Resilient search — retries on 429, falls back to client creds on auth errors
-      const doSearch = async (query, retries = 2) => {
-        const offset = Math.floor(Math.random() * 5); // small offset for variety, don't skip results
-        const searchLimit = Math.min(perQuery + 5, 50);
-        for (let attempt = 0; attempt <= retries; attempt++) {
-          try {
-            const r = await axios.get("https://api.spotify.com/v1/search", {
-              params: { q: query, type: "track", limit: searchLimit, offset },
-              headers: auth,
-            });
-            return r.data.tracks?.items || [];
-          } catch (e) {
-            if (e.response?.status === 400) {
-              const clean = query.replace(/[^\w\s'-]/g, '').trim();
-              if (clean && clean !== query) {
-                try {
-                  const r2 = await axios.get("https://api.spotify.com/v1/search", {
-                    params: { q: clean, type: "track", limit: searchLimit, offset: 0 },
-                    headers: auth,
-                  });
-                  return r2.data.tracks?.items || [];
-                } catch { return []; }
-              }
-              return [];
-            }
-            if (e.response?.status === 429) {
-              const secs = parseInt(e.response.headers?.['retry-after'] || '3', 10);
-              setRateLimit(e.response.headers?.['retry-after']);
-              if (attempt < retries) {
-                await new Promise(r => setTimeout(r, Math.min(secs, 5) * 1000 + 200));
-                continue;
-              }
-            }
-            if ((e.response?.status === 401 || e.response?.status === 403) && !usingClientCreds) {
+          const items = r.data.tracks?.items || [];
+          return items;
+        } catch (e) {
+          console.error(`   ⚠ Search "${query}" attempt ${attempt}: ${e.response?.status || e.message}`);
+          if (e.response?.status === 400) {
+            const clean = query.replace(/[^\w\s'-]/g, '').trim();
+            if (clean && clean !== query) {
               try {
-                const appToken = await getClientCredToken();
-                auth.Authorization = `Bearer ${appToken}`;
-                usingClientCreds = true;
-                continue;
-              } catch { /* client creds also failed */ }
+                const r2 = await axios.get("https://api.spotify.com/v1/search", {
+                  params: { q: clean, type: "track", limit: searchLimit, offset: 0 },
+                  headers: auth,
+                });
+                return r2.data.tracks?.items || [];
+              } catch { return []; }
             }
-            console.error(`❌ Generate search "${query}" failed:`, e.response?.status || e.message);
             return [];
           }
+          if (e.response?.status === 429) {
+            const secs = parseInt(e.response.headers?.['retry-after'] || '3', 10);
+            setRateLimit(e.response.headers?.['retry-after']);
+            if (attempt < retries) {
+              await new Promise(r => setTimeout(r, Math.min(secs, 5) * 1000 + 200));
+              continue;
+            }
+          }
+          if ((e.response?.status === 401 || e.response?.status === 403) && !usingClientCreds) {
+            try {
+              console.log(`   Switching to client-creds after ${e.response?.status}`);
+              const appToken = await getClientCredToken();
+              auth.Authorization = `Bearer ${appToken}`;
+              usingClientCreds = true;
+              continue;
+            } catch (ce) {
+              console.error(`   ❌ Client creds fallback failed:`, ce.message);
+            }
+          }
+          return [];
         }
-        return [];
-      };
+      }
+      return [];
+    };
 
-      for (let qi = 0; qi < uniqueQueries.length; qi++) {
-        if (collected.length >= limit) break;
-        if (Date.now() - startTime > TIMEOUT_MS) {
-          console.log(`⏱ Generate timeout after ${qi}/${uniqueQueries.length} queries, ${collected.length} tracks`);
+    for (let qi = 0; qi < uniqueQueries.length; qi++) {
+      if (collected.length >= limit) break;
+      if (Date.now() - startTime > TIMEOUT_MS) {
+        console.log(`   ⏱ Timeout after ${qi}/${uniqueQueries.length} queries, ${collected.length} tracks`);
+        break;
+      }
+
+      if (Date.now() < _rateLimitedUntil) {
+        const waitMs = Math.min(_rateLimitedUntil - Date.now(), 8000);
+        if (Date.now() - startTime + waitMs > TIMEOUT_MS) {
+          console.log(`   ⏱ Rate limit wait (${waitMs}ms) would exceed timeout, breaking`);
           break;
         }
+        await new Promise(r => setTimeout(r, waitMs + 100));
+      }
 
-        if (Date.now() < _rateLimitedUntil) {
-          const waitMs = Math.min(_rateLimitedUntil - Date.now(), 8000);
-          if (Date.now() - startTime + waitMs > TIMEOUT_MS) break;
-          await new Promise(r => setTimeout(r, waitMs + 100));
-        }
+      const items = await doSearch(uniqueQueries[qi]);
+      let added = 0;
+      for (const t of items) {
+        if (collected.length >= limit) break;
+        if (!t?.id || seenIds.has(t.id)) continue;
+        seenIds.add(t.id);
+        collected.push({
+          id: t.id, uri: t.uri, name: t.name,
+          artist: t.artists?.map(a => a.name).join(', ') || '',
+          album: t.album?.name || '', art: t.album?.images?.[0]?.url || '',
+          duration_ms: t.duration_ms,
+        });
+        added++;
+      }
+      if (qi < 3 || added === 0) console.log(`   Query ${qi}: "${uniqueQueries[qi]}" → ${items.length} results, +${added} new`);
 
-        const items = await doSearch(uniqueQueries[qi]);
-        for (const t of items) {
-          if (collected.length >= limit) break;
-          if (!t?.id || seenIds.has(t.id)) continue;
-          seenIds.add(t.id);
-          collected.push({
-            id: t.id, uri: t.uri, name: t.name,
-            artist: t.artists?.map(a => a.name).join(', ') || '',
-            album: t.album?.name || '', art: t.album?.images?.[0]?.url || '',
-            duration_ms: t.duration_ms,
-          });
-        }
-
-        if (qi < uniqueQueries.length - 1 && collected.length < limit) {
-          await new Promise(r => setTimeout(r, 250));
-        }
+      if (qi < uniqueQueries.length - 1 && collected.length < limit) {
+        await new Promise(r => setTimeout(r, 200));
       }
     }
 
