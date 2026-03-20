@@ -202,9 +202,9 @@ const previewTrack = ref({ name: '', artist: '', art: '' });
 onMounted(() => {
   if (props.isPlaylist) {
     const cached = sdk.loadCachedTracks(props.mediaUrl);
-    if (cached?.length) {
-      localTracks.value = cached;
-      const t = (props.startTrackUri && cached.find(t => t.uri === props.startTrackUri)) || cached[0];
+    if (cached?.tracks?.length) {
+      localTracks.value = cached.tracks;
+      const t = (props.startTrackUri && cached.tracks.find(t => t.uri === props.startTrackUri)) || cached.tracks[0];
       if (t) previewTrack.value = { name: t.name, artist: t.artist, art: t.art };
     }
     // Background fetch for preview

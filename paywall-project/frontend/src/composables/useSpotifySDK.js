@@ -169,17 +169,17 @@ const loadCachedTracks = (url) => {
     if (!key) return null;
     const raw = localStorage.getItem(key);
     if (!raw) return null;
-    const { tracks, savedAt } = JSON.parse(raw);
+    const { tracks, savedAt, full } = JSON.parse(raw);
     if (Date.now() - savedAt > TRACK_CACHE_TTL) { localStorage.removeItem(key); return null; }
     if (tracks.length < 2) { localStorage.removeItem(key); return null; }
-    return tracks;
+    return { tracks, full: !!full };
   } catch { return null; }
 };
 
-const saveCachedTracks = (url, tracks) => {
+const saveCachedTracks = (url, tracks, full = false) => {
   try {
     const key = _playlistCacheKey(url);
-    if (key) localStorage.setItem(key, JSON.stringify({ tracks, savedAt: Date.now() }));
+    if (key) localStorage.setItem(key, JSON.stringify({ tracks, savedAt: Date.now(), full }));
   } catch { /* localStorage full */ }
 };
 
@@ -239,7 +239,7 @@ const fetchPlaylistTracks = async (mediaUrl) => {
     if (!tracks?.length) return false;
     playlistTracks.value = tracks;
     fullTracksFetched = true;
-    saveCachedTracks(url, tracks);
+    saveCachedTracks(url, tracks, true);
     localStorage.setItem('sp_playlist_ok', '1');
     _w.reconnectAttempted = true;
     needsReconnect.value = false;
@@ -348,11 +348,25 @@ const fetchPlaylistTracks = async (mediaUrl) => {
     const tracks = await promise;
     _w.fetchingPlaylists.delete(cacheKey);
     if (!applyTracks(tracks)) {
-      if (!_w.reconnectAttempted && !localStorage.getItem('sp_playlist_ok')) needsReconnect.value = true;
+      // Retry once after 3s — token may not have been ready on first attempt
+      setTimeout(async () => {
+        if (fullTracksFetched) return; // already got tracks from another source
+        const retry = await doFetch();
+        if (applyTracks(retry)) return;
+        if (!_w.reconnectAttempted && !localStorage.getItem('sp_playlist_ok')) needsReconnect.value = true;
+      }, 3000);
     }
   } catch {
     _w.fetchingPlaylists.delete(cacheKey);
-    if (!_w.reconnectAttempted && !localStorage.getItem('sp_playlist_ok')) needsReconnect.value = true;
+    // Retry once after 3s
+    setTimeout(async () => {
+      if (fullTracksFetched) return;
+      try {
+        const retry = await doFetch();
+        if (applyTracks(retry)) return;
+      } catch { /* give up */ }
+      if (!_w.reconnectAttempted && !localStorage.getItem('sp_playlist_ok')) needsReconnect.value = true;
+    }, 3000);
   }
 };
 
@@ -484,6 +498,19 @@ const onStateChanged = (s) => {
     }
   }
 
+  // If playlist is playing but we still have very few tracks, re-fetch
+  if (_isPlaylist && !fullTracksFetched && playlistTracks.value.length < 10 && currentMediaUrl.value) {
+    if (!_w._retryScheduled) {
+      _w._retryScheduled = true;
+      setTimeout(() => {
+        _w._retryScheduled = false;
+        if (!fullTracksFetched && playlistTracks.value.length < 10) {
+          fetchPlaylistTracks(currentMediaUrl.value);
+        }
+      }, 2000);
+    }
+  }
+
   if (!s.paused) {
     startTicker();
     if (!posSaver) posSaver = setInterval(saveCurrentPosition, 5000);
@@ -586,10 +613,10 @@ const play = async (mediaUrl, opts = {}) => {
       // Load cached tracks while SDK connects
       if (isPlaylist) {
         const cached = loadCachedTracks(mediaUrl);
-        if (cached?.length) {
-          playlistTracks.value = cached;
-          fullTracksFetched = true;
-          const t = (startTrackUri && cached.find(t => t.uri === startTrackUri)) || cached[0];
+        if (cached?.tracks?.length) {
+          playlistTracks.value = cached.tracks;
+          fullTracksFetched = !!cached.full; // only trust cache if it was a full API fetch
+          const t = (startTrackUri && cached.tracks.find(t => t.uri === startTrackUri)) || cached.tracks[0];
           if (t) {
             track.value = { name: t.name, artist: t.artist, album: '', art: t.art };
             if (!currentTrackUri.value) currentTrackUri.value = t.uri;
@@ -626,9 +653,9 @@ const play = async (mediaUrl, opts = {}) => {
 
   if (isPlaylist) {
     const cached = loadCachedTracks(mediaUrl);
-    if (cached?.length) {
-      playlistTracks.value = cached;
-      fullTracksFetched = true;
+    if (cached?.tracks?.length) {
+      playlistTracks.value = cached.tracks;
+      fullTracksFetched = !!cached.full;
     }
     fetchPlaylistTracks(mediaUrl);
   }
@@ -810,7 +837,7 @@ const retryConnect = async (mediaUrl, opts = {}) => {
 // ── Preload tracks for inactive preview cards ────────────────────────────────
 const preloadTracks = (mediaUrl) => {
   const cached = loadCachedTracks(mediaUrl);
-  if (cached?.length) return cached;
+  if (cached?.tracks?.length) return cached.tracks;
   // Fire background fetch (no token needed for playlist proxy endpoint)
   fetchPlaylistTracks(mediaUrl);
   return null;
