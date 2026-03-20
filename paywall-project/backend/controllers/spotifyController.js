@@ -323,11 +323,19 @@ export const getPlaylistTracks = async (req, res) => {
     return data;
   };
 
+  // Normalise items from both old format (.track) and new Dev Mode format (.item)
   const parseItems = (data, label = '') => {
     const raw = data.items || [];
-    const valid = raw.filter(item => item?.track?.uri);
+    const normalised = raw.map(entry => {
+      // New Dev Mode format uses .item instead of .track
+      if (entry?.item && !entry?.track) {
+        return { ...entry, track: entry.item };
+      }
+      return entry;
+    });
+    const valid = normalised.filter(item => item?.track?.uri);
     if (raw.length !== valid.length) {
-      console.log(`   ${label} parseItems: ${raw.length} raw → ${valid.length} valid (${raw.length - valid.length} filtered: ${raw.filter(i => !i?.track?.uri).slice(0, 3).map(i => i?.track === null ? 'null track' : `no uri: ${i?.track?.name || 'unknown'}`).join(', ')})`);
+      console.log(`   ${label} parseItems: ${raw.length} raw → ${valid.length} valid`);
     }
     return valid;
   };
@@ -353,57 +361,78 @@ export const getPlaylistTracks = async (req, res) => {
     if (!result.error) {
       const auth = { Authorization: `Bearer ${result.accessToken}` };
 
-      // 1. GET /v1/playlists/{id}/tracks — requires playlist-read-private, paginates all tracks
+      // 1. GET /v1/playlists/{id}/items — Dev Mode (Feb 2026+) endpoint, owner/collaborator only
       try {
-        console.log(`   [1] Trying user-token GET /tracks for ${playlistId}...`);
+        console.log(`   [1] Trying user-token GET /items for ${playlistId}...`);
+        const items = await fetchAllPages(
+          `https://api.spotify.com/v1/playlists/${playlistId}/items?limit=100`,
+          auth
+        );
+        if (items.length) return cacheAndReturn(items);
+        console.log(`   [1] /items returned 0 items`);
+      } catch (err) {
+        console.error(`   [1] /items failed:`, err.response?.status, err.response?.data?.error?.message || err.message);
+        if (err.response?.status === 429) setRateLimit(err.response.headers?.['retry-after']);
+      }
+
+      // 2. GET /v1/playlists/{id}/tracks — legacy endpoint (Extended Quota / pre-Feb 2026)
+      try {
+        console.log(`   [2] Trying user-token GET /tracks for ${playlistId}...`);
         const items = await fetchAllPages(
           `https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=100`,
           auth
         );
         if (items.length) return cacheAndReturn(items);
-        console.log(`   [1] User-token returned 0 items`);
+        console.log(`   [2] /tracks returned 0 items`);
       } catch (err) {
-        console.error(`   [1] User-token failed:`, err.response?.status, err.response?.data?.error?.message || err.message);
-        if (err.response?.status === 429) {
-          setRateLimit(err.response.headers?.['retry-after']);
-          // Don't throw — fall through to try other methods
-        } else if (err.response?.status !== 403) {
-          // Unexpected error — still fall through
-        }
+        console.error(`   [2] /tracks failed:`, err.response?.status, err.response?.data?.error?.message || err.message);
+        if (err.response?.status === 429) setRateLimit(err.response.headers?.['retry-after']);
       }
 
-      // 2. GET /v1/playlists/{id} — parent object, then paginate remaining tracks
+      // 3. GET /v1/playlists/{id} — parent object with embedded tracks
       try {
-        console.log(`   [2] Trying user-token GET /playlists/${playlistId}...`);
+        console.log(`   [3] Trying user-token GET /playlists/${playlistId}...`);
         const r = await axios.get(`https://api.spotify.com/v1/playlists/${playlistId}`, { headers: auth });
-        const firstItems = parseItems(r.data.tracks || {});
-        const nextUrl = r.data.tracks?.next || null;
+        // Dev Mode may strip tracks; check both .tracks and .items
+        const tracksObj = r.data.tracks || r.data.items || {};
+        const firstItems = parseItems(tracksObj);
+        const nextUrl = tracksObj.next || null;
         let allItems = firstItems;
         if (nextUrl) {
           const remaining = await fetchAllPages(nextUrl, auth);
           allItems = allItems.concat(remaining);
         }
         if (allItems.length) return cacheAndReturn(allItems);
-        console.log(`   [2] Parent object returned 0 items`);
+        console.log(`   [3] Parent object returned 0 items`);
       } catch (err) {
-        console.error(`   [2] Parent object failed:`, err.response?.status, err.response?.data?.error?.message || err.message);
+        console.error(`   [3] Parent object failed:`, err.response?.status, err.response?.data?.error?.message || err.message);
         if (err.response?.status === 429) setRateLimit(err.response.headers?.['retry-after']);
       }
     }
 
-    // 3. Client credentials (public playlists only) — paginate all tracks
+    // 4. Client credentials — try /items then /tracks
     try {
-      console.log(`   [3] Trying client-creds for ${playlistId}...`);
+      console.log(`   [4] Trying client-creds for ${playlistId}...`);
       const appToken = await getClientCredToken();
-      const auth = { Authorization: `Bearer ${appToken}` };
-      const items = await fetchAllPages(
-        `https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=100`,
-        auth
-      );
+      const ccAuth = { Authorization: `Bearer ${appToken}` };
+      // Try /items first (Dev Mode)
+      let items = [];
+      try {
+        items = await fetchAllPages(
+          `https://api.spotify.com/v1/playlists/${playlistId}/items?limit=100`,
+          ccAuth
+        );
+      } catch { /* fall through to /tracks */ }
+      if (!items.length) {
+        items = await fetchAllPages(
+          `https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=100`,
+          ccAuth
+        );
+      }
       if (items.length) return cacheAndReturn(items);
-      console.log(`   [3] Client-creds returned 0 items`);
+      console.log(`   [4] Client-creds returned 0 items`);
     } catch (err) {
-      console.error(`   [3] Client-creds failed:`, err.response?.status, err.response?.data?.error?.message || err.message);
+      console.error(`   [4] Client-creds failed:`, err.response?.status, err.response?.data?.error?.message || err.message);
       if (err.response?.status === 429) setRateLimit(err.response.headers?.['retry-after']);
     }
 
@@ -418,7 +447,7 @@ export const getPlaylistTracks = async (req, res) => {
       console.log(`✅ Playlist ${playlistId}: returning ${data.items?.length || 0} tracks`);
       return res.json(data);
     }
-    console.error(`❌ Playlist ${playlistId}: no tracks found (all 3 methods failed)`);
+    console.error(`❌ Playlist ${playlistId}: no tracks found (all 4 methods failed)`);
     // Check if rate-limited — give accurate error instead of always blaming scope
     if (Date.now() < _rateLimitedUntil) {
       return res.status(429).json({ message: 'Spotify rate limited — try again in a few seconds' });
