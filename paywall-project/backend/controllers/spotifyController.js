@@ -323,8 +323,14 @@ export const getPlaylistTracks = async (req, res) => {
     return data;
   };
 
-  const parseItems = (data) =>
-    (data.items || []).filter(item => item?.track?.uri);
+  const parseItems = (data, label = '') => {
+    const raw = data.items || [];
+    const valid = raw.filter(item => item?.track?.uri);
+    if (raw.length !== valid.length) {
+      console.log(`   ${label} parseItems: ${raw.length} raw → ${valid.length} valid (${raw.length - valid.length} filtered: ${raw.filter(i => !i?.track?.uri).slice(0, 3).map(i => i?.track === null ? 'null track' : `no uri: ${i?.track?.name || 'unknown'}`).join(', ')})`);
+    }
+    return valid;
+  };
 
   // Paginate through ALL tracks — Spotify returns max 100 per page
   const fetchAllPages = async (firstUrl, headers) => {
@@ -342,6 +348,7 @@ export const getPlaylistTracks = async (req, res) => {
   // requests can await the same work instead of each calling Spotify.
   const fetchPromise = (async () => {
     const result = await getValidToken(req.user.id, false);
+    console.log(`   Token status: ${result.error ? 'FAILED (' + result.message + ')' : 'valid'}`);
 
     if (!result.error) {
       const auth = { Authorization: `Bearer ${result.accessToken}` };
