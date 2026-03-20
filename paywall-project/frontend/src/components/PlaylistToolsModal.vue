@@ -951,13 +951,23 @@ const handleAddToExisting = (playlistId) => {
 }
 .pt-target-btn:hover:not(.active) { background: #1a1a1a; color: #ccc; }
 
-/* Cancel button */
+/* Cancel button — glowing pulse */
 .pt-btn-cancel {
   background: #991b1b;
   color: #fca5a5;
   border: 1px solid #dc2626;
+  animation: cancelGlow 1.5s ease-in-out infinite;
 }
-.pt-btn-cancel:hover { background: #dc2626; color: #fff; }
+.pt-btn-cancel:hover {
+  background: #dc2626;
+  color: #fff;
+  animation: none;
+  box-shadow: 0 0 14px rgba(239, 68, 68, 0.6);
+}
+@keyframes cancelGlow {
+  0%, 100% { box-shadow: 0 0 6px rgba(239, 68, 68, 0.3); }
+  50% { box-shadow: 0 0 16px rgba(239, 68, 68, 0.7), 0 0 30px rgba(239, 68, 68, 0.3); }
+}
 
 /* Source badge on search results */
 .pt-source-badge {

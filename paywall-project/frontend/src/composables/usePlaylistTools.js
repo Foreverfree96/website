@@ -496,7 +496,7 @@ export function usePlaylistTools() {
       generateResults.value = [...generatedTracks.value];
       resultTracks.value = [...generateResults.value];
       if (!generatedTracks.value.length) {
-        error.value = 'No tracks found — try adding seed tracks or genres for better results';
+        error.value = 'No tracks found — try different inputs for better results';
         bgStatus.value = 'No results';
       } else {
         bgStatus.value = `Done! ${generatedTracks.value.length} tracks`;
