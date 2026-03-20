@@ -236,9 +236,7 @@ export const matchYoutubeTracks = async (req, res) => {
     const { tracks = [] } = req.body;
     if (!tracks.length) return res.status(400).json({ message: "No tracks provided" });
 
-    // Process all tracks — timeout guard fills remainder with no-match if needed
-    const capped = tracks;
-    console.log(`🔍 Matching ${capped.length} tracks to YouTube...`);
+    console.log(`🔍 Matching ${tracks.length} tracks to YouTube...`);
     const startTime = Date.now();
     const TIMEOUT_MS = 290000; // ~5 min for large playlists (up to 1000 tracks)
 
@@ -295,7 +293,7 @@ export const matchYoutubeTracks = async (req, res) => {
         const shortTitle = title.split(/\s+/).slice(0, 3).join(' ');
         if (shortTitle !== title) queries.push(`${artist} ${shortTitle}`);
       }
-      const maxQ = capped.length > 500 ? 1 : capped.length > 200 ? 2 : capped.length > 50 ? 3 : 4;
+      const maxQ = tracks.length > 500 ? 1 : tracks.length > 200 ? 2 : tracks.length > 50 ? 3 : 4;
       const uniqueQueries = [...new Set(queries)].slice(0, maxQ);
 
       let allItems = [];
@@ -388,32 +386,32 @@ export const matchYoutubeTracks = async (req, res) => {
 
     // Dynamic batch size & delay based on playlist size
     const matches = [];
-    const BATCH = capped.length > 200 ? 10 : capped.length > 50 ? 8 : 5;
-    const DELAY = capped.length > 200 ? 100 : 300;
-    emitProgress(5, `Matching ${capped.length} tracks...`);
-    for (let i = 0; i < capped.length; i += BATCH) {
+    const BATCH = tracks.length > 200 ? 10 : tracks.length > 50 ? 8 : 5;
+    const DELAY = tracks.length > 200 ? 100 : 300;
+    emitProgress(5, `Matching ${tracks.length} tracks...`);
+    for (let i = 0; i < tracks.length; i += BATCH) {
       if (_quotaExhausted || Date.now() - startTime > TIMEOUT_MS) {
         const reason = _quotaExhausted ? 'quota exhausted' : 'timeout';
-        console.log(`⏱ YouTube match stopped (${reason}) after ${matches.length}/${capped.length} tracks`);
-        for (let j = i; j < capped.length; j++) {
-          matches.push({ source: capped[j], bestMatch: null, confidence: "none", alternatives: [] });
+        console.log(`⏱ YouTube match stopped (${reason}) after ${matches.length}/${tracks.length} tracks`);
+        for (let j = i; j < tracks.length; j++) {
+          matches.push({ source: tracks[j], bestMatch: null, confidence: "none", alternatives: [] });
         }
         break;
       }
-      const batch = capped.slice(i, i + BATCH);
+      const batch = tracks.slice(i, i + BATCH);
       const results = await Promise.all(batch.map(matchOne));
       matches.push(...results);
 
-      const pct = 5 + (matches.length / capped.length) * 90;
-      emitProgress(pct, `Matched ${matches.length}/${capped.length}...`);
+      const pct = 5 + (matches.length / tracks.length) * 90;
+      emitProgress(pct, `Matched ${matches.length}/${tracks.length}...`);
 
-      if (i + BATCH < capped.length) await new Promise(r => setTimeout(r, DELAY));
+      if (i + BATCH < tracks.length) await new Promise(r => setTimeout(r, DELAY));
     }
 
     const exact = matches.filter(m => m.confidence === 'exact').length;
     const close = matches.filter(m => m.confidence === 'close').length;
-    emitProgress(100, `Done! ${exact + close}/${capped.length} matched`);
-    console.log(`✅ YouTube matched ${capped.length} tracks: ${exact} exact, ${close} close, ${capped.length - exact - close} none${_quotaExhausted ? ' (quota exhausted)' : ''}`);
+    emitProgress(100, `Done! ${exact + close}/${tracks.length} matched`);
+    console.log(`✅ YouTube matched ${tracks.length} tracks: ${exact} exact, ${close} close, ${tracks.length - exact - close} none${_quotaExhausted ? ' (quota exhausted)' : ''}`);
     res.json({ matches, quotaExhausted: _quotaExhausted });
   } catch (err) {
     console.error("❌ YouTube match error:", err.response?.data || err.message);
