@@ -275,6 +275,15 @@ const fetchPlaylistTracks = async (mediaUrl) => {
         duration: item.duration_ms || 0, art, index,
       }));
 
+  // Track playlists that got 403 — don't retry these (scope issue, not transient)
+  if (!_w._forbidden) _w._forbidden = new Set();
+  if (_w._forbidden.has(cacheKey)) {
+    if (!_w.reconnectAttempted && !localStorage.getItem('sp_playlist_ok')) needsReconnect.value = true;
+    return;
+  }
+
+  let got403 = false;
+
   const doFetch = async () => {
     if (isAlbum) {
       if (!token) return null;
@@ -311,20 +320,21 @@ const fetchPlaylistTracks = async (mediaUrl) => {
           const tracks = parsePlaylist(data);
           if (tracks.length) return tracks;
         }
+        if (res.status === 403) got403 = true;
         if (res.status === 429) _w.playlistBackoffUntil = Date.now() + 60 * 1000;
       } catch (e) {
         console.error('Playlist tracks fetch failed:', e.message);
       }
     }
-    // Fallback: try direct Spotify API with user token
-    if (token) {
+    // Fallback: try direct Spotify API with user token (skip if backend already 403'd — same token)
+    if (token && !got403) {
       try {
         const headers = { Authorization: `Bearer ${token}` };
         let allItems = [];
         let nextUrl = `https://api.spotify.com/v1/playlists/${id}/tracks?limit=100`;
         while (nextUrl) {
           const r = await fetch(nextUrl, { headers });
-          if (!r.ok) break;
+          if (!r.ok) { if (r.status === 403) got403 = true; break; }
           const data = await r.json();
           allItems = allItems.concat((data.items || []).filter(item => item?.track?.uri));
           nextUrl = data.next || null;
@@ -347,26 +357,25 @@ const fetchPlaylistTracks = async (mediaUrl) => {
   try {
     const tracks = await promise;
     _w.fetchingPlaylists.delete(cacheKey);
-    if (!applyTracks(tracks)) {
-      // Retry once after 3s — token may not have been ready on first attempt
-      setTimeout(async () => {
-        if (fullTracksFetched) return; // already got tracks from another source
-        const retry = await doFetch();
-        if (applyTracks(retry)) return;
-        if (!_w.reconnectAttempted && !localStorage.getItem('sp_playlist_ok')) needsReconnect.value = true;
-      }, 3000);
+    if (applyTracks(tracks)) return;
+    // If 403, mark as forbidden — don't retry
+    if (got403) {
+      _w._forbidden.add(cacheKey);
+      needsReconnect.value = true;
+      return;
     }
-  } catch {
-    _w.fetchingPlaylists.delete(cacheKey);
-    // Retry once after 3s
+    // Retry once after 3s only for non-403 failures
     setTimeout(async () => {
       if (fullTracksFetched) return;
-      try {
-        const retry = await doFetch();
-        if (applyTracks(retry)) return;
-      } catch { /* give up */ }
+      const retry = await doFetch();
+      if (applyTracks(retry)) return;
+      if (got403) { _w._forbidden.add(cacheKey); needsReconnect.value = true; return; }
       if (!_w.reconnectAttempted && !localStorage.getItem('sp_playlist_ok')) needsReconnect.value = true;
     }, 3000);
+  } catch {
+    _w.fetchingPlaylists.delete(cacheKey);
+    if (got403) { _w._forbidden.add(cacheKey); needsReconnect.value = true; return; }
+    if (!_w.reconnectAttempted && !localStorage.getItem('sp_playlist_ok')) needsReconnect.value = true;
   }
 };
 
@@ -498,9 +507,12 @@ const onStateChanged = (s) => {
     }
   }
 
-  // If playlist is playing but we still have very few tracks, re-fetch
+  // If playlist is playing but we still have very few tracks, re-fetch (but not if 403'd)
   if (_isPlaylist && !fullTracksFetched && playlistTracks.value.length < 10 && currentMediaUrl.value) {
-    if (!_w._retryScheduled) {
+    const plMatch = currentMediaUrl.value.match(/open\.spotify\.com\/(playlist|album)\/([a-zA-Z0-9]+)/);
+    const ck = plMatch ? `${plMatch[1]}:${plMatch[2]}` : null;
+    const isForbidden = ck && _w._forbidden?.has(ck);
+    if (!isForbidden && !_w._retryScheduled) {
       _w._retryScheduled = true;
       setTimeout(() => {
         _w._retryScheduled = false;
@@ -580,6 +592,7 @@ const play = async (mediaUrl, opts = {}) => {
     _w.reconnectAttempted = true;
     _w.oauthRedirecting = false;
     _w.userDisconnected = false;
+    if (_w._forbidden) _w._forbidden.clear(); // clear 403 cache on reconnect
     localStorage.setItem('sp_oauth_done', '1');
     sessionStorage.setItem('sp_oauth_done', '1');
   }
