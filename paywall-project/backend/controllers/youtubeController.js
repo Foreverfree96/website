@@ -91,15 +91,25 @@ export const getPlaylistTracks = async (req, res) => {
     let nextPageToken = "";
 
     do {
-      const r = await axios.get(`${BASE}/playlistItems`, {
-        params: {
-          part: "snippet",
-          maxResults: 50,
-          playlistId,
-          pageToken: nextPageToken || undefined,
-          key: API_KEY(),
-        },
-      });
+      let r;
+      for (let keyAttempt = 0; keyAttempt < _ytKeys.length; keyAttempt++) {
+        try {
+          r = await axios.get(`${BASE}/playlistItems`, {
+            params: {
+              part: "snippet",
+              maxResults: 50,
+              playlistId,
+              pageToken: nextPageToken || undefined,
+              key: API_KEY(),
+            },
+          });
+          break;
+        } catch (e) {
+          if (_isQuotaError(e) && _rotateKey(e)) continue;
+          throw e;
+        }
+      }
+      if (!r) throw new Error('All YouTube API keys exhausted');
 
       const items = (r.data.items || [])
         .filter((i) => i.snippet?.title !== "Private video" && i.snippet?.title !== "Deleted video")
