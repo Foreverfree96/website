@@ -493,12 +493,13 @@ export const searchTracks = async (req, res) => {
         } else {
           return res.status(429).json({ tracks: [], retryAfter: secs, message: 'Rate limited — try again shortly' });
         }
-      } else if (e.response?.status === 401 && token) {
-        // User token expired, try client creds
+      } else if (e.response?.status === 401 || e.response?.status === 403) {
+        // Token expired/invalid — try client creds
         try { items = await doSearch(await getClientCredToken()); }
         catch { items = []; }
       } else {
-        throw e;
+        console.error('❌ Search unexpected error:', e.response?.status || e.message);
+        items = [];
       }
     }
 

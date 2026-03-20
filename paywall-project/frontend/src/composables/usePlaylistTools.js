@@ -291,6 +291,14 @@ export function usePlaylistTools() {
       const q = encodeURIComponent(searchQuery.value);
       const hdrs = headers();
 
+      // Guard: skip API calls if not logged in
+      const jwt = localStorage.getItem('jwtToken');
+      if (!jwt) {
+        searchError.value = 'Log in to search';
+        searchLoading.value = false;
+        return;
+      }
+
       // Search Spotify and YouTube in parallel with separate timeouts
       // so a slow Spotify cold-start doesn't kill YouTube results
       const spPromise = (async () => {
@@ -302,6 +310,10 @@ export function usePlaylistTools() {
           if (r.status === 429) {
             const d = await r.json().catch(() => ({}));
             _searchRateLimitUntil = Date.now() + (d.retryAfter || 5) * 1000;
+            return [];
+          }
+          if (r.status === 401) {
+            console.warn('[SeedSearch] Spotify 401 — JWT may be expired');
             return [];
           }
           if (!r.ok) return [];
