@@ -411,4 +411,128 @@ const withdrawAppeal = async () => {
     font-weight: 600;
     color: #14532d;
 }
+
+/* ===== Mobile Responsive ===== */
+
+/* Large phone / small tablet (600px) */
+@media (max-width: 600px) {
+    .login-error-block {
+        max-width: 100%;
+        padding: 14px 16px;
+        border-radius: 10px;
+    }
+    .appeal-box {
+        max-width: 100%;
+        padding: 22px 18px;
+        border-radius: 12px;
+    }
+    .appeal-box__title {
+        font-size: 1.05rem;
+    }
+    .appeal-trigger-btn,
+    .appeal-box__cancel,
+    .appeal-box__submit,
+    .withdraw-btn {
+        min-height: 44px;
+        font-size: 0.9rem;
+    }
+    .error-dismiss {
+        min-width: 44px;
+        min-height: 44px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        top: 2px;
+        right: 2px;
+    }
+    .appeal-box__close {
+        min-width: 44px;
+        min-height: 44px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+}
+
+/* Phone (480px) */
+@media (max-width: 480px) {
+    .login-error-block {
+        padding: 12px 14px;
+        gap: 6px;
+        border-width: 2px;
+    }
+    .appeal-box {
+        padding: 18px 14px;
+        gap: 12px;
+        border-width: 2px;
+    }
+    .appeal-box__sub {
+        font-size: 0.84rem;
+    }
+    .appeal-box__input {
+        padding: 10px;
+        font-size: 16px;
+    }
+    .appeal-box__actions {
+        flex-direction: column;
+        gap: 8px;
+    }
+    .appeal-box__cancel,
+    .appeal-box__submit {
+        width: 100%;
+        min-height: 44px;
+        justify-content: center;
+        text-align: center;
+    }
+    .appeal-trigger-btn {
+        width: 100%;
+        min-height: 44px;
+        padding: 8px 12px;
+    }
+    .resend-btn {
+        min-height: 44px;
+        font-size: 0.88rem;
+    }
+}
+
+/* Small phone (360px) */
+@media (max-width: 360px) {
+    .login-error-block {
+        max-width: calc(100% - 24px);
+        margin-left: 12px;
+        margin-right: 12px;
+        padding: 12px;
+        border-radius: 8px;
+    }
+    .appeal-overlay {
+        padding: 10px;
+    }
+    .appeal-box {
+        padding: 14px 12px;
+        gap: 10px;
+        border-radius: 10px;
+        max-width: 100%;
+        box-sizing: border-box;
+    }
+    .appeal-box__title {
+        font-size: 0.95rem;
+    }
+    .appeal-box__sub {
+        font-size: 0.8rem;
+    }
+    .appeal-box__input {
+        padding: 8px 10px;
+    }
+    .error-msg {
+        font-size: 0.82rem;
+    }
+    .appeal-submitted-notice {
+        font-size: 0.8rem;
+    }
+    .withdraw-btn {
+        font-size: 0.78rem;
+        padding: 5px 10px;
+        min-height: 44px;
+    }
+}
 </style>
