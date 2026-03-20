@@ -978,12 +978,14 @@ export const matchTracks = async (req, res) => {
     // Prefer user token (avoids explicit content 400s from client creds)
     const result = await getValidToken(req.user.id, false);
     let token = result.error ? null : result.accessToken;
+    let usingClientCreds = !token;
     if (!token) token = await getClientCredToken();
     const auth = { Authorization: `Bearer ${token}` };
 
-    console.log(`🔍 Matching ${tracks.length} tracks to Spotify...`);
+    console.log(`🔍 Matching ${tracks.length} tracks to Spotify... [${usingClientCreds ? 'client-creds' : 'user-token'}]`);
 
     const searchSpotify = async (query) => {
+      let _switched = false;
       for (let attempt = 0; attempt < 3; attempt++) {
         try {
           const q = attempt === 0 ? query : query.replace(/[^\w\s'-]/g, '').trim();
@@ -994,17 +996,38 @@ export const matchTracks = async (req, res) => {
           });
           return r.data.tracks?.items || [];
         } catch (e) {
-          if (e.response?.status === 400 && attempt === 0) continue; // retry with cleaned query
-          if (e.response?.status === 429) {
+          const status = e.response?.status;
+          if (status === 400 && attempt === 0) continue; // retry with cleaned query
+
+          // On 429/401/403: switch to the OTHER token type and retry
+          if ((status === 429 || status === 401 || status === 403) && !_switched) {
+            try {
+              if (usingClientCreds) {
+                const userResult = await getValidToken(req.user.id, false);
+                if (!userResult.error) {
+                  auth.Authorization = `Bearer ${userResult.accessToken}`;
+                  usingClientCreds = false;
+                  _switched = true;
+                  continue;
+                }
+              } else {
+                const appToken = await getClientCredToken();
+                auth.Authorization = `Bearer ${appToken}`;
+                usingClientCreds = true;
+                _switched = true;
+                continue;
+              }
+            } catch { /* switch failed */ }
+          }
+
+          if (status === 429 && attempt < 2) {
             const secs = parseInt(e.response.headers?.['retry-after'] || '3', 10);
             setRateLimit(e.response.headers?.['retry-after']);
-            if (attempt < 2) {
-              await new Promise(r => setTimeout(r, Math.min(secs, 5) * 1000 + 200));
-              continue; // retry after waiting
-            }
+            await new Promise(r => setTimeout(r, Math.min(secs, 5) * 1000 + 200));
+            continue;
           }
-          if (attempt === 0 || e.response?.status !== 400) {
-            console.error(`❌ Match search failed for "${query}":`, e.response?.status || e.message);
+          if (attempt === 0 || status !== 400) {
+            console.error(`❌ Match search failed for "${query}":`, status || e.message);
           }
           return [];
         }
