@@ -123,14 +123,23 @@ const genreFilter = ref('');
 
 // ─── URL detection helpers ──────────────────────────────────────────────────
 const detectPlatform = (url) => {
+  if (/music\.youtube\.com/i.test(url)) return 'youtube-music';
   if (/youtube\.com|youtu\.be/i.test(url)) return 'youtube';
   if (/spotify\.com/i.test(url)) return 'spotify';
   return null;
 };
 
+const isYoutubePlatform = (p) => p === 'youtube' || p === 'youtube-music';
+
 const extractYoutubePlaylistId = (url) => {
-  const m = url.match(/[?&]list=([^&]+)/);
-  return m?.[1] || null;
+  // Standard ?list= param (works for both youtube.com and music.youtube.com)
+  const listMatch = url.match(/[?&]list=([^&]+)/);
+  if (listMatch) return listMatch[1];
+  // YouTube Music browse format: music.youtube.com/browse/VLPLxxxxxx
+  const browseMatch = url.match(/browse\/VL([A-Za-z0-9_-]+)/);
+  if (browseMatch) return browseMatch[1];
+  // YouTube Music playlist path: music.youtube.com/playlist?list= (already handled above)
+  return null;
 };
 
 const extractSpotifyPlaylistId = (url) => {
@@ -315,7 +324,7 @@ export function usePlaylistTools() {
         if (platform === 'spotify') {
           const spId = extractSpotifyPlaylistId(seedPlaylistUrl.value);
           if (spId) body.seedPlaylistId = spId;
-        } else if (platform === 'youtube') {
+        } else if (isYoutubePlatform(platform)) {
           const ytId = extractYoutubePlaylistId(seedPlaylistUrl.value);
           if (ytId) {
             try {
@@ -381,9 +390,9 @@ export function usePlaylistTools() {
 
     try {
       const platform = detectPlatform(convertUrl.value);
-      if (!platform) throw new Error('Paste a valid YouTube or Spotify playlist URL');
+      if (!platform) throw new Error('Paste a valid YouTube, YouTube Music, or Spotify playlist URL');
 
-      if (platform === 'youtube') {
+      if (isYoutubePlatform(platform)) {
         convertDirection.value = 'yt-to-spotify';
         const plId = extractYoutubePlaylistId(convertUrl.value);
         if (!plId) throw new Error('Could not find playlist ID in URL');

@@ -195,8 +195,8 @@
                     v-model="pt.convertUrl.value"
                     placeholder="YouTube or Spotify playlist URL..."
                   />
-                  <span v-if="detectedPlatform" class="pt-badge" :class="detectedPlatform">
-                    {{ detectedPlatform === 'youtube' ? 'YouTube' : 'Spotify' }}
+                  <span v-if="detectedPlatform" class="pt-badge" :class="detectedPlatform === 'youtube-music' ? 'youtube' : detectedPlatform">
+                    {{ detectedPlatform === 'youtube' ? 'YouTube' : detectedPlatform === 'youtube-music' ? 'YT Music' : 'Spotify' }}
                   </span>
                 </div>
               </div>
@@ -448,6 +448,7 @@ const addCustom = () => {
 
 const detectedPlatform = computed(() => {
   const url = pt.convertUrl.value;
+  if (/music\.youtube\.com/i.test(url)) return 'youtube-music';
   if (/youtube\.com|youtu\.be/i.test(url)) return 'youtube';
   if (/spotify\.com/i.test(url)) return 'spotify';
   return null;
