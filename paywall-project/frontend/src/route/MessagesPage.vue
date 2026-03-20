@@ -1842,6 +1842,8 @@ const formatTime = (d) => {
     border-left: none;
     border-right: none;
     border-bottom: none;
+    max-width: 100%;
+    overflow-x: hidden;
   }
 
   .convo-panel {
@@ -1863,6 +1865,11 @@ const formatTime = (d) => {
 
   .back-btn {
     display: block;
+    min-height: 44px;
+    min-width: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 
   .chat-header__actions {
@@ -1878,10 +1885,62 @@ const formatTime = (d) => {
     padding: 4px 9px;
     flex: 1;
     min-width: 0;
+    min-height: 44px;
     text-align: center;
     justify-content: center;
   }
+
+  /* Modal: prevent overflow on small screens */
+  .modal-box {
+    max-width: calc(100vw - 32px);
+    margin: 0 16px;
+    box-sizing: border-box;
+  }
+
+  /* Ensure touch targets on conversation items */
+  .convo-item {
+    min-height: 44px;
+  }
+
+  .new-msg-btn {
+    min-height: 44px;
+    min-width: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .send-btn {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  .modal-close {
+    min-height: 44px;
+    min-width: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .mutual-item {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+  }
 }
+
+/* ── Intermediate breakpoint for 480-600px screens ── */
+@media (max-width: 600px) {
+  .convo-panel {
+    width: 100%;
+  }
+
+  .convo-item__preview {
+    max-width: 80%;
+  }
+}
+
 @media (max-width: 480px) {
   .convo-item { padding: 10px 12px; }
   .convo-item__name { font-size: 0.85rem; }
@@ -1890,15 +1949,47 @@ const formatTime = (d) => {
   .chat-header { padding: 8px 10px; }
   .report-panel { padding: 8px 10px; }
   .report-panel-actions { flex-wrap: wrap; gap: 6px; }
-}
-@media (max-width: 360px) {
-  .msg-page { height: calc(100vh - 50px); height: calc(100dvh - 50px); }
-  .bubble { max-width: 92%; font-size: 0.84rem; }
-  .convo-item__name { font-size: 0.82rem; }
-}
-
-@media (max-width: 480px) {
   .bubble-wrap { max-width: 88%; }
   .chat-input-row { padding: 8px 10px; gap: 6px; }
+
+  .modal-box {
+    max-width: calc(100vw - 24px);
+    margin: 0 12px;
+    padding: 16px;
+  }
+}
+
+@media (max-width: 360px) {
+  .msg-page {
+    height: calc(100vh - 50px);
+    height: calc(100dvh - 50px);
+    overflow-x: hidden;
+  }
+  .bubble { max-width: 92%; font-size: 0.84rem; }
+  .convo-item__name { font-size: 0.82rem; }
+
+  .modal-box {
+    max-width: calc(100vw - 16px);
+    margin: 0 8px;
+    padding: 14px;
+  }
+
+  .chat-messages {
+    padding: 10px;
+  }
+
+  .chat-input-row {
+    padding: 8px;
+    gap: 4px;
+  }
+
+  .convo-panel__header {
+    padding: 10px 10px 8px;
+  }
+
+  .mutual-notice {
+    font-size: 0.82rem;
+    padding: 6px 8px;
+  }
 }
 </style>
