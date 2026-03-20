@@ -163,13 +163,19 @@
                 </div>
               </div>
 
-              <!-- Generate button -->
+              <!-- Generate / Cancel button -->
               <button
+                v-if="pt.generateLoading.value"
+                class="pt-btn pt-btn-cancel pt-btn-full"
+                @click="pt.cancelGenerate()"
+              >Cancel</button>
+              <button
+                v-else
                 class="pt-btn pt-btn-primary pt-btn-full"
                 @click="pt.generate()"
-                :disabled="pt.generateLoading.value || (!pt.seedTracks.value.length && !pt.selectedGenres.value.length && !pt.seedPlaylistUrl.value.trim())"
+                :disabled="!pt.seedTracks.value.length && !pt.selectedGenres.value.length && !pt.seedPlaylistUrl.value.trim()"
               >
-                {{ pt.generateLoading.value ? 'Generating...' : `Generate ${pt.generateTarget.value === 'youtube' ? 'YouTube' : 'Spotify'} Playlist` }}
+                Generate {{ pt.generateTarget.value === 'youtube' ? 'YouTube' : 'Spotify' }} Playlist
               </button>
 
               <!-- Results -->
@@ -231,12 +237,16 @@
               </div>
 
               <button
+                v-if="pt.convertLoading.value"
+                class="pt-btn pt-btn-cancel pt-btn-full"
+                @click="pt.cancelConvert()"
+              >Cancel</button>
+              <button
+                v-else
                 class="pt-btn pt-btn-primary pt-btn-full"
                 @click="pt.startConvert()"
-                :disabled="pt.convertLoading.value || !pt.convertUrl.value.trim()"
-              >
-                {{ pt.convertLoading.value ? 'Converting...' : 'Convert' }}
-              </button>
+                :disabled="!pt.convertUrl.value.trim()"
+              >Convert</button>
 
               <!-- Match results -->
               <div v-if="pt.matchedTracks.value.length" class="pt-results">
@@ -940,6 +950,14 @@ const handleAddToExisting = (playlistId) => {
   background: #c00;
 }
 .pt-target-btn:hover:not(.active) { background: #1a1a1a; color: #ccc; }
+
+/* Cancel button */
+.pt-btn-cancel {
+  background: #991b1b;
+  color: #fca5a5;
+  border: 1px solid #dc2626;
+}
+.pt-btn-cancel:hover { background: #dc2626; color: #fff; }
 
 /* Source badge on search results */
 .pt-source-badge {

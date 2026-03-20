@@ -246,16 +246,19 @@ export function usePlaylistTools() {
     searchQuery.value = query;
     searchError.value = '';
     clearTimeout(_searchDebounce);
-    if (!query.trim()) { searchResults.value = []; searchLoading.value = false; return; }
-
-    if (Date.now() < _searchRateLimitUntil) {
-      searchError.value = 'Rate limited — wait a moment';
-      return;
-    }
+    if (!query.trim() || query.trim().length < 2) { searchResults.value = []; searchLoading.value = false; return; }
 
     searchLoading.value = true;
     _searchDebounce = setTimeout(async () => {
       if (!searchQuery.value.trim()) { searchLoading.value = false; return; }
+
+      // Check rate limit right before fetching (not when keystroke fires)
+      if (Date.now() < _searchRateLimitUntil) {
+        searchError.value = 'Rate limited — wait a moment';
+        searchLoading.value = false;
+        return;
+      }
+
       const q = encodeURIComponent(searchQuery.value);
       const hdrs = headers();
 
@@ -319,7 +322,7 @@ export function usePlaylistTools() {
         searchError.value = (spTracks.length || ytTracks.length) ? '' : 'No results found';
       }
       searchLoading.value = false;
-    }, 600);
+    }, 800);
   };
 
   const addSeed = (track) => {
@@ -340,6 +343,20 @@ export function usePlaylistTools() {
 
   const removeSeed = (index) => {
     seedTracks.value.splice(index, 1);
+  };
+
+  const cancelGenerate = () => {
+    if (_generateAbort) { _generateAbort.abort(); _generateAbort = null; }
+    generateLoading.value = false;
+    bgStatus.value = '';
+    bgDone.value = false;
+  };
+
+  const cancelConvert = () => {
+    if (_convertAbort) { _convertAbort.abort(); _convertAbort = null; }
+    convertLoading.value = false;
+    bgStatus.value = '';
+    bgDone.value = false;
   };
 
   const toggleGenre = (genre) => {
@@ -919,7 +936,8 @@ export function usePlaylistTools() {
     // Methods
     open, close, minimize, reset, setTab,
     searchSeeds, addSeed, removeSeed, toggleGenre, addCustomGenre,
-    generate, startConvert, swapMatch, autofillUnmatched, removeResult,
+    generate, cancelGenerate, startConvert, cancelConvert,
+    swapMatch, autofillUnmatched, removeResult,
     likeTrack, fetchUserPlaylists, addToExistingPlaylist,
     saveToSpotify, saveState, restoreState,
   };
