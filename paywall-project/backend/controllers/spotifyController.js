@@ -1137,29 +1137,25 @@ export const matchTracks = async (req, res) => {
         return true;
       });
 
-      // Build search queries — multiple strategies for maximum coverage
+      // Build search queries — most precise first to minimize API calls
       const queries = [];
       for (const interp of uniqueInterps) {
         if (interp.title && interp.artist) {
-          // Most reliable: plain "artist title"
-          queries.push(`${interp.artist} ${interp.title}`);
-          // Reversed: "title artist"
-          queries.push(`${interp.title} ${interp.artist}`);
-          // Structured: track: + artist: operators
+          // Most precise: Spotify search operators
           queries.push(`track:${interp.title} artist:${interp.artist}`);
+          // Plain combined — reliable fallback
+          queries.push(`${interp.artist} ${interp.title}`);
         }
       }
-      // Title-only queries (catches cases where artist name is wrong/noisy)
+      // Title-only (catches wrong/noisy artist names from YouTube channels)
       for (const interp of uniqueInterps) {
         if (interp.title) queries.push(interp.title);
       }
-      // First few words of title + artist (helps with long/garbled titles)
-      if (cleaned && artist) {
+      // Short title + artist for very long titles
+      if (cleaned && artist && cleaned.split(/\s+/).length > 4) {
         const shortTitle = cleaned.split(/\s+/).slice(0, 3).join(' ');
-        if (shortTitle !== cleaned) queries.push(`${artist} ${shortTitle}`);
+        queries.push(`${artist} ${shortTitle}`);
       }
-      // Raw title as last resort
-      if (!queries.includes(cleaned)) queries.push(cleaned);
 
       // Dedupe queries — scale with playlist size
       const maxQ = tracks.length > 200 ? 2 : tracks.length > 50 ? 3 : 4;

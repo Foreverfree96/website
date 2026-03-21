@@ -329,6 +329,15 @@ const cleanArtistForYT = (artist) => {
     .trim();
 };
 
+// Normalize for comparison — more aggressive, strips &/and differences
+const deepNormalize = (s) =>
+  s.toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/[''´`]/g, "")
+    .replace(/[^a-z0-9\s]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
 export const matchYoutubeTracks = async (req, res) => {
   try {
     if (!API_KEY()) return res.status(500).json({ message: "YouTube API key not configured" });
@@ -389,26 +398,33 @@ export const matchYoutubeTracks = async (req, res) => {
       const rawTitle = (src.title || "").trim();
       const title = cleanTitle(rawTitle);
       const artist = cleanArtistForYT(src.artist || "");
+      // Keep the full artist string (all featured artists) for secondary matching
+      const fullArtist = (src.artist || "").replace(/\s*-\s*topic$/i, "").trim();
       if (!title && !artist) return { source: src, bestMatch: null, confidence: "none", alternatives: [] };
 
-      // Build multiple search queries for better coverage
+      // Build search queries — prioritized by likelihood of finding the right video
       const queries = [];
       if (title && artist) {
-        queries.push(`${artist} ${title}`);               // Most natural: "Drake Hotline Bling"
-        queries.push(`${artist} - ${title}`);              // Dash format common on YouTube
-        queries.push(`${title} ${artist}`);                // Reversed
-        queries.push(`${artist} ${title} official audio`); // Official audio
-        queries.push(`${artist} ${title} lyrics`);         // Lyrics video (often available)
+        // Best: "Artist - Title" matches YouTube's standard format
+        queries.push(`${artist} - ${title}`);
+        // Plain combined
+        queries.push(`${artist} ${title}`);
+        // With "audio" to prefer audio-only (official uploads, Topic channels)
+        queries.push(`${artist} ${title} audio`);
       }
       if (title) {
-        queries.push(`${title} official audio`);
-        queries.push(title);
+        queries.push(title); // title-only fallback
       }
-      // Short title + artist (helps with long titles)
-      if (title && artist) {
+      // If the artist has featured artists, try just the primary artist
+      if (title && fullArtist && fullArtist !== artist) {
+        queries.push(`${artist} ${title}`);
+      }
+      // Short title + artist for very long titles
+      if (title && artist && title.split(/\s+/).length > 4) {
         const shortTitle = title.split(/\s+/).slice(0, 3).join(' ');
-        if (shortTitle !== title) queries.push(`${artist} ${shortTitle}`);
+        queries.push(`${artist} ${shortTitle}`);
       }
+
       const maxQ = tracks.length > 500 ? 1 : tracks.length > 200 ? 2 : tracks.length > 50 ? 3 : 4;
       const uniqueQueries = [...new Set(queries)].slice(0, maxQ);
 
@@ -417,9 +433,8 @@ export const matchYoutubeTracks = async (req, res) => {
         if (_quotaExhausted) break;
         const items = await searchYT(uniqueQueries[qi]);
         allItems = allItems.concat(items);
-        // Stop early if we have plenty of results from 2+ queries
+        // Stop early if we have plenty of results
         if (allItems.length >= 10 && qi >= 1) break;
-        // Small delay between queries within the same track
         if (qi < uniqueQueries.length - 1) await new Promise(r => setTimeout(r, 150));
       }
 
@@ -432,62 +447,90 @@ export const matchYoutubeTracks = async (req, res) => {
         return true;
       });
 
+      // Deep-normalized versions for scoring
+      const dnTitle  = deepNormalize(title);
+      const dnArtist = artist ? deepNormalize(artist) : '';
+      const dnFull   = fullArtist ? deepNormalize(fullArtist) : dnArtist;
+
       const allCandidates = items.map((i) => {
         const rawYtTitle = i.snippet.title || "";
         const ytTitle   = cleanTitle(rawYtTitle);
-        const channelName = (i.snippet.channelTitle || "")
+        const rawChannel = i.snippet.channelTitle || "";
+        const channelName = rawChannel
           .replace(/\s*-\s*topic$/i, "")
           .replace(/\s*VEVO$/i, "")
           .replace(/\s*Official$/i, "")
           .replace(/\s*Music$/i, "")
           .trim();
+        const isTopic = /\s-\s*topic$/i.test(rawChannel);
 
-        // Check title similarity multiple ways
+        // Deep normalized YT title for comparison
+        const dnYtTitle = deepNormalize(ytTitle);
+        const dnChannel = deepNormalize(channelName);
+
+        // ── Title similarity ──────────────────────────────────────
         const titleSim = similarity(title, ytTitle);
-        // Try "title artist" combined against YT title (YT titles often include both)
         const combinedSim = artist ? similarity(`${title} ${artist}`, ytTitle) : 0;
-        // Try "artist title" order too
-        const reverseSim = artist ? similarity(`${artist} ${title}`, ytTitle) : 0;
-        // Check if the YT title contains "Artist - Song" pattern and extract
+        const reverseSim  = artist ? similarity(`${artist} ${title}`, ytTitle) : 0;
+
+        // Parse "Side1 - Side2" format in YouTube title
         const ytParts = ytTitle.match(/^(.+?)\s*[-–—]\s+(.+)$/);
         let parsedSim = 0;
         if (ytParts) {
-          // Try both orders: "Artist - Song" and "Song - Artist"
           parsedSim = Math.max(
             similarity(title, ytParts[2]) * 0.7 + (artist ? similarity(artist, ytParts[1]) * 0.3 : 0.15),
             similarity(title, ytParts[1]) * 0.7 + (artist ? similarity(artist, ytParts[2]) * 0.3 : 0.15)
           );
         }
-        const bestTitleSim = Math.max(titleSim, combinedSim, reverseSim, parsedSim);
 
-        // Artist similarity — check channel name and also if artist appears in YT title
-        let artistSim = 0.5;
+        // Deep-normalized exact containment check (catches &/and, accent differences)
+        let deepBonus = 0;
+        if (dnTitle && dnYtTitle.includes(dnTitle)) deepBonus = Math.max(deepBonus, 0.15);
+        if (dnArtist && dnYtTitle.includes(dnArtist)) deepBonus = Math.max(deepBonus, 0.1);
+
+        const bestTitleSim = Math.min(1, Math.max(titleSim, combinedSim, reverseSim, parsedSim) + deepBonus);
+
+        // ── Artist similarity ─────────────────────────────────────
+        let artistSim = 0.5; // neutral when no artist info
         if (artist) {
           const channelSim = similarity(artist, channelName);
-          const inTitleSim = normalize(ytTitle).includes(normalize(artist)) ? 0.8 : 0;
-          artistSim = Math.max(channelSim, inTitleSim);
+          const deepChannelSim = dnArtist === dnChannel ? 1 : 0;
+          // Check if any of the source artists appear in the YT title or channel
+          const inTitle   = dnYtTitle.includes(dnArtist) ? 0.85 : 0;
+          const fullInTitle = dnFull !== dnArtist && dnYtTitle.includes(dnFull) ? 0.7 : 0;
+          artistSim = Math.max(channelSim, deepChannelSim, inTitle, fullInTitle);
+          // Topic channels are auto-generated by YouTube for official artists — strong signal
+          if (isTopic && channelSim > 0.5) artistSim = Math.max(artistSim, 0.95);
         }
 
         let score = artist
-          ? bestTitleSim * 0.6 + artistSim * 0.4
+          ? bestTitleSim * 0.55 + artistSim * 0.45
           : bestTitleSim * 0.9 + 0.1;
 
-        // Prefer explicit versions over clean
+        // ── Bonuses / penalties ───────────────────────────────────
         const lowerRaw = rawYtTitle.toLowerCase();
-        const isExplicit = /\bexplicit\b/.test(lowerRaw) || /\(e\)/.test(lowerRaw);
-        const isClean    = /\bclean\b/.test(lowerRaw) && !/clean\s*bandit/i.test(rawYtTitle);
-        if (isExplicit) score += 0.05;
-        if (isClean)    score -= 0.05;
 
-        // Prefer official audio/video from verified-looking channels
-        const isOfficial = /official\s*(audio|video|music)/i.test(rawYtTitle)
-          || /vevo$/i.test(i.snippet.channelTitle || '')
-          || /\s-\stopics?$/i.test(i.snippet.channelTitle || '');
-        if (isOfficial) score += 0.02;
+        // Explicit preference
+        if (/\bexplicit\b/.test(lowerRaw) || /\(e\)/.test(lowerRaw)) score += 0.05;
+        if (/\bclean\b/.test(lowerRaw) && !/clean\s*bandit/i.test(rawYtTitle)) score -= 0.05;
+
+        // Official content bonus
+        if (isTopic) score += 0.04; // Topic = best source
+        else if (/vevo$/i.test(rawChannel)) score += 0.03;
+        else if (/official\s*(audio|music\s*video)/i.test(rawYtTitle)) score += 0.02;
+        else if (/official\s*video/i.test(rawYtTitle)) score += 0.01;
+
+        // Penalize likely non-music content
+        if (/\b(react|reaction|review|cover|tutorial|karaoke|instrumental|remix|live\s+(at|in|from)|concert|interview)\b/i.test(rawYtTitle)) {
+          score -= 0.08;
+        }
+        // Penalize very short results (likely clips, not full songs)
+        // Penalize "sped up", "slowed", "8d audio" etc.
+        if (/\b(sped\s*up|slowed|reverb|8d|nightcore|bass\s*boost)/i.test(rawYtTitle)) score -= 0.06;
 
         return {
           title:        i.snippet.title,
-          channelTitle: i.snippet.channelTitle || "",
+          channelTitle: rawChannel,
           videoId:      i.id?.videoId || "",
           thumbnail:    i.snippet.thumbnails?.medium?.url || "",
           url:          `https://www.youtube.com/watch?v=${i.id?.videoId}`,
@@ -498,12 +541,11 @@ export const matchYoutubeTracks = async (req, res) => {
 
       const best = allCandidates[0] || null;
       const confidence = !best ? "none"
-        : best.score >= 0.6 ? "exact"
-        : best.score >= 0.3 ? "close"
-        : best.score >= 0.1 ? "similar"
+        : best.score >= 0.55 ? "exact"
+        : best.score >= 0.3  ? "close"
+        : best.score >= 0.1  ? "similar"
         : "none";
 
-      // Always return alternatives so user can swap
       return { source: src, bestMatch: best, confidence, alternatives: allCandidates.slice(1, 7) };
     };
 
