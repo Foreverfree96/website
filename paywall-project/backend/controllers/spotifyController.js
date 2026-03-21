@@ -576,14 +576,13 @@ export const generatePlaylist = async (req, res) => {
     console.log(`🎵 Generate request: ${seedTrackIds.length} trackIds, ${seedTrackMeta.length} meta, ${genres.length} genres, limit=${limit}, playlist=${seedPlaylistId || 'none'}`);
     if (seedTrackMeta.length) console.log(`   Meta:`, seedTrackMeta.slice(0, 3).map(m => `${m.name} - ${m.artist}`));
 
-    // User token ONLY for generate — keeps rate-limit bucket separate from search (client creds)
+    // Try user token first, fall back to client creds if unavailable
     const result = await getValidToken(req.user.id, false);
-    if (result.error) {
-      return res.status(401).json({ message: "Connect Spotify first" });
-    }
-    let token = result.accessToken;
-    console.log(`   Token: user-token (${token ? 'valid' : 'NULL'})`);
-    const auth = { Authorization: `Bearer ${token}` };
+    const userToken = result.error ? null : result.accessToken;
+    const ccToken = await getClientCredToken();
+    const fallbackToken = userToken || ccToken;
+    console.log(`   Token: ${userToken ? 'user-token' : 'client-creds-fallback'}`);
+    const auth = { Authorization: `Bearer ${fallbackToken}` };
 
     // Clean YouTube channel names helper
     const cleanArtist = (raw) => (raw || "")
