@@ -48,6 +48,11 @@
               <a :href="pt.saveResult.value.playlistUrl" target="_blank" rel="noopener">Open in Spotify</a></span>
               <button class="pt-success-dismiss" @click="pt.saveResult.value = null">&times;</button>
             </div>
+            <div v-if="pt.ytSaveResult.value" class="pt-success pt-success-yt">
+              <span>Playlist "<strong>{{ pt.ytSaveResult.value.name }}</strong>" saved{{ pt.ytSaveResult.value.partial ? ` (${pt.ytSaveResult.value.added}/${pt.ytSaveResult.value.total} videos)` : '' }}!
+              <a :href="pt.ytSaveResult.value.playlistUrl" target="_blank" rel="noopener">Open in YouTube</a></span>
+              <button class="pt-success-dismiss" @click="pt.ytSaveResult.value = null">&times;</button>
+            </div>
 
             <!-- ═══════════════════════ GENERATE TAB ═══════════════════════ -->
             <div v-if="pt.activeTab.value === 'generate'" class="pt-body">
@@ -210,6 +215,9 @@
                   </button>
                 </div>
                 <div class="pt-actions" v-else>
+                  <button class="pt-btn pt-btn-yt-save" @click="showYtSaveDialog = true" :disabled="!pt.resultTracks.value.length">
+                    Save to YouTube
+                  </button>
                   <button class="pt-btn pt-btn-primary" @click="copyYoutubeLinks" :disabled="!pt.resultTracks.value.length">
                     {{ ytCopied ? 'Copied!' : 'Copy All Links' }}
                   </button>
@@ -353,6 +361,9 @@
                   </button>
                 </div>
                 <div class="pt-actions" v-else-if="pt.convertDirection.value === 'spotify-to-yt'">
+                  <button class="pt-btn pt-btn-yt-save" @click="showYtSaveDialog = true" :disabled="!pt.resultTracks.value.length">
+                    Save to YouTube
+                  </button>
                   <button class="pt-btn pt-btn-primary" @click="copyYoutubeLinks" :disabled="!pt.resultTracks.value.length">
                     {{ ytCopied ? 'Copied!' : 'Copy All Links' }}
                   </button>
@@ -410,6 +421,64 @@
                   </div>
                   <div class="pt-save-actions">
                     <button class="pt-btn" @click="showSaveDialog = false">Cancel</button>
+                  </div>
+                </template>
+              </div>
+            </div>
+
+            <!-- ═══════════════════════ YOUTUBE SAVE DIALOG ═══════════════════════ -->
+            <div v-if="showYtSaveDialog" class="pt-save-overlay" @click.self="showYtSaveDialog = false">
+              <div class="pt-save-dialog">
+                <h3>Save to YouTube</h3>
+
+                <!-- Quota warning -->
+                <div class="pt-quota-warning">
+                  This will use ~{{ 50 + pt.resultTracks.value.length * 50 }} YouTube API quota units
+                  ({{ pt.resultTracks.value.length }} videos)
+                </div>
+
+                <!-- Toggle: new vs existing -->
+                <div class="pt-save-toggle">
+                  <button :class="['pt-save-toggle-btn', { active: ytSaveMode === 'new' }]" @click="ytSaveMode = 'new'">New Playlist</button>
+                  <button :class="['pt-save-toggle-btn', { active: ytSaveMode === 'existing' }]" @click="ytSaveMode = 'existing'; loadYtPlaylists()">Add to Existing</button>
+                </div>
+
+                <!-- New playlist -->
+                <template v-if="ytSaveMode === 'new'">
+                  <input
+                    class="pt-input"
+                    v-model="ytPlaylistName"
+                    placeholder="Playlist name..."
+                    @keydown.enter="handleYtSave"
+                  />
+                  <div class="pt-save-actions">
+                    <button class="pt-btn pt-btn-yt-save" @click="handleYtSave" :disabled="pt.ytSaving.value || !ytPlaylistName.trim()">
+                      {{ pt.ytSaving.value ? 'Saving...' : 'Create & Save' }}
+                    </button>
+                    <button class="pt-btn" @click="showYtSaveDialog = false">Cancel</button>
+                  </div>
+                </template>
+
+                <!-- Existing playlist -->
+                <template v-else>
+                  <div v-if="pt.ytPlaylistsLoading.value" class="pt-hint">Loading playlists...</div>
+                  <div v-else-if="!pt.ytUserPlaylists.value.length" class="pt-hint">No playlists found. Connect YouTube first.</div>
+                  <div v-else class="pt-existing-list">
+                    <div
+                      v-for="pl in pt.ytUserPlaylists.value"
+                      :key="pl.id"
+                      class="pt-existing-item"
+                      @click="handleAddToExistingYt(pl.id)"
+                    >
+                      <img v-if="pl.image" :src="pl.image" class="pt-existing-art" alt="" />
+                      <div class="pt-existing-info">
+                        <span class="pt-existing-name">{{ pl.name }}</span>
+                        <span class="pt-existing-count">{{ pl.tracks }} videos</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="pt-save-actions">
+                    <button class="pt-btn" @click="showYtSaveDialog = false">Cancel</button>
                   </div>
                 </template>
               </div>
@@ -473,6 +542,18 @@ const spotifyReconnectUrl = computed(() => {
 const showSaveDialog   = ref(false);
 const playlistName     = ref('');
 const saveMode         = ref('new'); // 'new' | 'existing'
+
+// YouTube save dialog
+const showYtSaveDialog = ref(false);
+const ytPlaylistName   = ref('');
+const ytSaveMode       = ref('new');
+
+const youtubeReconnectUrl = computed(() => {
+  const token = localStorage.getItem('jwtToken') || '';
+  const url = new URL(window.location.href);
+  url.searchParams.delete('youtube');
+  return `${API}/api/youtube/auth?token=${token}&returnTo=${encodeURIComponent(url.toString())}`;
+});
 const altOpen          = ref(null);
 const customGenreInput = ref('');
 const openCats         = ref(new Set(['Popular', 'Moods']));
@@ -638,6 +719,23 @@ const openYoutubePlaylist = () => {
 const handleAddToExisting = (playlistId) => {
   pt.addToExistingPlaylist(playlistId);
   showSaveDialog.value = false;
+};
+
+// YouTube save handlers
+const handleYtSave = () => {
+  if (!ytPlaylistName.value.trim()) return;
+  pt.saveToYouTube(ytPlaylistName.value.trim());
+  showYtSaveDialog.value = false;
+  ytPlaylistName.value = '';
+};
+
+const loadYtPlaylists = () => {
+  if (!pt.ytUserPlaylists.value.length) pt.fetchUserYouTubePlaylists();
+};
+
+const handleAddToExistingYt = (playlistId) => {
+  pt.addToExistingYouTubePlaylist(playlistId);
+  showYtSaveDialog.value = false;
 };
 </script>
 
@@ -926,6 +1024,21 @@ const handleAddToExisting = (playlistId) => {
 .pt-btn-play:hover:not(:disabled) { background: #1aa34a; }
 
 .pt-btn-save { background: #7c3aed; border-color: #7c3aed; color: #fff; flex: 1; text-align: center; }
+
+.pt-btn-yt-save { background: #c00; border-color: #c00; color: #fff; flex: 1; text-align: center; }
+.pt-btn-yt-save:hover:not(:disabled) { background: #a00; }
+
+.pt-quota-warning {
+  background: #2a1a00;
+  border: 1px solid #78350f;
+  color: #fbbf24;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.pt-success-yt { border-color: #c00; background: #1a0505; }
+.pt-success-yt a { color: #f87171; }
 
 /* ─── Results ─────────────────────────────────────────────────────────────── */
 .pt-results { display: flex; flex-direction: column; gap: 8px; }

@@ -1,4 +1,6 @@
 import axios from "axios";
+import jwt from "jsonwebtoken";
+import User from "../models/userModel.js";
 
 // YouTube API key rotation — each key has its own 10k units/day quota.
 // When one key is exhausted, we rotate to the next.
@@ -493,5 +495,352 @@ export const matchYoutubeTracks = async (req, res) => {
   } catch (err) {
     console.error("❌ YouTube match error:", err.response?.data || err.message);
     res.status(500).json({ message: "Matching failed" });
+  }
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// YOUTUBE OAUTH + PLAYLIST WRITE
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const YT_SCOPE = "https://www.googleapis.com/auth/youtube";
+
+// ─── HELPERS ──────────────────────────────────────────────────────────────────
+
+const isSafeReturn = (url) => {
+  try {
+    const parsed   = new URL(url);
+    const frontend = new URL(process.env.FRONTEND_URL);
+    return parsed.hostname === frontend.hostname;
+  } catch { return false; }
+};
+
+const refreshYouTubeToken = async (userId, refreshToken) => {
+  const res = await axios.post("https://oauth2.googleapis.com/token", new URLSearchParams({
+    grant_type:    "refresh_token",
+    refresh_token: refreshToken,
+    client_id:     process.env.YOUTUBE_CLIENT_ID,
+    client_secret: process.env.YOUTUBE_CLIENT_SECRET,
+  }), { headers: { "Content-Type": "application/x-www-form-urlencoded" } });
+
+  const { access_token, expires_in } = res.data;
+  const expiresAt = new Date(Date.now() + expires_in * 1000);
+  await User.findByIdAndUpdate(userId, {
+    youtubeAccessToken: access_token,
+    youtubeTokenExpiry: expiresAt,
+  });
+  return { accessToken: access_token, expiresAt };
+};
+
+const getValidYouTubeToken = async (userId) => {
+  const user = await User.findById(userId).select(
+    "+youtubeAccessToken +youtubeRefreshToken youtubeTokenExpiry youtubeChannelId"
+  );
+  if (!user?.youtubeChannelId) return { error: 404, message: "YouTube not connected" };
+
+  let accessToken = user.youtubeAccessToken;
+  let expiresAt   = user.youtubeTokenExpiry;
+
+  const fiveMinFromNow = new Date(Date.now() + 5 * 60 * 1000);
+  if (!expiresAt || expiresAt < fiveMinFromNow) {
+    try {
+      const refreshed = await refreshYouTubeToken(userId, user.youtubeRefreshToken);
+      accessToken = refreshed.accessToken;
+      expiresAt   = refreshed.expiresAt;
+    } catch (err) {
+      console.error("❌ YouTube token refresh failed:", err.response?.data || err.message);
+      return { error: 401, message: "YouTube session expired — please reconnect" };
+    }
+  }
+
+  return { accessToken, expiresAt };
+};
+
+// ─── YOUTUBE AUTH ─────────────────────────────────────────────────────────────
+// GET /api/youtube/auth?token=JWT&returnTo=...
+export const youtubeAuth = async (req, res) => {
+  const { token, returnTo } = req.query;
+  if (!token) return res.status(401).json({ message: "Not authenticated" });
+
+  let userId;
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    userId = decoded.id;
+  } catch {
+    return res.status(401).json({ message: "Invalid token" });
+  }
+
+  const safeReturn = returnTo && isSafeReturn(returnTo) ? returnTo : '';
+  const state = Buffer.from(JSON.stringify({ id: userId, ret: safeReturn })).toString('base64url');
+
+  const params = new URLSearchParams({
+    client_id:     process.env.YOUTUBE_CLIENT_ID,
+    redirect_uri:  process.env.YOUTUBE_REDIRECT_URI,
+    response_type: "code",
+    scope:         YT_SCOPE,
+    access_type:   "offline",
+    prompt:        "consent",
+    state,
+  });
+
+  res.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params}`);
+};
+
+// ─── YOUTUBE CALLBACK ─────────────────────────────────────────────────────────
+// GET /api/youtube/callback
+export const youtubeCallback = async (req, res) => {
+  const { code, state: rawState, error } = req.query;
+
+  let userId, returnTo;
+  try {
+    const decoded = JSON.parse(Buffer.from(rawState, 'base64url').toString('utf8'));
+    userId   = decoded.id;
+    returnTo = decoded.ret && isSafeReturn(decoded.ret) ? decoded.ret : '';
+  } catch {
+    userId   = rawState;
+    returnTo = '';
+  }
+
+  const fallback = `${process.env.FRONTEND_URL}/profile`;
+  const dest = returnTo || fallback;
+
+  if (error || !code || !userId) {
+    const u = new URL(dest);
+    u.searchParams.set('youtube', 'error');
+    return res.redirect(u.toString());
+  }
+
+  try {
+    const tokenRes = await axios.post("https://oauth2.googleapis.com/token", new URLSearchParams({
+      grant_type:    "authorization_code",
+      code,
+      client_id:     process.env.YOUTUBE_CLIENT_ID,
+      client_secret: process.env.YOUTUBE_CLIENT_SECRET,
+      redirect_uri:  process.env.YOUTUBE_REDIRECT_URI,
+    }), { headers: { "Content-Type": "application/x-www-form-urlencoded" } });
+
+    const { access_token, refresh_token, expires_in } = tokenRes.data;
+
+    // Fetch the user's channel info
+    const channelRes = await axios.get(`${BASE}/channels`, {
+      params: { part: "snippet", mine: true },
+      headers: { Authorization: `Bearer ${access_token}` },
+    });
+
+    const ch = channelRes.data.items?.[0];
+    const channelId   = ch?.id || "";
+    const displayName = ch?.snippet?.title || "";
+
+    await User.findByIdAndUpdate(userId, {
+      youtubeChannelId:    channelId,
+      youtubeDisplayName:  displayName,
+      youtubeAccessToken:  access_token,
+      youtubeRefreshToken: refresh_token,
+      youtubeTokenExpiry:  new Date(Date.now() + expires_in * 1000),
+    });
+
+    console.log(`✅ YouTube connected for user ${userId}: channel=${channelId} (${displayName})`);
+
+    const u = new URL(dest);
+    u.searchParams.set('youtube', 'connected');
+    res.redirect(u.toString());
+  } catch (err) {
+    console.error("❌ YouTube OAuth error:", err.response?.data || err.message);
+    const u = new URL(dest);
+    u.searchParams.set('youtube', 'error');
+    res.redirect(u.toString());
+  }
+};
+
+// ─── YOUTUBE STATUS ───────────────────────────────────────────────────────────
+// GET /api/youtube/status
+export const youtubeStatus = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id).select(
+      "youtubeChannelId youtubeDisplayName youtubeTokenExpiry"
+    );
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    res.json({
+      connected:    !!user.youtubeChannelId,
+      displayName:  user.youtubeDisplayName || null,
+      channelId:    user.youtubeChannelId || null,
+      tokenExpired: user.youtubeTokenExpiry ? user.youtubeTokenExpiry < new Date() : true,
+    });
+  } catch {
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+// ─── YOUTUBE DISCONNECT ───────────────────────────────────────────────────────
+// DELETE /api/youtube/disconnect
+export const youtubeDisconnect = async (req, res) => {
+  try {
+    // Try revoking the token with Google
+    const user = await User.findById(req.user.id).select("+youtubeAccessToken");
+    if (user?.youtubeAccessToken) {
+      try {
+        await axios.post(`https://oauth2.googleapis.com/revoke?token=${user.youtubeAccessToken}`);
+      } catch { /* revoke is best-effort */ }
+    }
+
+    await User.findByIdAndUpdate(req.user.id, {
+      $unset: {
+        youtubeChannelId:    1,
+        youtubeDisplayName:  1,
+        youtubeAccessToken:  1,
+        youtubeRefreshToken: 1,
+        youtubeTokenExpiry:  1,
+      },
+    });
+    res.json({ message: "YouTube disconnected" });
+  } catch {
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+// ─── CREATE YOUTUBE PLAYLIST ──────────────────────────────────────────────────
+// POST /api/youtube/playlist
+// Body: { name, description?, videoIds: ["dQw4w9WgXcQ", ...] }
+export const createYouTubePlaylist = async (req, res) => {
+  try {
+    const { name, description = "", videoIds = [] } = req.body;
+    if (!name) return res.status(400).json({ message: "Playlist name is required" });
+    if (!videoIds.length) return res.status(400).json({ message: "No videos provided" });
+
+    const result = await getValidYouTubeToken(req.user.id);
+    if (result.error) return res.status(result.error).json({ message: result.message });
+
+    const auth = { Authorization: `Bearer ${result.accessToken}`, "Content-Type": "application/json" };
+
+    // Create the playlist
+    const createRes = await axios.post(`${BASE}/playlists?part=snippet,status`, {
+      snippet: { title: name, description },
+      status:  { privacyStatus: "private" },
+    }, { headers: auth });
+
+    const playlistId = createRes.data.id;
+    console.log(`✅ YouTube playlist created: ${playlistId} (${name})`);
+
+    // Add videos one at a time (YouTube API doesn't support batch inserts)
+    let added = 0;
+    for (let i = 0; i < videoIds.length; i++) {
+      try {
+        await axios.post(`${BASE}/playlistItems?part=snippet`, {
+          snippet: {
+            playlistId,
+            resourceId: { kind: "youtube#video", videoId: videoIds[i] },
+          },
+        }, { headers: auth });
+        added++;
+      } catch (e) {
+        const reason = e.response?.data?.error?.errors?.[0]?.reason || '';
+        if (reason === 'quotaExceeded' || reason === 'dailyLimitExceeded') {
+          console.log(`⚠️ YouTube quota exhausted after adding ${added}/${videoIds.length} videos`);
+          return res.json({
+            playlistId,
+            playlistUrl: `https://www.youtube.com/playlist?list=${playlistId}`,
+            name,
+            added,
+            total: videoIds.length,
+            partial: true,
+            message: `Quota reached — ${added}/${videoIds.length} videos added`,
+          });
+        }
+        if (reason === 'videoNotFound') {
+          console.log(`   Skipping video ${videoIds[i]}: not found`);
+          continue;
+        }
+        console.error(`   Failed to add video ${videoIds[i]}:`, e.response?.status, reason);
+      }
+      // Small delay between inserts to avoid per-user rate limits
+      if (i < videoIds.length - 1) await new Promise(r => setTimeout(r, 200));
+    }
+
+    console.log(`✅ YouTube playlist ${playlistId}: ${added}/${videoIds.length} videos added`);
+    res.json({
+      playlistId,
+      playlistUrl: `https://www.youtube.com/playlist?list=${playlistId}`,
+      name,
+      added,
+      total: videoIds.length,
+    });
+  } catch (err) {
+    console.error("❌ YouTube create playlist error:", err.response?.data || err.message);
+    if (err.response?.status === 403) {
+      const reason = err.response?.data?.error?.errors?.[0]?.reason || '';
+      if (reason === 'quotaExceeded' || reason === 'dailyLimitExceeded') {
+        return res.status(429).json({ message: "YouTube API quota exhausted — try again tomorrow" });
+      }
+      return res.status(403).json({ message: "Reconnect YouTube to enable playlist creation" });
+    }
+    res.status(err.response?.status || 500).json({ message: "Failed to create playlist" });
+  }
+};
+
+// ─── ADD TO EXISTING YOUTUBE PLAYLIST ─────────────────────────────────────────
+// POST /api/youtube/playlist/:id/add
+// Body: { videoIds: ["dQw4w9WgXcQ", ...] }
+export const addToYouTubePlaylist = async (req, res) => {
+  try {
+    const { videoIds = [] } = req.body;
+    const playlistId = req.params.id;
+    if (!videoIds.length) return res.status(400).json({ message: "No videos provided" });
+
+    const result = await getValidYouTubeToken(req.user.id);
+    if (result.error) return res.status(result.error).json({ message: result.message });
+
+    const auth = { Authorization: `Bearer ${result.accessToken}`, "Content-Type": "application/json" };
+
+    let added = 0;
+    for (let i = 0; i < videoIds.length; i++) {
+      try {
+        await axios.post(`${BASE}/playlistItems?part=snippet`, {
+          snippet: {
+            playlistId,
+            resourceId: { kind: "youtube#video", videoId: videoIds[i] },
+          },
+        }, { headers: auth });
+        added++;
+      } catch (e) {
+        const reason = e.response?.data?.error?.errors?.[0]?.reason || '';
+        if (reason === 'quotaExceeded' || reason === 'dailyLimitExceeded') {
+          return res.json({ added, total: videoIds.length, partial: true, message: `Quota reached — ${added}/${videoIds.length} added` });
+        }
+        if (reason === 'videoNotFound') continue;
+        console.error(`   Failed to add video ${videoIds[i]}:`, e.response?.status, reason);
+      }
+      if (i < videoIds.length - 1) await new Promise(r => setTimeout(r, 200));
+    }
+
+    res.json({ added, total: videoIds.length });
+  } catch (err) {
+    console.error("❌ YouTube add to playlist error:", err.response?.data || err.message);
+    res.status(err.response?.status || 500).json({ message: "Failed to add videos" });
+  }
+};
+
+// ─── GET USER'S YOUTUBE PLAYLISTS ─────────────────────────────────────────────
+// GET /api/youtube/playlists
+export const getYouTubePlaylists = async (req, res) => {
+  try {
+    const result = await getValidYouTubeToken(req.user.id);
+    if (result.error) return res.status(result.error).json({ message: result.message });
+
+    const r = await axios.get(`${BASE}/playlists`, {
+      params: { part: "snippet,contentDetails", mine: true, maxResults: 50 },
+      headers: { Authorization: `Bearer ${result.accessToken}` },
+    });
+
+    const playlists = (r.data.items || []).map((p) => ({
+      id:     p.id,
+      name:   p.snippet.title,
+      image:  p.snippet.thumbnails?.medium?.url || p.snippet.thumbnails?.default?.url || "",
+      tracks: p.contentDetails?.itemCount || 0,
+    }));
+
+    res.json({ playlists });
+  } catch (err) {
+    console.error("❌ YouTube get playlists error:", err.response?.data || err.message);
+    res.status(err.response?.status || 500).json({ message: "Failed to fetch playlists" });
   }
 };

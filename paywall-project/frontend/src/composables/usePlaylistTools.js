@@ -971,6 +971,105 @@ export function usePlaylistTools() {
     saving.value = false;
   };
 
+  // ── YouTube save ─────────────────────────────────────────────────────────
+  const ytSaving          = ref(false);
+  const ytSaveResult      = ref(null);  // { playlistUrl, name, added, total }
+  const ytUserPlaylists   = ref([]);
+  const ytPlaylistsLoading = ref(false);
+  const ytScopeMissing    = ref(false);
+
+  const fetchUserYouTubePlaylists = async () => {
+    ytPlaylistsLoading.value = true;
+    try {
+      const res = await fetch(`${API}/api/youtube/playlists`, { headers: headers() });
+      if (!res.ok) {
+        if (res.status === 404 || res.status === 401) ytScopeMissing.value = true;
+        ytUserPlaylists.value = [];
+      } else {
+        const data = await res.json();
+        ytUserPlaylists.value = data.playlists || [];
+      }
+    } catch { ytUserPlaylists.value = []; }
+    ytPlaylistsLoading.value = false;
+  };
+
+  const saveToYouTube = async (name) => {
+    error.value = '';
+    ytScopeMissing.value = false;
+    ytSaving.value = true;
+    ytSaveResult.value = null;
+    try {
+      const videoIds = resultTracks.value
+        .map(t => t.videoId || t.id)
+        .filter(Boolean);
+      if (!videoIds.length) throw new Error('No YouTube videos to save');
+
+      const ctrl = new AbortController();
+      const tm = setTimeout(() => ctrl.abort(), 300000); // 5min for large playlists
+      const res = await fetch(`${API}/api/youtube/playlist`, {
+        method: 'POST',
+        headers: headers(),
+        body: JSON.stringify({ name, videoIds }),
+        signal: ctrl.signal,
+      });
+      clearTimeout(tm);
+      if (!res.ok) {
+        let msg = 'Failed to save playlist';
+        try {
+          const data = await res.json();
+          msg = data.message || msg;
+        } catch {}
+        if (res.status === 404 || res.status === 401) {
+          ytScopeMissing.value = true;
+          msg = 'Connect YouTube to save playlists';
+        }
+        throw new Error(msg);
+      }
+      const data = await res.json();
+      ytSaveResult.value = data;
+    } catch (err) {
+      error.value = err.message;
+    }
+    ytSaving.value = false;
+  };
+
+  const addToExistingYouTubePlaylist = async (playlistId) => {
+    error.value = '';
+    ytSaving.value = true;
+    try {
+      const videoIds = resultTracks.value
+        .map(t => t.videoId || t.id)
+        .filter(Boolean);
+      if (!videoIds.length) throw new Error('No videos to add');
+
+      const ctrl = new AbortController();
+      const tm = setTimeout(() => ctrl.abort(), 300000);
+      const res = await fetch(`${API}/api/youtube/playlist/${playlistId}/add`, {
+        method: 'POST',
+        headers: headers(),
+        body: JSON.stringify({ videoIds }),
+        signal: ctrl.signal,
+      });
+      clearTimeout(tm);
+      if (!res.ok) {
+        let msg = 'Failed to add videos';
+        try { const data = await res.json(); msg = data.message || msg; } catch {}
+        throw new Error(msg);
+      }
+      const data = await res.json();
+      const pl = ytUserPlaylists.value.find(p => p.id === playlistId);
+      ytSaveResult.value = {
+        playlistUrl: `https://www.youtube.com/playlist?list=${playlistId}`,
+        name: pl?.name || 'Playlist',
+        added: data.added,
+        total: data.total,
+      };
+    } catch (err) {
+      error.value = err.message;
+    }
+    ytSaving.value = false;
+  };
+
   // ── Persist state before Spotify reconnect redirect ─────────────────────
   const STORAGE_KEY = 'pt_saved_state';
 
@@ -1036,6 +1135,7 @@ export function usePlaylistTools() {
     GENRES, GENRE_CATEGORIES, genreFilter,
 
     likedIds, userPlaylists, playlistsLoading,
+    ytSaving, ytSaveResult, ytUserPlaylists, ytPlaylistsLoading, ytScopeMissing,
 
     // Methods
     open, close, minimize, reset, setTab,
@@ -1044,5 +1144,6 @@ export function usePlaylistTools() {
     swapMatch, autofillUnmatched, removeResult,
     likeTrack, fetchUserPlaylists, addToExistingPlaylist,
     saveToSpotify, saveState, restoreState,
+    saveToYouTube, addToExistingYouTubePlaylist, fetchUserYouTubePlaylists,
   };
 }

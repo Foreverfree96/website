@@ -200,6 +200,26 @@ const userSchema = new mongoose.Schema(
 
     /** Timestamp when spotifyAccessToken expires. */
     spotifyTokenExpiry: { type: Date },
+
+    // ------------------------------------------------------------------
+    // YouTube OAuth fields
+    // Populated when the user links their YouTube/Google account.
+    // ------------------------------------------------------------------
+
+    /** YouTube channel ID from the channels API. */
+    youtubeChannelId: { type: String },
+
+    /** Display name from the YouTube channel. */
+    youtubeDisplayName: { type: String },
+
+    /** Short-lived Google access token for YouTube API calls. */
+    youtubeAccessToken: { type: String, select: false },
+
+    /** Long-lived refresh token used to obtain new access tokens. */
+    youtubeRefreshToken: { type: String, select: false },
+
+    /** Timestamp when youtubeAccessToken expires. */
+    youtubeTokenExpiry: { type: Date },
   },
   // Automatically manage createdAt and updatedAt timestamps on every document.
   { timestamps: true }
