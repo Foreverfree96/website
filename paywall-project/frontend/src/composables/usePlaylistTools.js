@@ -1000,9 +1000,10 @@ export function usePlaylistTools() {
     ytSaveResult.value = null;
     try {
       const videoIds = resultTracks.value
-        .map(t => t.videoId || t.id)
-        .filter(Boolean);
+        .map(t => (t.videoId || t.id || '').trim())
+        .filter(v => v.length > 0);
       if (!videoIds.length) throw new Error('No YouTube videos to save');
+      console.log(`[YT Save] Sending ${videoIds.length} videoIds (from ${resultTracks.value.length} result tracks)`);
 
       const ctrl = new AbortController();
       const tm = setTimeout(() => ctrl.abort(), 300000); // 5min for large playlists
@@ -1038,8 +1039,8 @@ export function usePlaylistTools() {
     ytSaving.value = true;
     try {
       const videoIds = resultTracks.value
-        .map(t => t.videoId || t.id)
-        .filter(Boolean);
+        .map(t => (t.videoId || t.id || '').trim())
+        .filter(v => v.length > 0);
       if (!videoIds.length) throw new Error('No videos to add');
 
       const ctrl = new AbortController();

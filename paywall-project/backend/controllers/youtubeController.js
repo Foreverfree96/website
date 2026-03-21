@@ -703,9 +703,11 @@ export const youtubeDisconnect = async (req, res) => {
 // Body: { name, description?, videoIds: ["dQw4w9WgXcQ", ...] }
 export const createYouTubePlaylist = async (req, res) => {
   try {
-    const { name, description = "", videoIds = [] } = req.body;
+    const { name, description = "", videoIds: rawIds = [] } = req.body;
     if (!name) return res.status(400).json({ message: "Playlist name is required" });
+    const videoIds = rawIds.filter(id => typeof id === 'string' && id.trim().length > 0);
     if (!videoIds.length) return res.status(400).json({ message: "No videos provided" });
+    console.log(`🎬 YouTube save: ${videoIds.length} videos (${rawIds.length} raw) to "${name}"`);
 
     const result = await getValidYouTubeToken(req.user.id);
     if (result.error) return res.status(result.error).json({ message: result.message });
@@ -723,46 +725,72 @@ export const createYouTubePlaylist = async (req, res) => {
 
     // Add videos one at a time (YouTube API doesn't support batch inserts)
     let added = 0;
+    let skipped = 0;
+    const failed = [];
     for (let i = 0; i < videoIds.length; i++) {
-      try {
-        await axios.post(`${BASE}/playlistItems?part=snippet`, {
-          snippet: {
-            playlistId,
-            resourceId: { kind: "youtube#video", videoId: videoIds[i] },
-          },
-        }, { headers: auth });
-        added++;
-      } catch (e) {
-        const reason = e.response?.data?.error?.errors?.[0]?.reason || '';
-        if (reason === 'quotaExceeded' || reason === 'dailyLimitExceeded') {
-          console.log(`⚠️ YouTube quota exhausted after adding ${added}/${videoIds.length} videos`);
-          return res.json({
-            playlistId,
-            playlistUrl: `https://www.youtube.com/playlist?list=${playlistId}`,
-            name,
-            added,
-            total: videoIds.length,
-            partial: true,
-            message: `Quota reached — ${added}/${videoIds.length} videos added`,
-          });
+      let success = false;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          await axios.post(`${BASE}/playlistItems?part=snippet`, {
+            snippet: {
+              playlistId,
+              resourceId: { kind: "youtube#video", videoId: videoIds[i] },
+            },
+          }, { headers: auth });
+          added++;
+          success = true;
+          break;
+        } catch (e) {
+          const reason = e.response?.data?.error?.errors?.[0]?.reason || '';
+          if (reason === 'quotaExceeded' || reason === 'dailyLimitExceeded') {
+            console.log(`⚠️ YouTube quota exhausted after adding ${added}/${videoIds.length} videos`);
+            return res.json({
+              playlistId,
+              playlistUrl: `https://www.youtube.com/playlist?list=${playlistId}`,
+              name,
+              added,
+              total: videoIds.length,
+              skipped,
+              partial: true,
+              message: `Quota reached — ${added}/${videoIds.length} videos added`,
+            });
+          }
+          if (reason === 'videoNotFound') {
+            console.log(`   Skipping video ${videoIds[i]}: not found`);
+            skipped++;
+            success = true; // don't retry
+            break;
+          }
+          if (reason === 'duplicate') {
+            console.log(`   Skipping video ${videoIds[i]}: already in playlist`);
+            added++; // count as added since it's there
+            success = true;
+            break;
+          }
+          // Retry once on transient errors
+          if (attempt === 0) {
+            console.log(`   Retrying video ${videoIds[i]} (${e.response?.status} ${reason})`);
+            await new Promise(r => setTimeout(r, 1000));
+            continue;
+          }
+          console.error(`   Failed to add video ${videoIds[i]}:`, e.response?.status, reason);
+          failed.push(videoIds[i]);
         }
-        if (reason === 'videoNotFound') {
-          console.log(`   Skipping video ${videoIds[i]}: not found`);
-          continue;
-        }
-        console.error(`   Failed to add video ${videoIds[i]}:`, e.response?.status, reason);
       }
       // Small delay between inserts to avoid per-user rate limits
       if (i < videoIds.length - 1) await new Promise(r => setTimeout(r, 200));
     }
 
-    console.log(`✅ YouTube playlist ${playlistId}: ${added}/${videoIds.length} videos added`);
+    console.log(`✅ YouTube playlist ${playlistId}: ${added}/${videoIds.length} videos added (${skipped} skipped, ${failed.length} failed)`);
     res.json({
       playlistId,
       playlistUrl: `https://www.youtube.com/playlist?list=${playlistId}`,
       name,
       added,
       total: videoIds.length,
+      skipped,
+      failed: failed.length,
+      partial: added < videoIds.length - skipped,
     });
   } catch (err) {
     console.error("❌ YouTube create playlist error:", err.response?.data || err.message);
@@ -782,8 +810,9 @@ export const createYouTubePlaylist = async (req, res) => {
 // Body: { videoIds: ["dQw4w9WgXcQ", ...] }
 export const addToYouTubePlaylist = async (req, res) => {
   try {
-    const { videoIds = [] } = req.body;
+    const { videoIds: rawIds = [] } = req.body;
     const playlistId = req.params.id;
+    const videoIds = rawIds.filter(id => typeof id === 'string' && id.trim().length > 0);
     if (!videoIds.length) return res.status(400).json({ message: "No videos provided" });
 
     const result = await getValidYouTubeToken(req.user.id);
@@ -792,27 +821,36 @@ export const addToYouTubePlaylist = async (req, res) => {
     const auth = { Authorization: `Bearer ${result.accessToken}`, "Content-Type": "application/json" };
 
     let added = 0;
+    let skipped = 0;
     for (let i = 0; i < videoIds.length; i++) {
-      try {
-        await axios.post(`${BASE}/playlistItems?part=snippet`, {
-          snippet: {
-            playlistId,
-            resourceId: { kind: "youtube#video", videoId: videoIds[i] },
-          },
-        }, { headers: auth });
-        added++;
-      } catch (e) {
-        const reason = e.response?.data?.error?.errors?.[0]?.reason || '';
-        if (reason === 'quotaExceeded' || reason === 'dailyLimitExceeded') {
-          return res.json({ added, total: videoIds.length, partial: true, message: `Quota reached — ${added}/${videoIds.length} added` });
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          await axios.post(`${BASE}/playlistItems?part=snippet`, {
+            snippet: {
+              playlistId,
+              resourceId: { kind: "youtube#video", videoId: videoIds[i] },
+            },
+          }, { headers: auth });
+          added++;
+          break;
+        } catch (e) {
+          const reason = e.response?.data?.error?.errors?.[0]?.reason || '';
+          if (reason === 'quotaExceeded' || reason === 'dailyLimitExceeded') {
+            return res.json({ added, total: videoIds.length, skipped, partial: true, message: `Quota reached — ${added}/${videoIds.length} added` });
+          }
+          if (reason === 'videoNotFound') { skipped++; break; }
+          if (reason === 'duplicate') { added++; break; }
+          if (attempt === 0) {
+            await new Promise(r => setTimeout(r, 1000));
+            continue;
+          }
+          console.error(`   Failed to add video ${videoIds[i]}:`, e.response?.status, reason);
         }
-        if (reason === 'videoNotFound') continue;
-        console.error(`   Failed to add video ${videoIds[i]}:`, e.response?.status, reason);
       }
       if (i < videoIds.length - 1) await new Promise(r => setTimeout(r, 200));
     }
 
-    res.json({ added, total: videoIds.length });
+    res.json({ added, total: videoIds.length, skipped, partial: added < videoIds.length - skipped });
   } catch (err) {
     console.error("❌ YouTube add to playlist error:", err.response?.data || err.message);
     res.status(err.response?.status || 500).json({ message: "Failed to add videos" });

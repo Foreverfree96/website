@@ -50,7 +50,7 @@
               <button class="pt-success-dismiss" @click="pt.saveResult.value = null">&times;</button>
             </div>
             <div v-if="pt.ytSaveResult.value" class="pt-success pt-success-yt">
-              <span>Playlist "<strong>{{ pt.ytSaveResult.value.name }}</strong>" saved{{ pt.ytSaveResult.value.partial ? ` (${pt.ytSaveResult.value.added}/${pt.ytSaveResult.value.total} videos)` : '' }}!
+              <span>Playlist "<strong>{{ pt.ytSaveResult.value.name }}</strong>" saved — {{ pt.ytSaveResult.value.added }}/{{ pt.ytSaveResult.value.total }} videos added{{ pt.ytSaveResult.value.skipped ? `, ${pt.ytSaveResult.value.skipped} skipped` : '' }}!
               <a :href="pt.ytSaveResult.value.playlistUrl" target="_blank" rel="noopener">Open in YouTube</a></span>
               <button class="pt-success-dismiss" @click="pt.ytSaveResult.value = null">&times;</button>
             </div>
