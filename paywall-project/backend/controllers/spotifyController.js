@@ -675,7 +675,7 @@ export const generatePlaylist = async (req, res) => {
     }
 
     const startTime = Date.now();
-    const TIMEOUT_MS = 120000; // 2 min — allows time for rate-limit waits
+    const TIMEOUT_MS = 180000; // 3 min — allows time for rate-limit waits
     const seenIds = new Set(uniqueIds); // exclude seed tracks from results
     const collected = [];
 
@@ -718,29 +718,31 @@ export const generatePlaylist = async (req, res) => {
     console.log(`   Queries (${uniqueQueries.length}): ${uniqueQueries.slice(0, 6).join(' | ')}${uniqueQueries.length > 6 ? ' ...' : ''}`);
     console.log(`   perQuery=${perQuery}, rateLimited=${Date.now() < _rateLimitedUntil ? 'YES until ' + new Date(_rateLimitedUntil).toISOString() : 'no'}`);
 
-    // Resilient search — switch tokens on 429, wait for rate limit to clear
+    // Resilient search — uses client creds token (separate rate limit bucket from match)
+    // Falls back to user token if client creds fail
     const doSearch = async (query) => {
-      let _switchedToken = false;
       const offset = Math.floor(Math.random() * 5);
       const searchLimit = Math.min(perQuery + 5, 50);
-      for (let attempt = 0; attempt < 5; attempt++) {
+      for (let attempt = 0; attempt < 4; attempt++) {
         try {
+          // Use client creds for generate searches — keeps rate limit separate from match (user token)
+          const ccToken = await getClientCredToken();
           const r = await axios.get("https://api.spotify.com/v1/search", {
             params: { q: query, type: "track", limit: searchLimit, offset },
-            headers: auth,
+            headers: { Authorization: `Bearer ${ccToken}` },
           });
           return r.data.tracks?.items || [];
         } catch (e) {
           const status = e.response?.status;
-          if (attempt < 2) console.error(`   ⚠ Search "${query}" attempt ${attempt}: ${status || e.message}`);
 
           if (status === 400) {
             const clean = query.replace(/[^\w\s'-]/g, '').trim();
             if (clean && clean !== query) {
               try {
+                const ccToken = await getClientCredToken();
                 const r2 = await axios.get("https://api.spotify.com/v1/search", {
                   params: { q: clean, type: "track", limit: searchLimit, offset: 0 },
-                  headers: auth,
+                  headers: { Authorization: `Bearer ${ccToken}` },
                 });
                 return r2.data.tracks?.items || [];
               } catch { return []; }
@@ -748,28 +750,21 @@ export const generatePlaylist = async (req, res) => {
             return [];
           }
 
-          // On 401/403: try refreshing the user token
-          if ((status === 401 || status === 403) && !_switchedToken) {
-            try {
-              const refreshed = await getValidToken(req.user.id, true);
-              if (!refreshed.error) {
-                auth.Authorization = `Bearer ${refreshed.accessToken}`;
-                _switchedToken = true;
-                continue;
-              }
-            } catch { /* refresh failed */ }
+          if (status === 401 || status === 403) {
+            _clientCredCache = null; // force refresh
+            if (attempt < 2) continue;
+            return [];
           }
 
-          // 429: wait for the cooldown (user token only — keeps bucket separate from search)
-          if (status === 429 && attempt < 4) {
-            const secs = parseInt(e.response.headers?.['retry-after'] || '5', 10);
-            const waitMs = Math.min(secs, 30) * 1000 + 500;
-            setRateLimit(e.response.headers?.['retry-after']);
-            console.log(`   ⏳ Both tokens rate-limited, waiting ${Math.round(waitMs / 1000)}s...`);
-            await new Promise(r => setTimeout(r, waitMs));
+          // 429: wait for cooldown
+          if (status === 429 && attempt < 3) {
+            const secs = Math.min(parseInt(e.response.headers?.['retry-after'] || '3', 10), 15);
+            console.log(`   ⏳ Generate search rate-limited, waiting ${secs}s...`);
+            await new Promise(r => setTimeout(r, secs * 1000 + 500));
             continue;
           }
 
+          if (attempt < 2) console.error(`   ⚠ Search "${query}" attempt ${attempt}: ${status || e.message}`);
           return [];
         }
       }
@@ -793,16 +788,6 @@ export const generatePlaylist = async (req, res) => {
         break;
       }
 
-      if (Date.now() < _rateLimitedUntil) {
-        const waitMs = Math.min(_rateLimitedUntil - Date.now(), 8000);
-        if (Date.now() - startTime + waitMs > TIMEOUT_MS) {
-          console.log(`   ⏱ Rate limit wait (${waitMs}ms) would exceed timeout, breaking`);
-          break;
-        }
-        emitProgress(10 + (qi / uniqueQueries.length) * 70, 'Waiting for rate limit...');
-        await new Promise(r => setTimeout(r, waitMs + 100));
-      }
-
       const items = await doSearch(uniqueQueries[qi]);
       let added = 0;
       for (const t of items) {
@@ -819,13 +804,14 @@ export const generatePlaylist = async (req, res) => {
       }
       if (qi < 3 || added === 0) console.log(`   Query ${qi}: "${uniqueQueries[qi]}" → ${items.length} results, +${added} new`);
 
-      // Emit progress: 10-80% based on query progress, or track fill %
+      // Emit progress
       const queryPct = 10 + ((qi + 1) / uniqueQueries.length) * 70;
       const fillPct = 10 + (collected.length / limit) * 70;
       emitProgress(Math.max(queryPct, fillPct), `Found ${collected.length} tracks...`);
 
+      // Short delay to stay under per-second limits
       if (qi < uniqueQueries.length - 1 && collected.length < limit) {
-        await new Promise(r => setTimeout(r, 500));
+        await new Promise(r => setTimeout(r, 300));
       }
     }
 
