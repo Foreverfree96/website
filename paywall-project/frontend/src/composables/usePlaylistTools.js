@@ -769,11 +769,16 @@ export function usePlaylistTools() {
     const isYt = convertDirection.value === 'spotify-to-yt';
     let filled = 0;
 
-    // Process one at a time — wait out rate limits instead of giving up
-    let delay = 800; // start with 800ms between requests
+    // Process one at a time with proper rate limit handling
+    let delay = 1200; // gap between requests
     for (let b = 0; b < noneIndices.length; b++) {
       const idx = noneIndices[b];
       const m = matchedTracks.value[idx];
+      // Guard: index may be stale if list changed during async work
+      if (!m || !m.source) {
+        autofillProgress.value = `${b + 1}/${noneIndices.length}`;
+        continue;
+      }
       const q = [m.source.title, m.source.artist || m.source.channelTitle]
         .filter(Boolean).join(' ').trim();
       if (!q) { autofillProgress.value = `${b + 1}/${noneIndices.length}`; continue; }
@@ -788,19 +793,20 @@ export function usePlaylistTools() {
           const res = await fetch(endpoint, { headers: headers() });
           if (res.ok) {
             data = await res.json();
-            delay = 800; // reset delay on success
+            delay = 1200; // reset on success
             break;
           }
           if (res.status === 429) {
-            // Parse retry-after from header or JSON body
+            // Parse retry-after: prefer header, then JSON body
             let retryAfter = parseInt(res.headers.get('retry-after') || '0', 10);
             if (!retryAfter) {
               try { const j = await res.json(); retryAfter = j.retryAfter || 0; } catch {}
             }
-            const waitMs = Math.max(retryAfter * 1000, delay * (attempt + 2));
-            autofillProgress.value = `${b + 1}/${noneIndices.length} (waiting ${Math.round(waitMs / 1000)}s)`;
-            await new Promise(r => setTimeout(r, waitMs));
-            delay = Math.min(delay * 1.5, 5000); // slow down future requests
+            // Wait the FULL retry-after period (minimum 3s)
+            const waitSecs = Math.max(retryAfter || 5, 3);
+            autofillProgress.value = `${b + 1}/${noneIndices.length} (rate limited, waiting ${waitSecs}s)`;
+            await new Promise(r => setTimeout(r, waitSecs * 1000));
+            delay = Math.min(delay * 2, 8000); // back off future requests
             continue;
           }
           break; // other errors — skip this track
@@ -816,7 +822,7 @@ export function usePlaylistTools() {
           if (tracks.length) top = tracks[0];
         }
 
-        if (top) {
+        if (top && matchedTracks.value[idx]) {
           matchedTracks.value[idx] = {
             ...matchedTracks.value[idx],
             bestMatch: top,

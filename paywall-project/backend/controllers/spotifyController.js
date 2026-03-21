@@ -511,23 +511,31 @@ export const searchTracks = async (req, res) => {
 
     // Client creds ONLY for search — keeps rate-limit bucket separate from generate/match (user token)
     let items;
-    try {
-      items = await doSearch(await getClientCredToken());
-    } catch (e) {
-      if (e.response?.status === 429) {
-        const secs = Math.min(parseInt(e.response.headers?.['retry-after'] || '5', 10), 30);
-        _searchRateLimitUntil = Date.now() + secs * 1000;
-        res.set('Retry-After', String(secs));
-        return res.status(429).json({ tracks: [], retryAfter: secs, message: 'Rate limited — try again shortly' });
-      } else if (e.response?.status === 401 || e.response?.status === 403) {
-        // Client creds token expired — get a fresh one
-        try {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        items = await doSearch(await getClientCredToken());
+        break; // success
+      } catch (e) {
+        if (e.response?.status === 429) {
+          const secs = Math.min(parseInt(e.response.headers?.['retry-after'] || '3', 10), 15);
+          _searchRateLimitUntil = Date.now() + secs * 1000;
+          // On first 429, wait server-side and retry instead of pushing back to client
+          if (attempt < 2) {
+            await new Promise(r => setTimeout(r, secs * 1000 + 500));
+            continue;
+          }
+          res.set('Retry-After', String(secs));
+          return res.status(429).json({ tracks: [], retryAfter: secs, message: 'Rate limited — try again shortly' });
+        } else if (e.response?.status === 401 || e.response?.status === 403) {
           _clientCredCache = null;
-          items = await doSearch(await getClientCredToken());
-        } catch { items = []; }
-      } else {
-        console.error('❌ Search unexpected error:', e.response?.status || e.message);
-        items = [];
+          if (attempt < 2) continue; // retry with fresh token
+          items = [];
+          break;
+        } else {
+          console.error('❌ Search unexpected error:', e.response?.status || e.message);
+          items = [];
+          break;
+        }
       }
     }
 
