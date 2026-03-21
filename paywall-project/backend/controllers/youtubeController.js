@@ -16,7 +16,7 @@ const _loadKeys = () => {
     const k = process.env[`YOUTUBE_API_KEY_${i}`];
     if (k) _ytKeys.push(k);
   }
-  console.log(`🔑 YouTube: ${_ytKeys.length} API key(s) loaded`);
+  console.log(`🔑 YouTube: ${_ytKeys.length} API key(s) loaded${_ytKeys.map((k,i) => ` [${i+1}:${k.slice(-6)}]`).join('')}`);
 };
 
 const _isExhausted = (key) => {
@@ -40,18 +40,19 @@ const _isQuotaError = (err) => {
   return reason === 'quotaExceeded' || reason === 'dailyLimitExceeded';
 };
 
+const _isRateLimitError = (err) => {
+  const reason = err.response?.data?.error?.errors?.[0]?.reason || '';
+  return reason === 'rateLimitExceeded' || err.response?.status === 429;
+};
+
 const _rotateKey = (err) => {
   _loadKeys();
   const current = _ytKeys[_ytKeyIndex];
   if (current && _isQuotaError(err)) {
-    // Mark exhausted until next midnight PT (~8am UTC)
-    const now = new Date();
-    const midnightPT = new Date(now.toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }));
-    midnightPT.setDate(midnightPT.getDate() + 1);
-    midnightPT.setHours(0, 0, 0, 0);
-    const msUntilReset = midnightPT.getTime() - now.getTime() + 60000; // +1min buffer
-    _exhaustedUntil.set(current, Date.now() + msUntilReset);
-    console.log(`   Key #${_ytKeyIndex + 1} quota exhausted, blocked for ${Math.round(msUntilReset / 3600000)}h`);
+    // Mark exhausted for 1 hour (conservative — YouTube resets at midnight PT
+    // but we don't want stale keys blocking for 24h if the calc is wrong)
+    _exhaustedUntil.set(current, Date.now() + 60 * 60 * 1000);
+    console.log(`   Key #${_ytKeyIndex + 1} quota exhausted, blocked for 1h`);
   }
   // Find next available key
   for (let i = 1; i < _ytKeys.length; i++) {
@@ -94,7 +95,7 @@ export const getPlaylistTracks = async (req, res) => {
 
     do {
       let r;
-      for (let keyAttempt = 0; keyAttempt < _ytKeys.length; keyAttempt++) {
+      for (let keyAttempt = 0; keyAttempt < _ytKeys.length + 2; keyAttempt++) {
         try {
           r = await axios.get(`${BASE}/playlistItems`, {
             params: {
@@ -108,6 +109,10 @@ export const getPlaylistTracks = async (req, res) => {
           break;
         } catch (e) {
           if (_isQuotaError(e) && _rotateKey(e)) continue;
+          if (_isRateLimitError(e)) {
+            await new Promise(r => setTimeout(r, 2000));
+            continue;
+          }
           throw e;
         }
       }
@@ -154,7 +159,7 @@ export const searchYoutubeTracks = async (req, res) => {
     if (!q) return res.status(400).json({ message: "Missing query parameter q" });
 
     let r;
-    for (let keyAttempt = 0; keyAttempt < _ytKeys.length; keyAttempt++) {
+    for (let keyAttempt = 0; keyAttempt < _ytKeys.length + 2; keyAttempt++) {
       try {
         r = await axios.get(`${BASE}/search`, {
           params: { part: "snippet", type: "video", videoCategoryId: "10", q, maxResults: Math.min(Number(limit), 20), key: API_KEY() },
@@ -162,6 +167,10 @@ export const searchYoutubeTracks = async (req, res) => {
         break;
       } catch (e) {
         if (_isQuotaError(e) && _rotateKey(e)) continue;
+        if (_isRateLimitError(e)) {
+          await new Promise(r => setTimeout(r, 2000));
+          continue;
+        }
         throw e;
       }
     }
@@ -192,7 +201,7 @@ export const getChannelInfo = async (req, res) => {
     const isHandle = id.startsWith('@');
 
     let r;
-    for (let keyAttempt = 0; keyAttempt < _ytKeys.length; keyAttempt++) {
+    for (let keyAttempt = 0; keyAttempt < _ytKeys.length + 2; keyAttempt++) {
       try {
         const params = {
           part: "snippet,statistics",
@@ -204,6 +213,10 @@ export const getChannelInfo = async (req, res) => {
         break;
       } catch (e) {
         if (_isQuotaError(e) && _rotateKey(e)) continue;
+        if (_isRateLimitError(e)) {
+          await new Promise(r => setTimeout(r, 2000));
+          continue;
+        }
         throw e;
       }
     }
@@ -331,8 +344,8 @@ export const matchYoutubeTracks = async (req, res) => {
 
     const searchYT = async (query) => {
       if (_quotaExhausted) return [];
-      // Try each available key until one works
-      for (let keyAttempt = 0; keyAttempt < _ytKeys.length; keyAttempt++) {
+      // Try each available key, retry on rate limits
+      for (let keyAttempt = 0; keyAttempt < _ytKeys.length + 2; keyAttempt++) {
         const key = API_KEY();
         if (!key) break;
         try {
@@ -349,6 +362,13 @@ export const matchYoutubeTracks = async (req, res) => {
             console.error('❌ YouTube API quota exhausted — all keys used');
             _quotaExhausted = true;
             return [];
+          }
+          if (_isRateLimitError(e)) {
+            // Per-second rate limit — wait and retry with same key
+            const wait = Math.min(parseInt(e.response?.headers?.['retry-after'] || '2', 10), 10);
+            console.log(`   Rate limited on "${query}", waiting ${wait}s...`);
+            await new Promise(r => setTimeout(r, wait * 1000));
+            continue;
           }
           console.error(`❌ YouTube search failed for "${query}":`, e.response?.status || e.message);
           return [];
@@ -386,12 +406,14 @@ export const matchYoutubeTracks = async (req, res) => {
       const uniqueQueries = [...new Set(queries)].slice(0, maxQ);
 
       let allItems = [];
-      for (const query of uniqueQueries) {
+      for (let qi = 0; qi < uniqueQueries.length; qi++) {
         if (_quotaExhausted) break;
-        const items = await searchYT(query);
+        const items = await searchYT(uniqueQueries[qi]);
         allItems = allItems.concat(items);
-        // Only stop early if we have plenty of results from 2+ queries
-        if (allItems.length >= 10 && uniqueQueries.indexOf(query) >= 1) break;
+        // Stop early if we have plenty of results from 2+ queries
+        if (allItems.length >= 10 && qi >= 1) break;
+        // Small delay between queries within the same track
+        if (qi < uniqueQueries.length - 1) await new Promise(r => setTimeout(r, 150));
       }
 
       // Deduplicate by videoId
@@ -473,10 +495,11 @@ export const matchYoutubeTracks = async (req, res) => {
       if (userId) io?.to(userId).emit('playlist:progress', { percent: Math.round(pct), status });
     };
 
-    // Dynamic batch size & delay based on playlist size
+    // Dynamic batch size & delay — keep concurrency low to avoid per-second rate limits
+    // Each matchOne does up to 4 search queries, so BATCH * maxQ = total concurrent requests
     const matches = [];
-    const BATCH = tracks.length > 200 ? 10 : tracks.length > 50 ? 8 : 5;
-    const DELAY = tracks.length > 200 ? 100 : 300;
+    const BATCH = tracks.length > 200 ? 3 : tracks.length > 50 ? 2 : 2;
+    const DELAY = tracks.length > 200 ? 500 : 800;
     emitProgress(5, `Matching ${tracks.length} tracks...`);
     for (let i = 0; i < tracks.length; i += BATCH) {
       if (_quotaExhausted || Date.now() - startTime > TIMEOUT_MS) {

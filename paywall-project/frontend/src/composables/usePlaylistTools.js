@@ -809,6 +809,12 @@ export function usePlaylistTools() {
             delay = Math.min(delay * 2, 8000); // back off future requests
             continue;
           }
+          // Server error (500 = quota exhausted, etc) — retry once after delay
+          if (attempt === 0 && res.status >= 500) {
+            autofillProgress.value = `${b + 1}/${noneIndices.length} (retrying...)`;
+            await new Promise(r => setTimeout(r, 3000));
+            continue;
+          }
           break; // other errors — skip this track
         }
         if (!data) { autofillProgress.value = `${b + 1}/${noneIndices.length}`; continue; }
