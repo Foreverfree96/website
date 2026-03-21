@@ -191,14 +191,24 @@ export const getChannelInfo = async (req, res) => {
     const id = req.params.identifier;
     const isHandle = id.startsWith('@');
 
-    const params = {
-      part: "snippet,statistics",
-      key: API_KEY(),
-    };
-    if (isHandle) params.forHandle = id.replace('@', '');
-    else params.id = id;
+    let r;
+    for (let keyAttempt = 0; keyAttempt < _ytKeys.length; keyAttempt++) {
+      try {
+        const params = {
+          part: "snippet,statistics",
+          key: API_KEY(),
+        };
+        if (isHandle) params.forHandle = id.replace('@', '');
+        else params.id = id;
+        r = await axios.get(`${BASE}/channels`, { params });
+        break;
+      } catch (e) {
+        if (_isQuotaError(e) && _rotateKey(e)) continue;
+        throw e;
+      }
+    }
+    if (!r) throw new Error('All YouTube API keys exhausted');
 
-    const r = await axios.get(`${BASE}/channels`, { params });
     const ch = r.data.items?.[0];
     if (!ch) return res.status(404).json({ message: "Channel not found" });
 
