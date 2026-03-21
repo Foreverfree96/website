@@ -95,7 +95,7 @@
     <router-view />
 
     <!-- Floating chat widget — only mounted when the user is authenticated -->
-    <ChatWidget v-if="isLoggedIn" />
+    <ChatWidget v-if="isLoggedIn && !isAuthPage" />
 
     <!-- Floating mini player — persists across route changes -->
     <MiniPlayer v-if="isLoggedIn" />
@@ -128,7 +128,7 @@
  *  6. Rendering the floating <ChatWidget> component for authenticated users.
  */
 import { ref, computed, unref, onMounted, watch } from "vue";
-import { useRouter } from "vue-router";
+import { useRouter, useRoute } from "vue-router";
 import { useAuth } from "./composables/useAuth.js";
 import { useNotifications } from "./composables/useNotifications.js";
 import ChatWidget from "./components/ChatWidget.vue";
@@ -137,6 +137,8 @@ import PlaylistToolsModal from "./components/PlaylistToolsModal.vue";
 import { usePlaylistTools } from "./composables/usePlaylistTools.js";
 
 const router = useRouter();
+const route = useRoute();
+const isAuthPage = computed(() => ['/login', '/signup'].includes(route.path));
 
 // ─── AUTH ────────────────────────────────────────────────────────────────────
 
