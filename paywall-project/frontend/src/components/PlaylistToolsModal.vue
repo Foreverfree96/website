@@ -44,8 +44,9 @@
 
             <!-- Save success banner -->
             <div v-if="pt.saveResult.value" class="pt-success">
-              Playlist "<strong>{{ pt.saveResult.value.name }}</strong>" saved!
-              <a :href="pt.saveResult.value.playlistUrl" target="_blank" rel="noopener">Open in Spotify</a>
+              <span>Playlist "<strong>{{ pt.saveResult.value.name }}</strong>" saved!
+              <a :href="pt.saveResult.value.playlistUrl" target="_blank" rel="noopener">Open in Spotify</a></span>
+              <button class="pt-success-dismiss" @click="pt.saveResult.value = null">&times;</button>
             </div>
 
             <!-- ═══════════════════════ GENERATE TAB ═══════════════════════ -->
@@ -653,13 +654,15 @@ const handleAddToExisting = (playlistId) => {
 
 /* ─── Panel (drawer from right) ───────────────────────────────────────────── */
 .pt-panel {
-  width: min(520px, 100vw);
-  height: 100vh;
+  width: min(520px, 100dvw);
+  height: 100dvh;
   background: #0f0f0f;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  overflow-x: hidden;
   position: relative;
+  box-sizing: border-box;
 }
 
 /* ─── Transitions ─────────────────────────────────────────────────────────── */
@@ -849,7 +852,7 @@ const handleAddToExisting = (playlistId) => {
 }
 .pt-chip-art { width: 24px; height: 24px; border-radius: 50%; object-fit: cover; }
 .pt-chip-text { font-size: 12px; color: #ccc; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pt-chip-x { background: none; border: none; color: #888; font-size: 16px; cursor: pointer; padding: 0 2px; line-height: 1; }
+.pt-chip-x { background: none; border: none; color: #888; font-size: 16px; cursor: pointer; padding: 4px 6px; line-height: 1; }
 .pt-chip-x:hover { color: #f44; }
 
 /* ─── Genre tags ──────────────────────────────────────────────────────────── */
@@ -1067,14 +1070,14 @@ const handleAddToExisting = (playlistId) => {
 .pt-track-artist { font-size: 11px; color: #888; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .pt-like-btn {
-  background: none; border: none; color: #555; font-size: 16px; cursor: pointer; padding: 2px 4px; line-height: 1;
+  background: none; border: none; color: #555; font-size: 16px; cursor: pointer; padding: 6px 8px; line-height: 1;
   transition: color 0.15s;
 }
 .pt-like-btn:hover { color: #e74c8b; }
 .pt-like-btn.liked { color: #1db954; }
 
 .pt-track-remove {
-  background: none; border: none; color: #555; font-size: 18px; cursor: pointer; padding: 2px 6px; line-height: 1;
+  background: none; border: none; color: #555; font-size: 18px; cursor: pointer; padding: 6px 8px; line-height: 1;
 }
 .pt-track-remove:hover { color: #f44; }
 
@@ -1108,8 +1111,24 @@ const handleAddToExisting = (playlistId) => {
   padding: 10px 16px;
   font-size: 13px;
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 .pt-success a { color: #4ade80; text-decoration: underline; margin-left: 8px; }
+.pt-success-dismiss {
+  background: none;
+  border: none;
+  color: #86efac;
+  font-size: 18px;
+  cursor: pointer;
+  padding: 4px 8px;
+  line-height: 1;
+  opacity: 0.7;
+  flex-shrink: 0;
+}
+.pt-success-dismiss:hover { opacity: 1; }
 
 /* ─── Convert: URL row + badge ────────────────────────────────────────────── */
 .pt-url-row { display: flex; gap: 8px; align-items: center; }
@@ -1177,7 +1196,7 @@ const handleAddToExisting = (playlistId) => {
 .pt-alt-wrap { position: relative; flex-shrink: 0; }
 .pt-alt-btn {
   background: none; border: 1px solid #333; border-radius: 6px;
-  padding: 3px 10px; font-size: 11px; color: #888; cursor: pointer;
+  padding: 6px 12px; font-size: 12px; color: #888; cursor: pointer;
 }
 .pt-alt-btn:hover { border-color: #555; color: #ccc; }
 
@@ -1253,11 +1272,12 @@ const handleAddToExisting = (playlistId) => {
 
 /* ─── Mobile ──────────────────────────────────────────────────────────────── */
 @media (max-width: 600px) {
-  .pt-panel { width: 100vw; }
+  .pt-panel { width: 100%; max-width: 100dvw; }
+  .pt-overlay { justify-content: stretch; }
   .pt-header { padding: 12px 14px; }
   .pt-tab { padding: 6px 12px; font-size: 13px; }
   .pt-body { padding: 14px; gap: 12px; }
-  .pt-input { font-size: 13px; padding: 9px 12px; }
+  .pt-input { font-size: 16px; padding: 9px 12px; } /* 16px prevents iOS zoom */
   .pt-label { font-size: 11px; }
   .pt-btn { padding: 10px 14px; font-size: 13px; }
   .pt-track { gap: 8px; padding: 6px 2px; }
@@ -1265,9 +1285,15 @@ const handleAddToExisting = (playlistId) => {
   .pt-track-name { font-size: 12px; }
   .pt-track-artist { font-size: 10px; }
   .pt-track-list { max-height: 260px; }
-  .pt-match-row { font-size: 11px; gap: 6px; padding: 6px 2px; }
-  .pt-match-title { font-size: 11px; }
+  /* Stack match rows vertically on mobile */
+  .pt-match-row { flex-direction: column; align-items: flex-start; gap: 4px; padding: 8px 4px; }
+  .pt-match-source { width: 100%; }
+  .pt-match-arrow { display: none; }
+  .pt-match-target { width: 100%; padding-left: 12px; }
+  .pt-match-title { font-size: 11px; white-space: normal; }
   .pt-match-sub { font-size: 9px; }
+  .pt-confidence { align-self: flex-start; margin-left: 12px; }
+  .pt-alt-wrap { align-self: flex-end; margin-top: -24px; }
   .pt-chip { padding: 3px 8px 3px 3px; }
   .pt-chip-art { width: 20px; height: 20px; }
   .pt-chip-text { font-size: 11px; max-width: 120px; }
@@ -1281,18 +1307,44 @@ const handleAddToExisting = (playlistId) => {
   .pt-existing-list { max-height: 180px; }
   .pt-dropdown-art { width: 30px; height: 30px; }
   .pt-dropdown-item { padding: 8px 10px; gap: 8px; }
-  .pt-alt-dropdown { min-width: 220px; }
+  .pt-alt-dropdown { min-width: 200px; left: auto; right: 0; max-width: calc(100dvw - 24px); }
   .pt-search-results { max-height: 200px; }
   .pt-btn-full { padding: 12px; font-size: 14px; }
+  .pt-results-header { font-size: 12px; flex-direction: column; align-items: flex-start; gap: 6px; }
+  .pt-autofill-btn { align-self: flex-start; }
+  .pt-error { flex-wrap: wrap; font-size: 12px; padding: 8px 12px; }
+  .pt-success { flex-wrap: wrap; font-size: 12px; padding: 8px 12px; }
+  .pt-success a { margin-left: 0; }
+}
+
+@media (max-width: 480px) {
+  .pt-header { padding: 10px 12px; }
+  .pt-tab { padding: 6px 10px; font-size: 12px; }
+  .pt-body { padding: 10px; gap: 10px; }
+  .pt-track-list { max-height: 220px; }
+  .pt-alt-dropdown { min-width: 160px; right: 0; max-width: calc(100dvw - 20px); }
+  .pt-save-dialog { width: min(280px, 94%); padding: 14px; }
+  .pt-existing-list { max-height: 150px; }
+  .pt-success a { display: block; margin-top: 4px; }
+  .pt-chip-text { max-width: 100px; }
+  .pt-match-target { padding-left: 8px; }
+  .pt-confidence { margin-left: 8px; }
+  .pt-target-btn { padding: 8px 8px; font-size: 12px; }
 }
 
 @media (max-width: 380px) {
-  .pt-body { padding: 10px; gap: 10px; }
-  .pt-header { padding: 10px 12px; }
-  .pt-tab { padding: 5px 10px; font-size: 12px; }
+  .pt-body { padding: 8px; gap: 8px; }
+  .pt-header { padding: 8px 10px; }
+  .pt-tab { padding: 5px 8px; font-size: 11px; }
   .pt-track-art { width: 28px; height: 28px; }
-  .pt-chip-text { max-width: 80px; }
+  .pt-chip-text { max-width: 70px; }
   .pt-btn-full { padding: 11px; font-size: 13px; }
   .pt-search-results { max-height: 160px; }
+  .pt-save-dialog { width: calc(100% - 16px); padding: 12px; }
+  .pt-dropdown-item { padding: 6px 8px; gap: 6px; }
+  .pt-alt-wrap { margin-top: -20px; }
+  .pt-alt-btn { padding: 4px 8px; font-size: 11px; }
+  .pt-existing-art { width: 32px; height: 32px; }
+  .pt-existing-name { font-size: 12px; }
 }
 </style>
