@@ -340,6 +340,12 @@ export const matchYoutubeTracks = async (req, res) => {
     const startTime = Date.now();
     const TIMEOUT_MS = 290000; // ~5 min for large playlists (up to 1000 tracks)
 
+    // Clear stale exhausted keys before starting — they may have recovered
+    for (const [key, until] of _exhaustedUntil) {
+      if (Date.now() > until) _exhaustedUntil.delete(key);
+    }
+    console.log(`   Keys available: ${_ytKeys.length - _exhaustedUntil.size}/${_ytKeys.length}`);
+
     let _quotaExhausted = false;
 
     const searchYT = async (query) => {
@@ -354,12 +360,13 @@ export const matchYoutubeTracks = async (req, res) => {
           });
           return r.data.items || [];
         } catch (e) {
+          const reason = e.response?.data?.error?.errors?.[0]?.reason || '';
           if (e.response?.status === 403 && _isQuotaError(e)) {
             if (_rotateKey(e)) {
-              console.log(`   Retrying "${query}" with key #${_ytKeyIndex + 1}...`);
+              console.log(`   Key #${_ytKeyIndex} quota hit, rotated → key #${_ytKeyIndex + 1}. Retrying "${query}"...`);
               continue; // try next key
             }
-            console.error('❌ YouTube API quota exhausted — all keys used');
+            console.error(`❌ YouTube API quota exhausted — all ${_ytKeys.length} keys used (${_exhaustedUntil.size} exhausted)`);
             _quotaExhausted = true;
             return [];
           }
@@ -370,7 +377,7 @@ export const matchYoutubeTracks = async (req, res) => {
             await new Promise(r => setTimeout(r, wait * 1000));
             continue;
           }
-          console.error(`❌ YouTube search failed for "${query}":`, e.response?.status || e.message);
+          console.error(`❌ YouTube search failed for "${query}": ${e.response?.status} reason=${reason}`);
           return [];
         }
       }
