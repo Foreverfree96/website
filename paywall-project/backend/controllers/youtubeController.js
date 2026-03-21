@@ -359,8 +359,11 @@ export const matchYoutubeTracks = async (req, res) => {
 
     const searchYT = async (query) => {
       if (_quotaExhausted) return [];
-      // Try each available key, retry on rate limits
-      for (let keyAttempt = 0; keyAttempt < _ytKeys.length + 2; keyAttempt++) {
+      // Separate counters for key rotations vs rate-limit retries
+      let keyRotations = 0;
+      let rateLimitRetries = 0;
+      const MAX_RATE_RETRIES = 5;
+      while (keyRotations < _ytKeys.length && rateLimitRetries < MAX_RATE_RETRIES) {
         const key = API_KEY();
         if (!key) break;
         try {
@@ -371,6 +374,7 @@ export const matchYoutubeTracks = async (req, res) => {
         } catch (e) {
           const reason = e.response?.data?.error?.errors?.[0]?.reason || '';
           if (e.response?.status === 403 && _isQuotaError(e)) {
+            keyRotations++;
             if (_rotateKey(e)) {
               console.log(`   Key #${_ytKeyIndex} quota hit, rotated → key #${_ytKeyIndex + 1}. Retrying "${query}"...`);
               continue; // try next key
@@ -380,9 +384,10 @@ export const matchYoutubeTracks = async (req, res) => {
             return [];
           }
           if (_isRateLimitError(e)) {
+            rateLimitRetries++;
             // Per-second rate limit — wait and retry with same key
             const wait = Math.min(parseInt(e.response?.headers?.['retry-after'] || '2', 10), 10);
-            console.log(`   Rate limited on "${query}", waiting ${wait}s...`);
+            console.log(`   Rate limited on "${query}", waiting ${wait}s (retry ${rateLimitRetries}/${MAX_RATE_RETRIES})...`);
             await new Promise(r => setTimeout(r, wait * 1000));
             continue;
           }
@@ -390,7 +395,10 @@ export const matchYoutubeTracks = async (req, res) => {
           return [];
         }
       }
-      _quotaExhausted = true;
+      // Only mark quota exhausted if all keys were actually rotated through
+      if (keyRotations >= _ytKeys.length) {
+        _quotaExhausted = true;
+      }
       return [];
     };
 
