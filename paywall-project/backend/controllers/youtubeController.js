@@ -461,9 +461,22 @@ export const matchYoutubeTracks = async (req, res) => {
           artistSim = Math.max(channelSim, inTitleSim);
         }
 
-        const score = artist
+        let score = artist
           ? bestTitleSim * 0.6 + artistSim * 0.4
           : bestTitleSim * 0.9 + 0.1;
+
+        // Prefer explicit versions over clean
+        const lowerRaw = rawYtTitle.toLowerCase();
+        const isExplicit = /\bexplicit\b/.test(lowerRaw) || /\(e\)/.test(lowerRaw);
+        const isClean    = /\bclean\b/.test(lowerRaw) && !/clean\s*bandit/i.test(rawYtTitle);
+        if (isExplicit) score += 0.05;
+        if (isClean)    score -= 0.05;
+
+        // Prefer official audio/video from verified-looking channels
+        const isOfficial = /official\s*(audio|video|music)/i.test(rawYtTitle)
+          || /vevo$/i.test(i.snippet.channelTitle || '')
+          || /\s-\stopics?$/i.test(i.snippet.channelTitle || '');
+        if (isOfficial) score += 0.02;
 
         return {
           title:        i.snippet.title,
