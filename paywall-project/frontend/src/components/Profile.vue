@@ -111,6 +111,25 @@
                     </div>
                 </div>
 
+                <!-- YouTube Connection -->
+                <div class="dashboard-section">
+                    <h2 class="section-title">YouTube Connection</h2>
+                    <div v-if="youtubeStatus.connected" class="spotify-status">
+                        <span class="spotify-name">{{ youtubeStatus.displayName || 'Connected' }}</span>
+                        <span class="yt-connected-badge">Connected</span>
+                    </div>
+                    <p v-else class="section-hint">Connect your YouTube account to save playlists directly to YouTube.</p>
+                    <div class="spotify-actions">
+                        <a v-if="!youtubeStatus.connected"
+                           :href="`${API_BASE}/api/youtube/auth?token=${jwtToken}&returnTo=${encodeURIComponent(origin + '/profile')}`"
+                           class="btn-black spotify-btn">Connect YouTube</a>
+                        <a v-else
+                           :href="`${API_BASE}/api/youtube/auth?token=${jwtToken}&returnTo=${encodeURIComponent(origin + '/profile')}`"
+                           class="btn-black spotify-btn">Reconnect</a>
+                        <button v-if="youtubeStatus.connected" class="btn-black spotify-disconnect-btn" @click="handleYoutubeDisconnect">Disconnect</button>
+                    </div>
+                </div>
+
                 <!-- My Network: followers / following counts with clickable modal -->
                 <div class="dashboard-section">
                     <h2 class="section-title">My Network</h2>
@@ -254,6 +273,30 @@ const handleSpotifyDisconnect = async () => {
     }
 };
 
+// ─── YOUTUBE CONNECTION STATE ────────────────────────────────────────────────
+const youtubeStatus = ref({ connected: false, displayName: null });
+
+const fetchYoutubeStatus = async () => {
+    try {
+        const res = await axios.get(`${API_BASE}/api/youtube/status`, {
+            headers: { Authorization: `Bearer ${jwtToken}` },
+        });
+        youtubeStatus.value = res.data;
+    } catch { /* non-critical */ }
+};
+
+const handleYoutubeDisconnect = async () => {
+    try {
+        await axios.delete(`${API_BASE}/api/youtube/disconnect`, {
+            headers: { Authorization: `Bearer ${jwtToken}` },
+        });
+        youtubeStatus.value = { connected: false, displayName: null };
+        errorMessage.value = 'YouTube disconnected.';
+    } catch {
+        errorMessage.value = 'Failed to disconnect YouTube.';
+    }
+};
+
 // ─── FORM STATE: SHARED ───────────────────────────────────────────────────────
 
 // Single banner used for both error messages and success confirmations throughout
@@ -378,8 +421,9 @@ onMounted(async () => {
             } catch { /* non-critical — silently ignore */ }
         }
 
-        // Fetch Spotify connection status
+        // Fetch Spotify & YouTube connection status
         await fetchSpotifyStatus();
+        await fetchYoutubeStatus();
 
         // Handle return from Spotify OAuth (connect or reconnect)
         if (route.query.spotify === 'connected') {
@@ -398,8 +442,15 @@ onMounted(async () => {
             errorMessage.value = 'Spotify connection failed. Please try again.';
         }
 
-        // Clean up any leftover Spotify OAuth query params
-        if (route.query.spotify) router.replace({ query: {} });
+        // Handle return from YouTube OAuth
+        if (route.query.youtube === 'connected') {
+            errorMessage.value = `YouTube connected${youtubeStatus.value.displayName ? ` (${youtubeStatus.value.displayName})` : ''}!`;
+        } else if (route.query.youtube === 'error') {
+            errorMessage.value = 'YouTube connection failed. Please try again.';
+        }
+
+        // Clean up any leftover OAuth query params
+        if (route.query.spotify || route.query.youtube) router.replace({ query: {} });
     } catch (err) {
         errorMessage.value = 'Failed to load profile.';
     }
@@ -1049,6 +1100,16 @@ const doDeleteAccount = async () => {
     padding: 2px 8px;
     border-radius: 10px;
     text-transform: uppercase;
+}
+.yt-connected-badge {
+    background: #c00;
+    color: #fff;
+    font-size: 0.7rem;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
 }
 .spotify-actions {
     display: flex;

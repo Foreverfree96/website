@@ -39,7 +39,8 @@
             <div v-if="pt.error.value" class="pt-error">
               {{ pt.error.value }}
               <a v-if="pt.scopeMissing.value" :href="spotifyReconnectUrl" class="pt-reconnect-link" @click="pt.saveState()">Reconnect Spotify</a>
-              <button class="pt-error-x" @click="pt.error.value = ''; pt.scopeMissing.value = false">&times;</button>
+              <a v-if="pt.ytScopeMissing.value" :href="youtubeReconnectUrl" class="pt-reconnect-link" style="color:#f87171">Connect YouTube</a>
+              <button class="pt-error-x" @click="pt.error.value = ''; pt.scopeMissing.value = false; pt.ytScopeMissing.value = false">&times;</button>
             </div>
 
             <!-- Save success banner -->
@@ -215,7 +216,7 @@
                   </button>
                 </div>
                 <div class="pt-actions" v-else>
-                  <button class="pt-btn pt-btn-yt-save" @click="showYtSaveDialog = true" :disabled="!pt.resultTracks.value.length">
+                  <button class="pt-btn pt-btn-yt-save" @click="openYtSaveDialog" :disabled="!pt.resultTracks.value.length">
                     Save to YouTube
                   </button>
                   <button class="pt-btn pt-btn-primary" @click="copyYoutubeLinks" :disabled="!pt.resultTracks.value.length">
@@ -361,7 +362,7 @@
                   </button>
                 </div>
                 <div class="pt-actions" v-else-if="pt.convertDirection.value === 'spotify-to-yt'">
-                  <button class="pt-btn pt-btn-yt-save" @click="showYtSaveDialog = true" :disabled="!pt.resultTracks.value.length">
+                  <button class="pt-btn pt-btn-yt-save" @click="openYtSaveDialog" :disabled="!pt.resultTracks.value.length">
                     Save to YouTube
                   </button>
                   <button class="pt-btn pt-btn-primary" @click="copyYoutubeLinks" :disabled="!pt.resultTracks.value.length">
@@ -431,6 +432,13 @@
               <div class="pt-save-dialog">
                 <h3>Save to YouTube</h3>
 
+                <!-- Not connected prompt -->
+                <div v-if="pt.ytScopeMissing.value" class="pt-quota-warning" style="text-align:center">
+                  <p style="margin:0 0 8px">YouTube account not connected.</p>
+                  <a :href="youtubeReconnectUrl" class="pt-btn pt-btn-yt-save" style="display:inline-block;text-decoration:none">Connect YouTube</a>
+                </div>
+                <template v-else>
+
                 <!-- Quota warning -->
                 <div class="pt-quota-warning">
                   This will use ~{{ 50 + pt.resultTracks.value.length * 50 }} YouTube API quota units
@@ -481,6 +489,7 @@
                     <button class="pt-btn" @click="showYtSaveDialog = false">Cancel</button>
                   </div>
                 </template>
+                </template><!-- /v-else connected -->
               </div>
             </div>
 
@@ -722,6 +731,17 @@ const handleAddToExisting = (playlistId) => {
 };
 
 // YouTube save handlers
+const openYtSaveDialog = async () => {
+  showYtSaveDialog.value = true;
+  // Quick connection check
+  try {
+    const res = await fetch(`${API}/api/youtube/status`, { headers: { Authorization: `Bearer ${localStorage.getItem('jwtToken')}` } });
+    if (!res.ok) { pt.ytScopeMissing.value = true; return; }
+    const d = await res.json();
+    pt.ytScopeMissing.value = !d.connected;
+  } catch { pt.ytScopeMissing.value = true; }
+};
+
 const handleYtSave = () => {
   if (!ytPlaylistName.value.trim()) return;
   pt.saveToYouTube(ytPlaylistName.value.trim());
