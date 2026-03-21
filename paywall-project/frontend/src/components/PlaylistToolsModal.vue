@@ -304,50 +304,7 @@
 
                     <!-- Alternatives dropdown + custom search -->
                     <div class="pt-alt-wrap">
-                      <button class="pt-alt-btn" @click="toggleAlt(i)">Swap</button>
-                      <div v-if="altOpen === i" class="pt-alt-dropdown">
-                        <!-- Custom search input -->
-                        <div class="pt-alt-search">
-                          <input
-                            class="pt-input pt-alt-search-input"
-                            v-model="swapQuery"
-                            :placeholder="pt.convertDirection.value === 'yt-to-spotify' ? 'Search Spotify...' : 'Search YouTube...'"
-                            @input="debounceSwapSearch(i)"
-                            @click.stop
-                          />
-                        </div>
-                        <!-- Custom search results -->
-                        <div v-if="swapSearchLoading" class="pt-alt-loading">Searching...</div>
-                        <div v-if="swapSearchError" class="pt-alt-loading" style="color: #f87171; font-size: 11px;">{{ swapSearchError }}</div>
-                        <template v-if="swapResults.length">
-                          <div class="pt-alt-divider">Search results</div>
-                          <div
-                            v-for="r in swapResults"
-                            :key="r.id || r.videoId"
-                            class="pt-dropdown-item"
-                            @click="pt.swapMatch(i, r); altOpen = null; swapResults = []; swapQuery = ''"
-                          >
-                            <img v-if="r.art || r.thumbnail" :src="r.art || r.thumbnail" class="pt-dropdown-art" alt="" />
-                            <div class="pt-dropdown-info">
-                              <span class="pt-dropdown-name">{{ r.name || r.title }}</span>
-                              <span class="pt-dropdown-artist">{{ r.artist || r.channelTitle }}</span>
-                            </div>
-                          </div>
-                        </template>
-                        <!-- Pre-fetched alternatives -->
-                        <template v-if="m.alternatives?.length">
-                          <div class="pt-alt-divider">Suggestions</div>
-                          <div
-                            v-for="alt in m.alternatives"
-                            :key="alt.id || alt.videoId"
-                            class="pt-dropdown-item"
-                            @click="pt.swapMatch(i, alt); altOpen = null"
-                          >
-                            <span class="pt-dropdown-name">{{ alt.name || alt.title }}</span>
-                            <span class="pt-dropdown-artist">{{ alt.artist || alt.channelTitle }}</span>
-                          </div>
-                        </template>
-                      </div>
+                      <button class="pt-alt-btn" :ref="el => { if (el) swapBtnRefs[i] = el }" @click="toggleAlt(i)">Swap</button>
                     </div>
                   </div>
                 </div>
@@ -497,6 +454,51 @@
         </Transition>
       </div>
     </Transition>
+
+    <!-- Swap dropdown — teleported outside scroll containers to avoid clipping -->
+    <div v-if="altOpen !== null" class="pt-swap-overlay" @click="altOpen = null; swapResults = []; swapQuery = ''">
+      <div class="pt-alt-dropdown-fixed" :style="swapDropdownStyle" @click.stop>
+        <div class="pt-alt-search">
+          <input
+            class="pt-input pt-alt-search-input"
+            v-model="swapQuery"
+            :placeholder="pt.convertDirection.value === 'yt-to-spotify' ? 'Search Spotify...' : 'Search YouTube...'"
+            @input="debounceSwapSearch"
+            @click.stop
+            ref="swapSearchInput"
+          />
+        </div>
+        <div v-if="swapSearchLoading" class="pt-alt-loading">Searching...</div>
+        <div v-if="swapSearchError" class="pt-alt-loading" style="color: #f87171; font-size: 11px;">{{ swapSearchError }}</div>
+        <template v-if="swapResults.length">
+          <div class="pt-alt-divider">Search results</div>
+          <div
+            v-for="r in swapResults"
+            :key="r.id || r.videoId"
+            class="pt-dropdown-item"
+            @click="pt.swapMatch(altOpen, r); altOpen = null; swapResults = []; swapQuery = ''"
+          >
+            <img v-if="r.art || r.thumbnail" :src="r.art || r.thumbnail" class="pt-dropdown-art" alt="" />
+            <div class="pt-dropdown-info">
+              <span class="pt-dropdown-name">{{ r.name || r.title }}</span>
+              <span class="pt-dropdown-artist">{{ r.artist || r.channelTitle }}</span>
+            </div>
+          </div>
+        </template>
+        <template v-if="altOpen !== null && pt.matchedTracks.value[altOpen]?.alternatives?.length">
+          <div class="pt-alt-divider">Suggestions</div>
+          <div
+            v-for="alt in pt.matchedTracks.value[altOpen].alternatives"
+            :key="alt.id || alt.videoId"
+            class="pt-dropdown-item"
+            @click="pt.swapMatch(altOpen, alt); altOpen = null; swapResults = []; swapQuery = ''"
+          >
+            <span class="pt-dropdown-name">{{ alt.name || alt.title }}</span>
+            <span class="pt-dropdown-artist">{{ alt.artist || alt.channelTitle }}</span>
+          </div>
+        </template>
+      </div>
+    </div>
   </Teleport>
 </template>
 
@@ -559,9 +561,8 @@ const ytSaveMode       = ref('new');
 
 const youtubeReconnectUrl = computed(() => {
   const token = localStorage.getItem('jwtToken') || '';
-  const url = new URL(window.location.href);
-  url.searchParams.delete('youtube');
-  return `${API}/api/youtube/auth?token=${token}&returnTo=${encodeURIComponent(url.toString())}`;
+  const origin = window.location.origin;
+  return `${API}/api/youtube/auth?token=${token}&returnTo=${encodeURIComponent(origin + '/profile')}`;
 });
 const altOpen          = ref(null);
 const customGenreInput = ref('');
@@ -613,13 +614,33 @@ const matchStats = computed(() => {
 const swapQuery = ref('');
 const swapResults = ref([]);
 const swapSearchLoading = ref(false);
+const swapBtnRefs = ref({});
+const swapSearchInput = ref(null);
 let _swapDebounce = null;
+
+const swapDropdownStyle = computed(() => {
+  const idx = altOpen.value;
+  if (idx === null || !swapBtnRefs.value[idx]) return {};
+  const btn = swapBtnRefs.value[idx];
+  const rect = btn.getBoundingClientRect();
+  const maxW = Math.min(320, window.innerWidth - 16);
+  // Position below the button, right-aligned
+  let left = rect.right - maxW;
+  if (left < 8) left = 8;
+  let top = rect.bottom + 4;
+  // If dropdown would overflow bottom, show above
+  if (top + 320 > window.innerHeight) top = Math.max(8, rect.top - 324);
+  return { position: 'fixed', top: top + 'px', left: left + 'px', width: maxW + 'px' };
+});
 
 const toggleAlt = (i) => {
   altOpen.value = altOpen.value === i ? null : i;
   swapQuery.value = '';
   swapResults.value = [];
   swapSearchError.value = '';
+  if (altOpen.value !== null) {
+    setTimeout(() => swapSearchInput.value?.focus(), 50);
+  }
 };
 
 const swapSearchError = ref('');
@@ -628,7 +649,7 @@ const debounceSwapSearch = () => {
   clearTimeout(_swapDebounce);
   swapSearchError.value = '';
   const q = swapQuery.value.trim();
-  if (!q) { swapResults.value = []; return; }
+  if (!q) { swapResults.value = []; swapSearchLoading.value = false; return; }
   swapSearchLoading.value = true;
   _swapDebounce = setTimeout(async () => {
     try {
@@ -1333,16 +1354,21 @@ const handleAddToExistingYt = (playlistId) => {
 }
 .pt-alt-btn:hover { border-color: #555; color: #ccc; }
 
-.pt-alt-dropdown {
-  position: absolute;
-  right: 0; top: 100%;
+/* Fixed swap dropdown (teleported outside scroll containers) */
+.pt-swap-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9500;
+  background: rgba(0,0,0,0.3);
+}
+.pt-alt-dropdown-fixed {
   background: #1a1a1a;
   border: 1px solid #333;
   border-radius: 8px;
-  min-width: 260px;
   max-height: 320px;
   overflow-y: auto;
-  z-index: 20;
+  z-index: 9501;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
 }
 
 .pt-alt-search { padding: 8px; border-bottom: 1px solid #2a2a2a; }
@@ -1440,7 +1466,6 @@ const handleAddToExistingYt = (playlistId) => {
   .pt-existing-list { max-height: 180px; }
   .pt-dropdown-art { width: 30px; height: 30px; }
   .pt-dropdown-item { padding: 8px 10px; gap: 8px; }
-  .pt-alt-dropdown { min-width: 200px; left: auto; right: 0; max-width: calc(100dvw - 24px); }
   .pt-search-results { max-height: 200px; }
   .pt-btn-full { padding: 12px; font-size: 14px; }
   .pt-results-header { font-size: 12px; flex-direction: column; align-items: flex-start; gap: 6px; }
@@ -1455,7 +1480,6 @@ const handleAddToExistingYt = (playlistId) => {
   .pt-tab { padding: 6px 10px; font-size: 12px; }
   .pt-body { padding: 10px; gap: 10px; }
   .pt-track-list { max-height: 220px; }
-  .pt-alt-dropdown { min-width: 160px; right: 0; max-width: calc(100dvw - 20px); }
   .pt-save-dialog { width: min(280px, 94%); padding: 14px; }
   .pt-existing-list { max-height: 150px; }
   .pt-success a { display: block; margin-top: 4px; }
