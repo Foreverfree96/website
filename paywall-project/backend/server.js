@@ -77,15 +77,26 @@ const io = new Server(httpServer, {
   cors: {
     origin: (origin, callback) => {
       if (!origin) return callback(null, true);
-      const isLocalhost = /^http:\/\/localhost(:\d+)?$/.test(origin);
-      const isVercelPreview = /^https:\/\/myportfoliofrontend[a-z0-9-]*\.vercel\.app$/.test(origin);
-      const isAllowed = isLocalhost || isVercelPreview || origin === process.env.FRONTEND_URL;
-      if (isAllowed) return callback(null, true);
+      if (isAllowedOrigin(origin)) return callback(null, true);
       callback(new Error("Not allowed by CORS"));
     },
     credentials: true,
   },
 });
+
+// Reusable origin check — shared between Socket.io and Express CORS
+function isAllowedOrigin(origin) {
+  if (!origin) return true;
+  // Dev: localhost or 127.0.0.1 on any port
+  if (/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) return true;
+  // Vercel preview/production deployments
+  if (/^https:\/\/myportfoliofrontend[a-z0-9-]*\.vercel\.app$/.test(origin)) return true;
+  // Render frontend deployments
+  if (/^https:\/\/[a-z0-9-]+\.onrender\.com$/.test(origin)) return true;
+  // Exact match of configured FRONTEND_URL
+  if (origin === process.env.FRONTEND_URL) return true;
+  return false;
+}
 
 // Share the io instance with the rest of the app via the socketEmitter utility
 // so controllers can emit events without importing server.js directly
@@ -155,13 +166,7 @@ app.use(helmet());
 
 app.use(cors({
   origin: (origin, callback) => {
-    // Allow requests with no origin (mobile apps, curl, Postman)
-    if (!origin) return callback(null, true);
-    // Allow any localhost port in development, or the configured frontend URL
-    const isLocalhost = /^http:\/\/localhost(:\d+)?$/.test(origin);
-    const isVercelPreview = /^https:\/\/myportfoliofrontend[a-z0-9-]*\.vercel\.app$/.test(origin);
-    const isAllowed = isLocalhost || isVercelPreview || origin === process.env.FRONTEND_URL;
-    if (isAllowed) return callback(null, true);
+    if (isAllowedOrigin(origin)) return callback(null, true);
     callback(new Error("Not allowed by CORS"));
   },
   credentials: true,
