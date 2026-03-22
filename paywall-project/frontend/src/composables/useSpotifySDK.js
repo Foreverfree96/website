@@ -55,6 +55,7 @@ const currentMediaUrl = ref('');
 const playlistTracks  = ref([]);
 const listOpen        = ref(true);
 const needsReconnect  = ref(false);
+let _reconnectDismissed = false; // once dismissed, don't re-trigger this session
 const playlistMeta    = ref({ name: '', owner: '' });
 
 // ── Computed ─────────────────────────────────────────────────────────────────
@@ -278,7 +279,7 @@ const fetchPlaylistTracks = async (mediaUrl) => {
   // Track playlists that got 403 — don't retry these (scope issue, not transient)
   if (!_w._forbidden) _w._forbidden = new Set();
   if (_w._forbidden.has(cacheKey)) {
-    if (!_w.reconnectAttempted && !localStorage.getItem('sp_playlist_ok')) needsReconnect.value = true;
+    if (!_reconnectDismissed && !_w.reconnectAttempted && !localStorage.getItem('sp_playlist_ok')) needsReconnect.value = true;
     return;
   }
 
@@ -361,7 +362,7 @@ const fetchPlaylistTracks = async (mediaUrl) => {
     // If 403, mark as forbidden — don't retry
     if (got403) {
       _w._forbidden.add(cacheKey);
-      needsReconnect.value = true;
+      if (!_reconnectDismissed) needsReconnect.value = true;
       return;
     }
     // Retry once after 3s only for non-403 failures
@@ -369,13 +370,13 @@ const fetchPlaylistTracks = async (mediaUrl) => {
       if (fullTracksFetched) return;
       const retry = await doFetch();
       if (applyTracks(retry)) return;
-      if (got403) { _w._forbidden.add(cacheKey); needsReconnect.value = true; return; }
-      if (!_w.reconnectAttempted && !localStorage.getItem('sp_playlist_ok')) needsReconnect.value = true;
+      if (got403) { _w._forbidden.add(cacheKey); if (!_reconnectDismissed) needsReconnect.value = true; return; }
+      if (!_reconnectDismissed && !_w.reconnectAttempted && !localStorage.getItem('sp_playlist_ok')) needsReconnect.value = true;
     }, 3000);
   } catch {
     _w.fetchingPlaylists.delete(cacheKey);
-    if (got403) { _w._forbidden.add(cacheKey); needsReconnect.value = true; return; }
-    if (!_w.reconnectAttempted && !localStorage.getItem('sp_playlist_ok')) needsReconnect.value = true;
+    if (got403) { _w._forbidden.add(cacheKey); if (!_reconnectDismissed) needsReconnect.value = true; return; }
+    if (!_reconnectDismissed && !_w.reconnectAttempted && !localStorage.getItem('sp_playlist_ok')) needsReconnect.value = true;
   }
 };
 
@@ -847,6 +848,11 @@ const retryConnect = async (mediaUrl, opts = {}) => {
   await play(mediaUrl, opts);
 };
 
+const dismissReconnect = () => {
+  needsReconnect.value = false;
+  _reconnectDismissed = true;
+};
+
 // ── Preload tracks for inactive preview cards ────────────────────────────────
 const preloadTracks = (mediaUrl) => {
   const cached = loadCachedTracks(mediaUrl);
@@ -867,7 +873,7 @@ export function useSpotifySDK() {
     progressPct, displayVolume, spotifyConnectUrl,
     // Methods
     play, playUris, togglePlay, next, prev, seek, setVolume, toggleMute, toggleShuffle,
-    playTrackFromList, disconnect, retryConnect, preloadTracks,
+    playTrackFromList, disconnect, retryConnect, preloadTracks, dismissReconnect,
     fmtMs, loadCachedTracks, loadSavedPosition, saveCurrentPosition,
   };
 }

@@ -118,7 +118,7 @@
           </span>
           <a :href="sdk.spotifyConnectUrl.value" class="sp-reconnect-btn">Reconnect Spotify →</a>
         </div>
-        <button class="sp-reconnect-dismiss" @click="sdk.needsReconnect.value = false" title="Dismiss">✕</button>
+        <button class="sp-reconnect-dismiss" @click="sdk.dismissReconnect()" title="Dismiss">✕</button>
       </div>
 
       <!-- ── Scrollable playlist track list ───────────────────────────────── -->
