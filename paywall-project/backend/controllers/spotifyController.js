@@ -1054,12 +1054,11 @@ export const matchTracks = async (req, res) => {
             } catch { /* refresh failed */ }
           }
 
-          // 429: wait for cooldown (user token only — keeps bucket separate from search)
+          // 429: wait for cooldown — don't set global rate limit, match has its own token
           if (status === 429 && attempt < 4) {
             const secs = parseInt(e.response.headers?.['retry-after'] || '5', 10);
             const waitMs = Math.min(secs, 30) * 1000 + 500;
-            setRateLimit(e.response.headers?.['retry-after']);
-            if (attempt < 2) console.log(`   ⏳ Match: both tokens rate-limited, waiting ${Math.round(waitMs / 1000)}s for "${query}"...`);
+            if (attempt < 2) console.log(`   ⏳ Match: rate-limited, waiting ${Math.round(waitMs / 1000)}s for "${query}"...`);
             await new Promise(r => setTimeout(r, waitMs));
             continue;
           }
@@ -1228,15 +1227,6 @@ export const matchTracks = async (req, res) => {
       return { source: src, bestMatch: best, confidence, alternatives: allCandidates.slice(1, 7) };
     };
 
-    // Wait out rate limit if active (up to 10s), otherwise proceed
-    if (Date.now() < _rateLimitedUntil) {
-      const waitMs = _rateLimitedUntil - Date.now();
-      if (waitMs > 10000) {
-        return res.status(429).json({ message: "Rate limited — try again shortly" });
-      }
-      await new Promise(r => setTimeout(r, waitMs + 200));
-    }
-
     // Emit real-time progress via Socket.io
     const { getIo } = await import("../utils/socketEmitter.js");
     const io = getIo();
@@ -1245,12 +1235,14 @@ export const matchTracks = async (req, res) => {
       io?.to(userId).emit('playlist:progress', { percent: Math.round(pct), status });
     };
 
-    // Process tracks sequentially to avoid flooding Spotify API
+    // Process tracks in small batches for throughput
     const startTime = Date.now();
-    const TIMEOUT_MS = 290000; // ~5 min for large playlists (up to 1000 tracks)
+    const TIMEOUT_MS = 290000; // ~5 min for large playlists
     const matches = [];
+    const BATCH = tracks.length > 200 ? 2 : tracks.length > 50 ? 3 : 4;
+    const DELAY = tracks.length > 200 ? 300 : 200;
     emitProgress(5, `Matching ${tracks.length} tracks...`);
-    for (let i = 0; i < tracks.length; i++) {
+    for (let i = 0; i < tracks.length; i += BATCH) {
       if (Date.now() - startTime > TIMEOUT_MS) {
         console.log(`⏱ Spotify match timeout after ${matches.length}/${tracks.length} tracks`);
         for (let j = i; j < tracks.length; j++) {
@@ -1258,19 +1250,15 @@ export const matchTracks = async (req, res) => {
         }
         break;
       }
-      if (Date.now() < _rateLimitedUntil) {
-        const waitMs = Math.min(_rateLimitedUntil - Date.now(), 10000);
-        if (Date.now() - startTime + waitMs > TIMEOUT_MS) break;
-        await new Promise(r => setTimeout(r, waitMs + 200));
-      }
-      const result = await matchOne(tracks[i]);
-      matches.push(result);
+      const batch = tracks.slice(i, i + BATCH);
+      const results = await Promise.all(batch.map(matchOne));
+      matches.push(...results);
 
       const pct = 5 + (matches.length / tracks.length) * 90;
       emitProgress(pct, `Matched ${matches.length}/${tracks.length}...`);
 
-      // Small delay between tracks to stay under rate limits
-      if (i < tracks.length - 1) await new Promise(r => setTimeout(r, 150));
+      // Small delay between batches to stay under rate limits
+      if (i + BATCH < tracks.length) await new Promise(r => setTimeout(r, DELAY));
     }
 
     const exact = matches.filter(m => m.confidence === 'exact').length;
