@@ -1018,18 +1018,23 @@ export const matchTracks = async (req, res) => {
     const { tracks = [] } = req.body;
     if (!tracks.length) return res.status(400).json({ message: "No tracks provided" });
 
-    // Use client credentials for match — separate rate limit bucket from user token
+    // Two tokens — user token + client creds — two separate rate limit buckets
+    // Start with user token; on 429, swap to client creds (fresh bucket)
+    const userResult = await getValidToken(req.user.id, false);
+    const userToken = userResult.error ? null : userResult.accessToken;
     let ccToken = await getClientCredToken();
-    const auth = { Authorization: `Bearer ${ccToken}` };
+    // Track which token we're currently using
+    let currentToken = userToken || ccToken;
+    let usingUserToken = !!userToken;
+    const auth = { Authorization: `Bearer ${currentToken}` };
 
-    console.log(`🔍 Matching ${tracks.length} tracks to Spotify... [client-creds]`);
+    console.log(`🔍 Matching ${tracks.length} tracks to Spotify... [${usingUserToken ? 'user-token' : 'client-creds'}]`);
 
-    // Shared rate limit pause — when one query hits 429, pause ALL concurrent queries
+    // Pause tracking for rate limits
     let _matchPausedUntil = 0;
 
     const searchSpotify = async (query) => {
       for (let attempt = 0; attempt < 4; attempt++) {
-        // If another query in this batch hit a 429, wait it out before retrying
         if (_matchPausedUntil > Date.now()) {
           await new Promise(r => setTimeout(r, _matchPausedUntil - Date.now() + 200));
         }
@@ -1045,19 +1050,41 @@ export const matchTracks = async (req, res) => {
           const status = e.response?.status;
           if (status === 400 && attempt === 0) continue;
 
-          // On 401: refresh client creds token
+          // On 401: refresh current token
           if (status === 401 && attempt < 2) {
+            if (usingUserToken) {
+              try {
+                const refreshed = await getValidToken(req.user.id, true);
+                if (!refreshed.error) { currentToken = refreshed.accessToken; auth.Authorization = `Bearer ${currentToken}`; continue; }
+              } catch {}
+            }
             ccToken = await getClientCredToken();
-            auth.Authorization = `Bearer ${ccToken}`;
+            currentToken = ccToken; usingUserToken = false;
+            auth.Authorization = `Bearer ${currentToken}`;
             continue;
           }
 
-          // 429: set shared pause so parallel queries also wait
+          // 429: swap token bucket, then wait reduced time
           if (status === 429 && attempt < 3) {
             const secs = parseInt(e.response.headers?.['retry-after'] || '5', 10);
+            // Try swapping to the other token bucket first
+            if (usingUserToken && ccToken) {
+              usingUserToken = false; currentToken = ccToken;
+              auth.Authorization = `Bearer ${currentToken}`;
+              console.log(`   ⏳ Match: user-token rate-limited, swapped to client-creds`);
+              await new Promise(r => setTimeout(r, 500)); // brief pause
+              continue;
+            } else if (!usingUserToken && userToken) {
+              usingUserToken = true; currentToken = userToken;
+              auth.Authorization = `Bearer ${currentToken}`;
+              console.log(`   ⏳ Match: client-creds rate-limited, swapped to user-token`);
+              await new Promise(r => setTimeout(r, 500));
+              continue;
+            }
+            // Both buckets exhausted — have to wait
             const waitMs = Math.min(secs, 30) * 1000 + 500;
             _matchPausedUntil = Date.now() + waitMs;
-            if (attempt === 0) console.log(`   ⏳ Match: rate-limited, pausing all for ${Math.round(waitMs / 1000)}s`);
+            console.log(`   ⏳ Match: both tokens rate-limited, waiting ${Math.round(waitMs / 1000)}s`);
             await new Promise(r => setTimeout(r, waitMs));
             continue;
           }
