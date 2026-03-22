@@ -489,6 +489,10 @@ export const matchYoutubeTracks = async (req, res) => {
         if (_quotaExhausted) break;
         const items = await searchYT(uniqueQueries[qi]);
         allItems = allItems.concat(items);
+        // Log first 3 tracks to verify search is returning results
+        if (matches.length < 3 && qi === 0) {
+          console.log(`   Search "${uniqueQueries[qi]}" → ${items.length} results${items[0] ? ` [top: "${items[0].snippet?.title}"]` : ''}`);
+        }
         // Stop early if we have plenty of results
         if (allItems.length >= 10 && qi >= 1) break;
         if (qi < uniqueQueries.length - 1) await new Promise(r => setTimeout(r, 150));
@@ -613,6 +617,13 @@ export const matchYoutubeTracks = async (req, res) => {
         : best.score >= 0.3  ? "close"
         : best.score >= 0.1  ? "similar"
         : "none";
+
+      // Debug: log non-exact matches to diagnose scoring
+      if (confidence !== 'exact' && best) {
+        console.log(`   ⚠ ${confidence} [${best.score.toFixed(3)}] "${title}" by "${artist}" → "${best.title}" (${best.channelTitle}) | items=${items.length} queries=${uniqueQueries.length}`);
+      } else if (!best) {
+        console.log(`   ⚠ none: "${title}" by "${artist}" | items=${items.length} queries=${uniqueQueries.length}`);
+      }
 
       return { source: src, bestMatch: best, confidence, alternatives: allCandidates.slice(1, 7) };
     };
