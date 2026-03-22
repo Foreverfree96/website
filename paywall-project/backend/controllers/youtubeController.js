@@ -77,7 +77,12 @@ const CACHE_TTL = 6 * 60 * 60 * 1000; // 6 hours
 // GET /api/youtube/playlist/:id/tracks
 export const getPlaylistTracks = async (req, res) => {
   const playlistId = req.params.id;
-  if (!API_KEY()) return res.status(500).json({ message: "YouTube API key not configured" });
+  _loadKeys();
+  if (!_ytKeys.length) return res.status(500).json({ message: "YouTube API key not configured" });
+  // Clear stale exhausted keys
+  for (const [key, until] of _exhaustedUntil) {
+    if (Date.now() > until) _exhaustedUntil.delete(key);
+  }
 
   // Return cached
   const cached = _cache.get(playlistId);
@@ -154,6 +159,9 @@ export const getPlaylistTracks = async (req, res) => {
 // GET /api/youtube/search?q=...&limit=5
 export const searchYoutubeTracks = async (req, res) => {
   try {
+    _loadKeys();
+    if (!_ytKeys.length) return res.status(500).json({ message: "YouTube API key not configured" });
+
     // Clear stale exhausted keys
     for (const [key, until] of _exhaustedUntil) {
       if (Date.now() > until) _exhaustedUntil.delete(key);
@@ -225,7 +233,12 @@ export const searchYoutubeTracks = async (req, res) => {
 // identifier can be a channel ID (UC...) or handle (@username)
 export const getChannelInfo = async (req, res) => {
   try {
-    if (!API_KEY()) return res.status(500).json({ message: "YouTube API key not configured" });
+    _loadKeys();
+    if (!_ytKeys.length) return res.status(500).json({ message: "YouTube API key not configured" });
+    // Clear stale exhausted keys
+    for (const [key, until] of _exhaustedUntil) {
+      if (Date.now() > until) _exhaustedUntil.delete(key);
+    }
 
     const id = req.params.identifier;
     const isHandle = id.startsWith('@');
@@ -372,7 +385,8 @@ const deepNormalize = (s) =>
 
 export const matchYoutubeTracks = async (req, res) => {
   try {
-    if (!API_KEY()) return res.status(500).json({ message: "YouTube API key not configured" });
+    _loadKeys();
+    if (!_ytKeys.length) return res.status(500).json({ message: "YouTube API key not configured" });
 
     const { tracks = [] } = req.body;
     if (!tracks.length) return res.status(400).json({ message: "No tracks provided" });
@@ -385,7 +399,8 @@ export const matchYoutubeTracks = async (req, res) => {
     for (const [key, until] of _exhaustedUntil) {
       if (Date.now() > until) _exhaustedUntil.delete(key);
     }
-    console.log(`   Keys available: ${_ytKeys.length - _exhaustedUntil.size}/${_ytKeys.length}`);
+    const available = _ytKeys.length - _exhaustedUntil.size;
+    console.log(`   Keys available: ${available}/${_ytKeys.length}`);
 
     let _quotaExhausted = false;
 
