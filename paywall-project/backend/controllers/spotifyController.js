@@ -1216,8 +1216,17 @@ export const matchTracks = async (req, res) => {
               ? bestTitleSim * 0.5 + bestArtistSim * 0.4 + durationBonus * 0.1
               : bestTitleSim * 0.85 + durationBonus * 0.15;
 
-            // Prefer explicit versions over clean
-            if (t.explicit) score += 0.03;
+            // Prefer explicit versions — penalize clean versions
+            if (t.explicit) score += 0.05;
+            else if (!t.explicit && allCandidates.length > 0) score -= 0.02;
+
+            // Penalize live versions — we want studio recordings
+            const trackName = t.name || "";
+            const albumName = t.album?.name || "";
+            const isLiveTrack = /\b(live\s+(at|in|from|on|version|session|performance|recording)|[\(\[]live[\)\]]|- live\b|live$)/i.test(trackName);
+            const isLiveAlbum = /\b(live\s+(at|in|from|on)|[\(\[]live[\)\]]|- live\b|live$)/i.test(albumName);
+            if (isLiveTrack) score -= 0.10;
+            else if (isLiveAlbum) score -= 0.06;
 
             return {
               id:          t.id,

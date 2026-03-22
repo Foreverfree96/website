@@ -594,8 +594,12 @@ export const matchYoutubeTracks = async (req, res) => {
         if (/\b(music\s*video|official\s*video|mv)\b/i.test(rawYtTitle) && !isTopic) score -= 0.02;
 
         // Penalize likely non-music content
-        if (/\b(react|reaction|review|cover|tutorial|karaoke|instrumental|remix|live\s+(at|in|from)|concert|interview)\b/i.test(rawYtTitle)) {
+        if (/\b(react|reaction|review|cover|tutorial|karaoke|instrumental|remix|concert|interview)\b/i.test(rawYtTitle)) {
           score -= 0.08;
+        }
+        // Penalize live versions — broader detection than just "live at/in/from"
+        if (/\b(live\s+(at|in|from|on|version|session|performance|recording)|[\(\[]live[\)\]]|- live\b|live$)/i.test(rawYtTitle)) {
+          score -= 0.10;
         }
         // Penalize "sped up", "slowed", "8d audio" etc.
         if (/\b(sped\s*up|slowed|reverb|8d|nightcore|bass\s*boost)/i.test(rawYtTitle)) score -= 0.06;
