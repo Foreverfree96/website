@@ -122,14 +122,14 @@
       </div>
 
       <!-- ── Scrollable playlist track list ───────────────────────────────── -->
-      <div v-if="isPlaylist && sdk.playlistTracks.value.length" class="sp-tracklist" ref="tracklistEl">
-        <div class="sp-tracklist-header" @click="sdk.listOpen.value = !sdk.listOpen.value">
-          <span>Queue ({{ sdk.playlistTracks.value.length }})</span>
-          <span class="sp-tracklist-arrow">{{ sdk.listOpen.value ? '▲' : '▼' }}</span>
+      <div v-if="isPlaylist && displayTracks.length" class="sp-tracklist" ref="tracklistEl">
+        <div class="sp-tracklist-header" @click="localListOpen = !localListOpen">
+          <span>Queue ({{ displayTracks.length }})</span>
+          <span class="sp-tracklist-arrow">{{ localListOpen ? '▲' : '▼' }}</span>
         </div>
-        <div v-show="sdk.listOpen.value">
+        <div v-show="localListOpen">
           <div
-            v-for="(t, i) in sdk.playlistTracks.value"
+            v-for="(t, i) in displayTracks"
             :key="t.uri"
             class="sp-track-row"
             :class="{ 'sp-track-row--active': t.uri === sdk.currentTrackUri.value }"
@@ -197,7 +197,21 @@ const state = computed(() => {
 // ── Preview track info for inactive card ─────────────────────────────────────
 const localTracks = ref([]);
 const localMeta   = ref({ name: '', owner: '' });
+const localListOpen = ref(props.defaultListOpen);
 const previewTrack = ref({ name: '', artist: '', art: '' });
+
+// Show THIS playlist's tracks — use global SDK tracks when active, local cache otherwise
+const displayTracks = computed(() => {
+  if (isActive.value && sdk.playlistTracks.value.length) return sdk.playlistTracks.value;
+  return localTracks.value;
+});
+
+// Keep localTracks in sync when this is the active player
+watch(() => sdk.playlistTracks.value, (tracks) => {
+  if (isActive.value && tracks?.length) {
+    localTracks.value = tracks;
+  }
+});
 
 onMounted(() => {
   if (props.isPlaylist) {
@@ -207,7 +221,7 @@ onMounted(() => {
       const t = (props.startTrackUri && cached.tracks.find(t => t.uri === props.startTrackUri)) || cached.tracks[0];
       if (t) previewTrack.value = { name: t.name, artist: t.artist, art: t.art };
     }
-    // Background fetch for preview
+    // Background fetch for preview — also populates localTracks
     sdk.preloadTracks(props.mediaUrl);
   }
 
