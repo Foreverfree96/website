@@ -153,7 +153,20 @@ export const getPlaylistTracks = async (req, res) => {
 // GET /api/youtube/search?q=...&limit=5
 export const searchYoutubeTracks = async (req, res) => {
   try {
-    if (!API_KEY()) return res.status(500).json({ message: "YouTube API key not configured" });
+    // Clear stale exhausted keys
+    for (const [key, until] of _exhaustedUntil) {
+      if (Date.now() > until) _exhaustedUntil.delete(key);
+    }
+
+    if (!API_KEY()) {
+      // All keys currently exhausted — find the soonest recovery
+      let soonest = Infinity;
+      for (const until of _exhaustedUntil.values()) soonest = Math.min(soonest, until);
+      const retryAfter = Math.max(1, Math.ceil((soonest - Date.now()) / 1000));
+      return res.status(429)
+        .set('Retry-After', String(retryAfter))
+        .json({ message: "YouTube API quota exhausted", retryAfter });
+    }
 
     const { q, limit = 5 } = req.query;
     if (!q) return res.status(400).json({ message: "Missing query parameter q" });
@@ -180,7 +193,15 @@ export const searchYoutubeTracks = async (req, res) => {
         throw e;
       }
     }
-    if (!r) throw new Error('All YouTube API keys exhausted');
+    if (!r) {
+      // All keys exhausted during this request
+      let soonest = Infinity;
+      for (const until of _exhaustedUntil.values()) soonest = Math.min(soonest, until);
+      const retryAfter = Math.max(1, Math.ceil((soonest - Date.now()) / 1000));
+      return res.status(429)
+        .set('Retry-After', String(retryAfter))
+        .json({ message: "YouTube API quota exhausted", retryAfter });
+    }
 
     const items = (r.data.items || []).map((i) => ({
       title:        i.snippet.title,
