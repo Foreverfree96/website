@@ -282,7 +282,9 @@ const fetchYoutubeStatus = async () => {
             headers: { Authorization: `Bearer ${jwtToken}` },
         });
         youtubeStatus.value = res.data;
-    } catch { /* non-critical */ }
+    } catch (e) {
+        console.warn('YouTube status fetch failed:', e.response?.status || e.message);
+    }
 };
 
 const handleYoutubeDisconnect = async () => {

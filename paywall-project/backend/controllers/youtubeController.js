@@ -159,15 +159,21 @@ export const searchYoutubeTracks = async (req, res) => {
     if (!q) return res.status(400).json({ message: "Missing query parameter q" });
 
     let r;
-    for (let keyAttempt = 0; keyAttempt < _ytKeys.length + 2; keyAttempt++) {
+    let keyRotations = 0, rateLimitRetries = 0;
+    while (keyRotations < _ytKeys.length && rateLimitRetries < 5) {
       try {
         r = await axios.get(`${BASE}/search`, {
           params: { part: "snippet", type: "video", videoCategoryId: "10", q, maxResults: Math.min(Number(limit), 20), key: API_KEY() },
         });
         break;
       } catch (e) {
-        if (_isQuotaError(e) && _rotateKey(e)) continue;
+        if (_isQuotaError(e)) {
+          keyRotations++;
+          if (_rotateKey(e)) continue;
+          break;
+        }
         if (_isRateLimitError(e)) {
+          rateLimitRetries++;
           await new Promise(r => setTimeout(r, 2000));
           continue;
         }
@@ -724,22 +730,32 @@ export const youtubeCallback = async (req, res) => {
     const { access_token, refresh_token, expires_in } = tokenRes.data;
 
     // Fetch the user's channel info
-    const channelRes = await axios.get(`${BASE}/channels`, {
-      params: { part: "snippet", mine: true },
-      headers: { Authorization: `Bearer ${access_token}` },
-    });
+    let channelId = "", displayName = "";
+    try {
+      const channelRes = await axios.get(`${BASE}/channels`, {
+        params: { part: "snippet", mine: true },
+        headers: { Authorization: `Bearer ${access_token}` },
+      });
+      const ch = channelRes.data.items?.[0];
+      channelId   = ch?.id || "";
+      displayName = ch?.snippet?.title || "";
+    } catch (chErr) {
+      console.error("⚠️ Channel fetch failed (proceeding anyway):", chErr.response?.status || chErr.message);
+    }
 
-    const ch = channelRes.data.items?.[0];
-    const channelId   = ch?.id || "";
-    const displayName = ch?.snippet?.title || "";
+    // If no channel found, use a placeholder so connected status is truthy
+    if (!channelId) channelId = `oauth_${userId}`;
 
-    await User.findByIdAndUpdate(userId, {
+    const update = {
       youtubeChannelId:    channelId,
-      youtubeDisplayName:  displayName,
+      youtubeDisplayName:  displayName || "YouTube User",
       youtubeAccessToken:  access_token,
-      youtubeRefreshToken: refresh_token,
       youtubeTokenExpiry:  new Date(Date.now() + expires_in * 1000),
-    });
+    };
+    // Only overwrite refresh_token if Google returned a new one
+    if (refresh_token) update.youtubeRefreshToken = refresh_token;
+
+    await User.findByIdAndUpdate(userId, update);
 
     console.log(`✅ YouTube connected for user ${userId}: channel=${channelId} (${displayName})`);
 
