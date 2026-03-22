@@ -11,6 +11,7 @@ import {
   createYouTubePlaylist,
   addToYouTubePlaylist,
   getYouTubePlaylists,
+  youtubeKeyHealth,
 } from "../controllers/youtubeController.js";
 import { protect } from "../middleware/auth.js";
 
@@ -21,6 +22,7 @@ router.get("/auth",     youtubeAuth);
 router.get("/callback", youtubeCallback);
 
 // Protected
+router.get("/key-health",        protect, youtubeKeyHealth);
 router.get("/status",             protect, youtubeStatus);
 router.delete("/disconnect",      protect, youtubeDisconnect);
 router.get("/playlists",          protect, getYouTubePlaylists);

@@ -32,7 +32,7 @@ const API_KEY = () => {
     const idx = (_ytKeyIndex + i) % _ytKeys.length;
     if (!_isExhausted(_ytKeys[idx])) return _ytKeys[idx];
   }
-  return _ytKeys[0] || null;
+  return null; // all keys exhausted — don't return an exhausted key
 };
 
 const _isQuotaError = (err) => {
@@ -45,17 +45,17 @@ const _isRateLimitError = (err) => {
   return reason === 'rateLimitExceeded' || err.response?.status === 429;
 };
 
-const _rotateKey = (err) => {
+const _rotateKey = (failedKey) => {
   _loadKeys();
-  const current = _ytKeys[_ytKeyIndex];
-  if (current && _isQuotaError(err)) {
-    // Mark exhausted for 1 hour (conservative — YouTube resets at midnight PT
-    // but we don't want stale keys blocking for 24h if the calc is wrong)
-    _exhaustedUntil.set(current, Date.now() + 60 * 60 * 1000);
-    console.log(`   Key #${_ytKeyIndex + 1} quota exhausted, blocked for 1h`);
+  // Mark the specific key that failed, not whatever _ytKeyIndex points to
+  const keyToMark = failedKey || _ytKeys[_ytKeyIndex];
+  if (keyToMark) {
+    _exhaustedUntil.set(keyToMark, Date.now() + 60 * 60 * 1000);
+    const keyNum = _ytKeys.indexOf(keyToMark) + 1;
+    console.log(`   Key #${keyNum} [${keyToMark.slice(-6)}] quota exhausted, blocked for 1h`);
   }
   // Find next available key
-  for (let i = 1; i < _ytKeys.length; i++) {
+  for (let i = 0; i < _ytKeys.length; i++) {
     const idx = (_ytKeyIndex + i) % _ytKeys.length;
     if (!_isExhausted(_ytKeys[idx])) {
       _ytKeyIndex = idx;
@@ -96,6 +96,7 @@ export const getPlaylistTracks = async (req, res) => {
     do {
       let r;
       for (let keyAttempt = 0; keyAttempt < _ytKeys.length + 2; keyAttempt++) {
+        const usedKey = API_KEY();
         try {
           r = await axios.get(`${BASE}/playlistItems`, {
             params: {
@@ -103,12 +104,12 @@ export const getPlaylistTracks = async (req, res) => {
               maxResults: 50,
               playlistId,
               pageToken: nextPageToken || undefined,
-              key: API_KEY(),
+              key: usedKey,
             },
           });
           break;
         } catch (e) {
-          if (_isQuotaError(e) && _rotateKey(e)) continue;
+          if (_isQuotaError(e) && _rotateKey(usedKey)) continue;
           if (_isRateLimitError(e)) {
             await new Promise(r => setTimeout(r, 2000));
             continue;
@@ -174,15 +175,17 @@ export const searchYoutubeTracks = async (req, res) => {
     let r;
     let keyRotations = 0, rateLimitRetries = 0;
     while (keyRotations < _ytKeys.length && rateLimitRetries < 5) {
+      const usedKey = API_KEY();
+      if (!usedKey) break;
       try {
         r = await axios.get(`${BASE}/search`, {
-          params: { part: "snippet", type: "video", videoCategoryId: "10", q, maxResults: Math.min(Number(limit), 20), key: API_KEY() },
+          params: { part: "snippet", type: "video", videoCategoryId: "10", q, maxResults: Math.min(Number(limit), 20), key: usedKey },
         });
         break;
       } catch (e) {
         if (_isQuotaError(e)) {
           keyRotations++;
-          if (_rotateKey(e)) continue;
+          if (_rotateKey(usedKey)) continue;
           break;
         }
         if (_isRateLimitError(e)) {
@@ -229,17 +232,19 @@ export const getChannelInfo = async (req, res) => {
 
     let r;
     for (let keyAttempt = 0; keyAttempt < _ytKeys.length + 2; keyAttempt++) {
+      const usedKey = API_KEY();
+      if (!usedKey) break;
       try {
         const params = {
           part: "snippet,statistics",
-          key: API_KEY(),
+          key: usedKey,
         };
         if (isHandle) params.forHandle = id.replace('@', '');
         else params.id = id;
         r = await axios.get(`${BASE}/channels`, { params });
         break;
       } catch (e) {
-        if (_isQuotaError(e) && _rotateKey(e)) continue;
+        if (_isQuotaError(e) && _rotateKey(usedKey)) continue;
         if (_isRateLimitError(e)) {
           await new Promise(r => setTimeout(r, 2000));
           continue;
@@ -391,19 +396,19 @@ export const matchYoutubeTracks = async (req, res) => {
       let rateLimitRetries = 0;
       const MAX_RATE_RETRIES = 5;
       while (keyRotations < _ytKeys.length && rateLimitRetries < MAX_RATE_RETRIES) {
-        const key = API_KEY();
-        if (!key) break;
+        const usedKey = API_KEY();
+        if (!usedKey) break;
         try {
           const r = await axios.get(`${BASE}/search`, {
-            params: { part: "snippet", type: "video", q: query, maxResults: 15, key },
+            params: { part: "snippet", type: "video", q: query, maxResults: 15, key: usedKey },
           });
           return r.data.items || [];
         } catch (e) {
           const reason = e.response?.data?.error?.errors?.[0]?.reason || '';
           if (e.response?.status === 403 && _isQuotaError(e)) {
             keyRotations++;
-            if (_rotateKey(e)) {
-              console.log(`   Key #${_ytKeyIndex} quota hit, rotated → key #${_ytKeyIndex + 1}. Retrying "${query}"...`);
+            if (_rotateKey(usedKey)) {
+              console.log(`   Rotated away from key [${usedKey.slice(-6)}]. Retrying "${query}"...`);
               continue; // try next key
             }
             console.error(`❌ YouTube API quota exhausted — all ${_ytKeys.length} keys used (${_exhaustedUntil.size} exhausted)`);
@@ -418,7 +423,8 @@ export const matchYoutubeTracks = async (req, res) => {
             await new Promise(r => setTimeout(r, wait * 1000));
             continue;
           }
-          console.error(`❌ YouTube search failed for "${query}": ${e.response?.status} reason=${reason}`);
+          // Log the full error for debugging unknown 403s
+          console.error(`❌ YouTube search failed for "${query}": status=${e.response?.status} reason=${reason} data=${JSON.stringify(e.response?.data?.error?.errors?.[0] || {})}`);
           return [];
         }
       }
@@ -789,6 +795,64 @@ export const youtubeCallback = async (req, res) => {
     u.searchParams.set('youtube', 'error');
     res.redirect(u.toString());
   }
+};
+
+// ─── YOUTUBE KEY HEALTH CHECK ─────────────────────────────────────────────────
+// GET /api/youtube/key-health
+// Tests each API key with a cheap videos.list call (1 unit) to see which are alive
+export const youtubeKeyHealth = async (req, res) => {
+  _loadKeys();
+  // Clear stale entries first
+  for (const [key, until] of _exhaustedUntil) {
+    if (Date.now() > until) _exhaustedUntil.delete(key);
+  }
+
+  const results = [];
+  for (let i = 0; i < _ytKeys.length; i++) {
+    const key = _ytKeys[i];
+    const entry = { key: i + 1, suffix: key.slice(-6), status: 'unknown' };
+
+    // Check in-memory exhaustion
+    const until = _exhaustedUntil.get(key);
+    if (until) {
+      entry.exhaustedFor = `${Math.ceil((until - Date.now()) / 60000)}m remaining`;
+    }
+
+    // Test with a cheap API call (videos.list with part=id costs 1 unit)
+    try {
+      await axios.get(`${BASE}/videos`, {
+        params: { part: "id", id: "dQw4w9WgXcQ", key },
+      });
+      entry.status = 'active';
+      // If it was marked exhausted but actually works, clear it
+      if (until) {
+        _exhaustedUntil.delete(key);
+        entry.exhaustedFor = 'cleared (key is alive)';
+      }
+    } catch (e) {
+      const reason = e.response?.data?.error?.errors?.[0]?.reason || '';
+      if (_isQuotaError(e)) {
+        entry.status = 'quota_exhausted';
+        entry.reason = reason;
+      } else if (_isRateLimitError(e)) {
+        entry.status = 'rate_limited';
+        entry.reason = reason;
+      } else {
+        entry.status = 'error';
+        entry.reason = reason || `${e.response?.status || e.message}`;
+      }
+    }
+    results.push(entry);
+  }
+
+  const active = results.filter(r => r.status === 'active').length;
+  console.log(`🔑 Key health check: ${active}/${_ytKeys.length} active`);
+  res.json({
+    totalKeys: _ytKeys.length,
+    activeKeys: active,
+    currentKeyIndex: _ytKeyIndex + 1,
+    keys: results,
+  });
 };
 
 // ─── YOUTUBE STATUS ───────────────────────────────────────────────────────────
