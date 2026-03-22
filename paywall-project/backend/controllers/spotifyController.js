@@ -1018,18 +1018,21 @@ export const matchTracks = async (req, res) => {
     const { tracks = [] } = req.body;
     if (!tracks.length) return res.status(400).json({ message: "No tracks provided" });
 
-    // User token ONLY for match — keeps rate-limit bucket separate from search (client creds)
-    const result = await getValidToken(req.user.id, false);
-    if (result.error) {
-      return res.status(401).json({ message: "Connect Spotify first" });
-    }
-    const auth = { Authorization: `Bearer ${result.accessToken}` };
+    // Use client credentials for match — separate rate limit bucket from user token
+    let ccToken = await getClientCredToken();
+    const auth = { Authorization: `Bearer ${ccToken}` };
 
-    console.log(`🔍 Matching ${tracks.length} tracks to Spotify... [user-token]`);
+    console.log(`🔍 Matching ${tracks.length} tracks to Spotify... [client-creds]`);
+
+    // Shared rate limit pause — when one query hits 429, pause ALL concurrent queries
+    let _matchPausedUntil = 0;
 
     const searchSpotify = async (query) => {
-      let _switched = false;
-      for (let attempt = 0; attempt < 5; attempt++) {
+      for (let attempt = 0; attempt < 4; attempt++) {
+        // If another query in this batch hit a 429, wait it out before retrying
+        if (_matchPausedUntil > Date.now()) {
+          await new Promise(r => setTimeout(r, _matchPausedUntil - Date.now() + 200));
+        }
         try {
           const q = attempt === 0 ? query : query.replace(/[^\w\s'-]/g, '').trim();
           if (!q) return [];
@@ -1042,23 +1045,19 @@ export const matchTracks = async (req, res) => {
           const status = e.response?.status;
           if (status === 400 && attempt === 0) continue;
 
-          // On 401/403: try refreshing the user token
-          if ((status === 401 || status === 403) && !_switched) {
-            try {
-              const refreshed = await getValidToken(req.user.id, true);
-              if (!refreshed.error) {
-                auth.Authorization = `Bearer ${refreshed.accessToken}`;
-                _switched = true;
-                continue;
-              }
-            } catch { /* refresh failed */ }
+          // On 401: refresh client creds token
+          if (status === 401 && attempt < 2) {
+            ccToken = await getClientCredToken();
+            auth.Authorization = `Bearer ${ccToken}`;
+            continue;
           }
 
-          // 429: wait for cooldown — don't set global rate limit, match has its own token
-          if (status === 429 && attempt < 4) {
+          // 429: set shared pause so parallel queries also wait
+          if (status === 429 && attempt < 3) {
             const secs = parseInt(e.response.headers?.['retry-after'] || '5', 10);
             const waitMs = Math.min(secs, 30) * 1000 + 500;
-            if (attempt < 2) console.log(`   ⏳ Match: rate-limited, waiting ${Math.round(waitMs / 1000)}s for "${query}"...`);
+            _matchPausedUntil = Date.now() + waitMs;
+            if (attempt === 0) console.log(`   ⏳ Match: rate-limited, pausing all for ${Math.round(waitMs / 1000)}s`);
             await new Promise(r => setTimeout(r, waitMs));
             continue;
           }
