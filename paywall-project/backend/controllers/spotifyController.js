@@ -1037,7 +1037,7 @@ export const matchTracks = async (req, res) => {
           const q = attempt === 0 ? query : query.replace(/[^\w\s'-]/g, '').trim();
           if (!q) return [];
           const r = await axios.get("https://api.spotify.com/v1/search", {
-            params: { q, type: "track", limit: 30 },
+            params: { q, type: "track", limit: 10 },
             headers: auth,
           });
           return r.data.tracks?.items || [];
@@ -1140,8 +1140,8 @@ export const matchTracks = async (req, res) => {
         queries.push(`${artist} ${shortTitle}`);
       }
 
-      // Dedupe queries — scale with playlist size
-      const maxQ = tracks.length > 200 ? 2 : tracks.length > 50 ? 3 : 4;
+      // Dedupe queries — keep it lean to avoid rate limits
+      const maxQ = tracks.length > 100 ? 2 : 3;
       const uniqueQueries = [...new Set(queries)].slice(0, maxQ);
 
       if (!uniqueQueries.length) return { source: src, bestMatch: null, confidence: "none", alternatives: [] };
@@ -1234,14 +1234,12 @@ export const matchTracks = async (req, res) => {
       io?.to(userId).emit('playlist:progress', { percent: Math.round(pct), status });
     };
 
-    // Process tracks in small batches for throughput
+    // Process tracks one at a time — Spotify rate limits are strict even with client creds
     const startTime = Date.now();
     const TIMEOUT_MS = 290000; // ~5 min for large playlists
     const matches = [];
-    const BATCH = tracks.length > 200 ? 2 : tracks.length > 50 ? 3 : 4;
-    const DELAY = tracks.length > 200 ? 300 : 200;
     emitProgress(5, `Matching ${tracks.length} tracks...`);
-    for (let i = 0; i < tracks.length; i += BATCH) {
+    for (let i = 0; i < tracks.length; i++) {
       if (Date.now() - startTime > TIMEOUT_MS) {
         console.log(`⏱ Spotify match timeout after ${matches.length}/${tracks.length} tracks`);
         for (let j = i; j < tracks.length; j++) {
@@ -1249,15 +1247,18 @@ export const matchTracks = async (req, res) => {
         }
         break;
       }
-      const batch = tracks.slice(i, i + BATCH);
-      const results = await Promise.all(batch.map(matchOne));
-      matches.push(...results);
+      // If paused from a 429, wait it out before next track
+      if (_matchPausedUntil > Date.now()) {
+        await new Promise(r => setTimeout(r, _matchPausedUntil - Date.now() + 200));
+      }
+      const result = await matchOne(tracks[i]);
+      matches.push(result);
 
       const pct = 5 + (matches.length / tracks.length) * 90;
       emitProgress(pct, `Matched ${matches.length}/${tracks.length}...`);
 
-      // Small delay between batches to stay under rate limits
-      if (i + BATCH < tracks.length) await new Promise(r => setTimeout(r, DELAY));
+      // Small delay between tracks
+      if (i < tracks.length - 1) await new Promise(r => setTimeout(r, 100));
     }
 
     const exact = matches.filter(m => m.confidence === 'exact').length;
