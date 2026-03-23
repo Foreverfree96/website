@@ -485,22 +485,14 @@ export const spotifyDisconnect = async (req, res) => {
 
 // ─── SPOTIFY SEARCH TRACKS ──────────────────────────────────────────────────
 // GET /api/spotify/search?q=...&limit=10
-let _searchRateLimitUntil = 0; // separate rate limit for search — not blocked by playlist/generate 429s
+let _searchCcRateLimitUntil = 0;   // client-creds bucket
+let _searchUserRateLimitUntil = 0; // per-user bucket (keyed globally for simplicity)
 
 export const searchTracks = async (req, res) => {
   try {
     const { q, limit = 50 } = req.query;
     if (!q) return res.status(400).json({ message: "Missing query parameter q" });
 
-    // Only respect search-specific rate limit, not the global one
-    if (Date.now() < _searchRateLimitUntil) {
-      const retryAfter = Math.ceil((_searchRateLimitUntil - Date.now()) / 1000);
-      res.set('Retry-After', String(retryAfter));
-      return res.status(429).json({ tracks: [], retryAfter, message: 'Rate limited' });
-    }
-
-    // Always use client credentials for search — keeps it on a separate
-    // rate limit bucket from generate/match (which use the user token)
     const doSearch = async (t) => {
       const r = await axios.get("https://api.spotify.com/v1/search", {
         params: { q, type: "track", limit: Math.min(Number(limit), 50) },
@@ -509,34 +501,65 @@ export const searchTracks = async (req, res) => {
       return r.data.tracks?.items || [];
     };
 
-    // Client creds ONLY for search — keeps rate-limit bucket separate from generate/match (user token)
+    // Build token buckets — user token first (each user = separate rate limit), then client creds
+    const buckets = [];
+    if (req.user?.id && Date.now() >= _searchUserRateLimitUntil) {
+      const userResult = await getValidToken(req.user.id, false);
+      if (!userResult.error) buckets.push({ token: userResult.accessToken, label: 'user', limitRef: 'user' });
+    }
+    if (Date.now() >= _searchCcRateLimitUntil) {
+      buckets.push({ token: await getClientCredToken(), label: 'client-creds', limitRef: 'cc' });
+    }
+    if (!buckets.length) {
+      const soonest = Math.min(_searchUserRateLimitUntil, _searchCcRateLimitUntil);
+      const retryAfter = Math.max(1, Math.ceil((soonest - Date.now()) / 1000));
+      res.set('Retry-After', String(retryAfter));
+      return res.status(429).json({ tracks: [], retryAfter, message: 'Rate limited — try again shortly' });
+    }
+
     let items;
-    for (let attempt = 0; attempt < 3; attempt++) {
-      try {
-        items = await doSearch(await getClientCredToken());
-        break; // success
-      } catch (e) {
-        if (e.response?.status === 429) {
-          const secs = Math.min(parseInt(e.response.headers?.['retry-after'] || '3', 10), 15);
-          _searchRateLimitUntil = Date.now() + secs * 1000;
-          // On first 429, wait server-side and retry instead of pushing back to client
-          if (attempt < 2) {
-            await new Promise(r => setTimeout(r, secs * 1000 + 500));
-            continue;
+    for (const bucket of buckets) {
+      let success = false;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          items = await doSearch(bucket.token);
+          success = true;
+          break;
+        } catch (e) {
+          if (e.response?.status === 429) {
+            const secs = Math.min(parseInt(e.response.headers?.['retry-after'] || '3', 10), 15);
+            if (bucket.limitRef === 'user') _searchUserRateLimitUntil = Date.now() + secs * 1000;
+            else _searchCcRateLimitUntil = Date.now() + secs * 1000;
+            // Try next bucket instead of waiting
+            break;
+          } else if (e.response?.status === 401 || e.response?.status === 403) {
+            if (bucket.limitRef === 'cc') _clientCredCache = null;
+            if (attempt === 0) {
+              // Refresh and retry once
+              bucket.token = bucket.limitRef === 'cc'
+                ? await getClientCredToken()
+                : (await getValidToken(req.user.id, false)).accessToken;
+              if (bucket.token) continue;
+            }
+            break; // try next bucket
+          } else {
+            console.error(`❌ Search error (${bucket.label}):`, e.response?.status || e.message);
+            break;
           }
-          res.set('Retry-After', String(secs));
-          return res.status(429).json({ tracks: [], retryAfter: secs, message: 'Rate limited — try again shortly' });
-        } else if (e.response?.status === 401 || e.response?.status === 403) {
-          _clientCredCache = null;
-          if (attempt < 2) continue; // retry with fresh token
-          items = [];
-          break;
-        } else {
-          console.error('❌ Search unexpected error:', e.response?.status || e.message);
-          items = [];
-          break;
         }
       }
+      if (success) break;
+    }
+
+    if (!items) {
+      // All buckets failed
+      const soonest = Math.min(
+        _searchUserRateLimitUntil || Infinity,
+        _searchCcRateLimitUntil || Infinity
+      );
+      const retryAfter = soonest < Infinity ? Math.max(1, Math.ceil((soonest - Date.now()) / 1000)) : 5;
+      res.set('Retry-After', String(retryAfter));
+      return res.status(429).json({ tracks: [], retryAfter, message: 'Rate limited — try again shortly' });
     }
 
     const tracks = (items || []).map((t) => ({
@@ -555,7 +578,7 @@ export const searchTracks = async (req, res) => {
     console.error("❌ Spotify search error:", err.response?.data || err.message);
     if (err.response?.status === 429) {
       const secs = Math.min(parseInt(err.response.headers?.['retry-after'] || '5', 10), 10);
-      _searchRateLimitUntil = Date.now() + secs * 1000;
+      _searchCcRateLimitUntil = Date.now() + secs * 1000;
       res.set('Retry-After', String(secs));
       return res.status(429).json({ tracks: [], retryAfter: secs, message: 'Rate limited — try again shortly' });
     }
