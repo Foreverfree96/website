@@ -234,6 +234,28 @@ const extractSpotifyPlaylistId = (url) => {
   return m?.[1] || null;
 };
 
+const extractSpotifyTrackId = (url) => {
+  const m = url.match(/(?:track\/|spotify:track:)([a-zA-Z0-9]+)/);
+  return m?.[1] || null;
+};
+
+const extractYoutubeVideoId = (url) => {
+  const m = url.match(/youtu\.be\/([^?&/]+)|[?&]v=([^&]+)|youtube\.com\/shorts\/([^?&/]+)/);
+  return m?.[1] || m?.[2] || m?.[3] || null;
+};
+
+/** Detect whether a URL is a single track (not a playlist) */
+const isSingleTrackUrl = (url) => {
+  if (!url) return false;
+  // Spotify single track
+  if (/open\.spotify\.com\/track\//.test(url)) return true;
+  // YouTube single video (no list= param, or has v= without being a playlist-only URL)
+  if ((/youtube\.com|youtu\.be/i.test(url)) && !(/[?&]list=/.test(url) && !/[?&]v=/.test(url))) {
+    if (extractYoutubeVideoId(url)) return true;
+  }
+  return false;
+};
+
 // ─── Composable ─────────────────────────────────────────────────────────────
 export function usePlaylistTools() {
 
@@ -511,11 +533,56 @@ export function usePlaylistTools() {
         limit: trackLimit.value,
       };
 
-      // If user pasted a reference playlist URL (Spotify or YouTube)
+      // If user pasted a URL — detect single track vs playlist
       if (seedPlaylistUrl.value) {
         const platform = detectPlatform(seedPlaylistUrl.value);
-        if (platform === 'spotify') {
-          const spId = extractSpotifyPlaylistId(seedPlaylistUrl.value);
+        const url = seedPlaylistUrl.value;
+
+        // ── Single track URL handling ──
+        if (isSingleTrackUrl(url)) {
+          if (platform === 'spotify') {
+            const trackId = extractSpotifyTrackId(url);
+            if (trackId) {
+              try {
+                bgStatus.value = 'Fetching track info...';
+                const tRes = await fetch(`${API}/api/spotify/search?q=&trackId=${trackId}`, { headers: headers(), signal });
+                if (tRes.ok) {
+                  const tData = await tRes.json();
+                  const t = tData.track;
+                  if (t) {
+                    if (!body.seedTrackIds.includes(trackId)) body.seedTrackIds.push(trackId);
+                    body.seedTrackMeta.push({ name: t.name, artist: t.artist || t.artists?.[0]?.name || '' });
+                  }
+                }
+              } catch (e) { if (e.name === 'AbortError') throw e; }
+            }
+          } else if (isYoutubePlatform(platform)) {
+            const videoId = extractYoutubeVideoId(url);
+            if (videoId) {
+              try {
+                bgStatus.value = 'Fetching video info...';
+                const vRes = await fetch(`${API}/api/youtube/search?q=&videoId=${videoId}`, { headers: headers(), signal });
+                if (vRes.ok) {
+                  const vData = await vRes.json();
+                  const item = vData.item || vData.items?.[0];
+                  if (item) {
+                    let artist = (item.channelTitle || '')
+                      .replace(/\s*-\s*topic$/i, '').replace(/\s*VEVO$/i, '')
+                      .replace(/\s*Official$/i, '').replace(/\s*Music$/i, '')
+                      .replace(/\s*Records$/i, '').trim();
+                    let name = item.title || '';
+                    const dash = name.match(/^(.+?)\s*[-–—]\s+(.+)$/);
+                    if (dash) { name = dash[2].replace(/\s*[\(\[].*[\)\]]$/g, '').trim(); if (!artist) artist = dash[1].trim(); }
+                    body.seedTrackMeta.push({ name, artist });
+                  }
+                }
+              } catch (e) { if (e.name === 'AbortError') throw e; }
+            }
+          }
+        }
+        // ── Playlist URL handling ──
+        else if (platform === 'spotify') {
+          const spId = extractSpotifyPlaylistId(url);
           if (spId) body.seedPlaylistId = spId;
         } else if (isYoutubePlatform(platform)) {
           const ytId = extractYoutubePlaylistId(seedPlaylistUrl.value);

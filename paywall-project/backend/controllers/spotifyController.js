@@ -490,7 +490,23 @@ let _searchUserRateLimitUntil = 0; // per-user bucket (keyed globally for simpli
 
 export const searchTracks = async (req, res) => {
   try {
-    const { q, limit = 50 } = req.query;
+    const { q, limit = 50, trackId } = req.query;
+
+    // Single track lookup by ID — used when generating from a pasted track URL
+    if (trackId) {
+      const result = await getValidToken(req.user.id, false);
+      const token = result.error ? await getClientCredToken() : result.accessToken;
+      try {
+        const r = await axios.get(`https://api.spotify.com/v1/tracks/${encodeURIComponent(trackId)}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const t = r.data;
+        return res.json({ track: { id: t.id, uri: t.uri, name: t.name, artist: t.artists?.map(a => a.name).join(', ') || '', album: t.album?.name || '', art: t.album?.images?.[0]?.url || '' } });
+      } catch (e) {
+        return res.status(e.response?.status || 500).json({ message: "Track not found" });
+      }
+    }
+
     if (!q) return res.status(400).json({ message: "Missing query parameter q" });
 
     const doSearch = async (t) => {

@@ -99,13 +99,13 @@
                 </div>
               </div>
 
-              <!-- Reference playlist -->
+              <!-- Reference URL (playlist or single track) -->
               <div class="pt-section">
-                <label class="pt-label">Reference Playlist (optional)</label>
+                <label class="pt-label">Reference URL (optional)</label>
                 <input
                   class="pt-input"
                   v-model="pt.seedPlaylistUrl.value"
-                  placeholder="Paste a Spotify or YouTube playlist URL..."
+                  placeholder="Paste a Spotify or YouTube link (song or playlist)..."
                 />
               </div>
 
