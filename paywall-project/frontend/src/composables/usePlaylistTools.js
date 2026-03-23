@@ -713,22 +713,42 @@ export function usePlaylistTools() {
           signal,
         });
         if (!matchRes.ok) {
-          let msg = `Matching failed (${matchRes.status})`;
-          try { const d = await matchRes.json(); msg = d.message || msg; } catch { /* non-JSON */ }
-          throw new Error(msg);
-        }
-        const matchData = await matchRes.json();
-        matchedTracks.value = matchData.matches || [];
-        convertResults.value = matchedTracks.value
-          .filter((m) => m.bestMatch)
-          .map((m) => m.bestMatch);
-        resultTracks.value = [...convertResults.value];
-        const matched = matchedTracks.value.filter(m => m.confidence !== 'none').length;
-        bgStatus.value = `Done! ${matched}/${matchedTracks.value.length} matched`;
-        bgDone.value = true;
-        _stopProgress(convertProgress, true);
-        if (matchData.quotaExhausted) {
-          error.value = 'YouTube API quota reached — some tracks could not be searched. Unmatched tracks can be autofilled later.';
+          // On 429 (quota exhausted), still show the source tracks as unmatched
+          // so the user can autofill later when quota resets
+          if (matchRes.status === 429) {
+            let msg = '';
+            try { const d = await matchRes.json(); msg = d.message || ''; } catch {}
+            matchedTracks.value = sourceTracks.value.map(t => ({
+              source: t,
+              bestMatch: null,
+              confidence: 'none',
+              alternatives: [],
+            }));
+            convertResults.value = [];
+            resultTracks.value = [];
+            error.value = msg || 'YouTube API quota exhausted — try autofilling later when quota resets';
+            bgStatus.value = `0/${sourceTracks.value.length} matched (quota exhausted)`;
+            bgDone.value = true;
+            _stopProgress(convertProgress, true);
+          } else {
+            let msg = `Matching failed (${matchRes.status})`;
+            try { const d = await matchRes.json(); msg = d.message || msg; } catch {}
+            throw new Error(msg);
+          }
+        } else {
+          const matchData = await matchRes.json();
+          matchedTracks.value = matchData.matches || [];
+          convertResults.value = matchedTracks.value
+            .filter((m) => m.bestMatch)
+            .map((m) => m.bestMatch);
+          resultTracks.value = [...convertResults.value];
+          const matched = matchedTracks.value.filter(m => m.confidence !== 'none').length;
+          bgStatus.value = `Done! ${matched}/${matchedTracks.value.length} matched`;
+          bgDone.value = true;
+          _stopProgress(convertProgress, true);
+          if (matchData.quotaExhausted) {
+            error.value = 'YouTube API quota reached — some tracks could not be searched. Unmatched tracks can be autofilled later.';
+          }
         }
       }
       _convertAbort = null;

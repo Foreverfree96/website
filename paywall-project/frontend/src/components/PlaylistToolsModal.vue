@@ -728,7 +728,10 @@ const copyYoutubeLinks = async () => {
   const urls = pt.resultTracks.value
     .filter(t => t.videoId || t.url)
     .map(t => t.url || `https://www.youtube.com/watch?v=${t.videoId}`);
-  if (!urls.length) return;
+  if (!urls.length) {
+    pt.error.value = 'No matched tracks with YouTube links to copy';
+    return;
+  }
   const text = urls.join('\n');
   try {
     await navigator.clipboard.writeText(text);
