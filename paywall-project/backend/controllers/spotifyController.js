@@ -594,8 +594,9 @@ export const searchTracks = async (req, res) => {
 // search queries from artist names + genres, collect and deduplicate results.
 export const generatePlaylist = async (req, res) => {
   try {
-    let { seedTrackIds = [], seedTrackMeta = [], seedPlaylistId, genres = [], limit = 30 } = req.body;
+    let { seedTrackIds = [], seedTrackMeta = [], seedPlaylistId, genres = [], languages = ['en'], limit = 30 } = req.body;
     limit = Math.max(1, Math.min(Number(limit) || 30, 100));
+    if (!Array.isArray(languages) || !languages.length) languages = ['en'];
 
     console.log(`🎵 Generate request: ${seedTrackIds.length} trackIds, ${seedTrackMeta.length} meta, ${genres.length} genres, limit=${limit}, playlist=${seedPlaylistId || 'none'}`);
     if (seedTrackMeta.length) console.log(`   Meta:`, seedTrackMeta.slice(0, 3).map(m => `${m.name} - ${m.artist}`));
@@ -702,6 +703,17 @@ export const generatePlaylist = async (req, res) => {
     const seenIds = new Set(uniqueIds); // exclude seed tracks from results
     const collected = [];
 
+    // Language market codes for Spotify API and search keywords
+    const LANG_MARKETS = { en: 'US', fr: 'FR', es: 'ES', ar: 'SA', ja: 'JP', ko: 'KR' };
+    const LANG_KEYWORDS = { fr: 'french', es: 'spanish', ar: 'arabic', ja: 'japanese', ko: 'korean' };
+    const primaryMarket = LANG_MARKETS[languages[0]] || 'US';
+    const isMultiLang = languages.length > 1;
+    const hasNonEnglish = languages.some(l => l !== 'en');
+
+    // Chill/lofi diversity keywords — not just "chill" in the title
+    const CHILL_DIVERSE = ['chill vibes', 'relaxing', 'mellow', 'laid back', 'downtempo', 'ambient chill', 'easy listening', 'soft', 'calm'];
+    const LOFI_DIVERSE = ['lofi hip hop', 'lofi beats', 'lofi chill', 'chillhop', 'study beats', 'lofi jazz'];
+
     // Build diverse search queries — prioritize simple artist names first
     const queries = [];
 
@@ -721,12 +733,33 @@ export const generatePlaylist = async (req, res) => {
       genres.slice(0, 2).forEach(g => queries.push(`${artist} ${g}`));
     });
 
-    // Genre-only queries
+    // Genre-only queries — with diverse sub-queries for chill/lofi
     genres.forEach(g => {
-      queries.push(g);
-      queries.push(`${g} hits`);
-      queries.push(`best ${g}`);
+      if (g === 'chill') {
+        const picks = CHILL_DIVERSE.sort(() => Math.random() - 0.5).slice(0, 3);
+        picks.forEach(q => queries.push(q));
+      } else if (g === 'lofi') {
+        const picks = LOFI_DIVERSE.sort(() => Math.random() - 0.5).slice(0, 3);
+        picks.forEach(q => queries.push(q));
+      } else {
+        queries.push(g);
+        queries.push(`${g} hits`);
+        queries.push(`best ${g}`);
+      }
     });
+
+    // Language-specific queries for non-English
+    if (hasNonEnglish) {
+      languages.filter(l => l !== 'en').forEach(lang => {
+        const kw = LANG_KEYWORDS[lang];
+        if (kw) {
+          queries.push(`${kw} music`);
+          queries.push(`${kw} hits`);
+          // Cross with genres
+          genres.slice(0, 2).forEach(g => queries.push(`${kw} ${g}`));
+        }
+      });
+    }
 
     // Cross-pollination
     if (seedArtists.length >= 2) queries.push(`${seedArtists[0]} ${seedArtists[1]}`);
@@ -751,7 +784,7 @@ export const generatePlaylist = async (req, res) => {
           // Use client creds for generate searches — keeps rate limit separate from match (user token)
           const ccToken = await getClientCredToken();
           const r = await axios.get("https://api.spotify.com/v1/search", {
-            params: { q: query, type: "track", limit: searchLimit, offset },
+            params: { q: query, type: "track", limit: searchLimit, offset, market: primaryMarket },
             headers: { Authorization: `Bearer ${ccToken}` },
           });
           return r.data.tracks?.items || [];
@@ -811,17 +844,33 @@ export const generatePlaylist = async (req, res) => {
         break;
       }
 
-      const items = await doSearch(uniqueQueries[qi]);
+      let items = await doSearch(uniqueQueries[qi]);
+
+      // Filter out parody, karaoke, cover, tribute, and unverified music
+      const JUNK_RE = /\b(parody|karaoke|tribute|8[- ]?bit|midi|cover|lullaby|music box|ringtone|made famous|in the style of|originally performed)\b/i;
+      items = items.filter(t => {
+        if (!t?.id) return false;
+        const name = t.name || '';
+        const album = t.album?.name || '';
+        if (JUNK_RE.test(name) || JUNK_RE.test(album)) return false;
+        // Filter very low popularity tracks (likely spam/unverified)
+        if (typeof t.popularity === 'number' && t.popularity < 15) return false;
+        return true;
+      });
+
+      // Sort by popularity so we pick the most popular tracks first
+      items.sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
+
       let added = 0;
       for (const t of items) {
         if (collected.length >= limit) break;
-        if (!t?.id || seenIds.has(t.id)) continue;
+        if (seenIds.has(t.id)) continue;
         seenIds.add(t.id);
         collected.push({
           id: t.id, uri: t.uri, name: t.name,
           artist: t.artists?.map(a => a.name).join(', ') || '',
           album: t.album?.name || '', art: t.album?.images?.[0]?.url || '',
-          duration_ms: t.duration_ms,
+          duration_ms: t.duration_ms, popularity: t.popularity || 0,
         });
         added++;
       }
@@ -840,8 +889,12 @@ export const generatePlaylist = async (req, res) => {
 
     emitProgress(90, 'Finalizing...');
 
-    // Shuffle final results so tracks from different sources are mixed
-    collected.sort(() => Math.random() - 0.5);
+    // Weighted shuffle — popular tracks float higher but still randomized
+    collected.sort((a, b) => {
+      const pa = (a.popularity || 0) + Math.random() * 40;
+      const pb = (b.popularity || 0) + Math.random() * 40;
+      return pb - pa;
+    });
 
     emitProgress(100, `Done! ${collected.length} tracks`);
     console.log(`✅ Generate: ${collected.length} tracks (requested ${limit}) [user-token]`);

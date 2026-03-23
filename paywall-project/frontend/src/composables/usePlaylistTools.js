@@ -129,6 +129,7 @@ const _persistResults = () => {
       seedTracks: seedTracks.value,
       seedPlaylistUrl: seedPlaylistUrl.value,
       selectedGenres: selectedGenres.value,
+      selectedLanguages: selectedLanguages.value,
       trackLimit: trackLimit.value,
       bgStatus: bgStatus.value,
       bgDone: bgDone.value,
@@ -164,6 +165,7 @@ const _restoreResults = () => {
     seedTracks.value = state.seedTracks || [];
     seedPlaylistUrl.value = state.seedPlaylistUrl || '';
     selectedGenres.value = state.selectedGenres || [];
+    selectedLanguages.value = state.selectedLanguages || ['en'];
     trackLimit.value = state.trackLimit || 30;
     bgStatus.value = state.bgStatus || '';
     bgDone.value = state.bgDone || false;
@@ -178,14 +180,25 @@ _restoreResults();
 // ─── Available genres (categorized) ──────────────────────────────────────────
 const GENRE_CATEGORIES = {
   'Popular':          ['pop', 'hip-hop', 'r-n-b', 'rap', 'trap', 'drill', 'reggaeton'],
-  'Electronic':       ['electronic', 'house', 'techno', 'edm', 'dubstep', 'drum-and-bass', 'trance', 'ambient', 'lofi'],
-  'Rock & Metal':     ['rock', 'alt-rock', 'indie', 'punk', 'metal', 'grunge', 'emo', 'hardcore'],
-  'Chill & Acoustic': ['chill', 'acoustic', 'folk', 'singer-songwriter', 'bossa-nova'],
-  'Dance & Party':    ['dance', 'disco', 'funk', 'afrobeats', 'dancehall'],
-  'World & Cultural': ['latin', 'k-pop', 'j-pop', 'reggae', 'samba', 'flamenco'],
+  'Country':          ['country', 'country-pop', 'americana', 'bluegrass', 'southern-rock'],
+  'Pop':              ['synth-pop', 'indie-pop', 'electro-pop', 'dream-pop', 'k-pop', 'j-pop', 'alt-pop'],
+  'Electronic':       ['electronic', 'house', 'techno', 'edm', 'dubstep', 'drum-and-bass', 'trance', 'ambient'],
+  'Rock & Metal':     ['rock', 'alt-rock', 'indie', 'punk', 'metal', 'grunge', 'hardcore'],
+  'Chill & Acoustic': ['chill', 'lofi', 'acoustic', 'folk', 'singer-songwriter', 'bossa-nova'],
   'Classical & Jazz':  ['classical', 'jazz', 'blues', 'soul', 'gospel', 'opera'],
-  'Moods':            ['sad', 'happy', 'workout', 'focus', 'sleep', 'road-trip', 'party', 'romantic'],
+  'Moods':            ['sad', 'happy', 'emo', 'workout', 'focus', 'sleep', 'road-trip', 'romantic'],
 };
+
+// ─── Language options ────────────────────────────────────────────────────────
+const LANGUAGE_OPTIONS = [
+  { code: 'en', label: 'English' },
+  { code: 'fr', label: 'French' },
+  { code: 'es', label: 'Spanish' },
+  { code: 'ar', label: 'Arabic' },
+  { code: 'ja', label: 'Japanese' },
+  { code: 'ko', label: 'Korean' },
+];
+const selectedLanguages = ref(['en']); // English by default
 
 // Flat list for backwards compat
 const GENRES = [...new Set(Object.values(GENRE_CATEGORIES).flat())];
@@ -306,6 +319,7 @@ export function usePlaylistTools() {
     searchQuery.value = '';
     searchResults.value = [];
     genreFilter.value = '';
+    selectedLanguages.value = ['en'];
     isMinimized.value = false;
     bgStatus.value = '';
     bgDone.value = false;
@@ -453,6 +467,16 @@ export function usePlaylistTools() {
     else selectedGenres.value.push(genre);
   };
 
+  const toggleLanguage = (code) => {
+    const idx = selectedLanguages.value.indexOf(code);
+    if (idx >= 0) {
+      // Don't allow deselecting all — keep at least one
+      if (selectedLanguages.value.length > 1) selectedLanguages.value.splice(idx, 1);
+    } else {
+      selectedLanguages.value.push(code);
+    }
+  };
+
   const addCustomGenre = (text) => {
     const g = text.trim().toLowerCase();
     if (!g || selectedGenres.value.includes(g)) return;
@@ -483,6 +507,7 @@ export function usePlaylistTools() {
         seedTrackIds: seedTracks.value.filter(t => !t.id.startsWith('yt_')).map(t => t.id),
         seedTrackMeta: seedTracks.value.map((t) => ({ name: t.name, artist: t.artist })),
         genres: selectedGenres.value,
+        languages: selectedLanguages.value,
         limit: trackLimit.value,
       };
 
@@ -1265,13 +1290,14 @@ export function usePlaylistTools() {
     searchQuery, searchResults, searchLoading, searchError,
     autofillLoading, autofillProgress,
     GENRES, GENRE_CATEGORIES, genreFilter,
+    LANGUAGE_OPTIONS, selectedLanguages,
 
     likedIds, userPlaylists, playlistsLoading,
     ytSaving, ytSaveResult, ytUserPlaylists, ytPlaylistsLoading, ytScopeMissing,
 
     // Methods
     open, close, minimize, reset, setTab, setGenerateTarget,
-    searchSeeds, addSeed, removeSeed, toggleGenre, addCustomGenre,
+    searchSeeds, addSeed, removeSeed, toggleGenre, addCustomGenre, toggleLanguage,
     generate, cancelGenerate, startConvert, cancelConvert,
     swapMatch, autofillUnmatched, removeResult,
     likeTrack, fetchUserPlaylists, addToExistingPlaylist,

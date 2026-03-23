@@ -149,6 +149,19 @@
                 </div>
               </div>
 
+              <!-- Language selection -->
+              <div class="pt-section">
+                <label class="pt-label">Language</label>
+                <div class="pt-tags">
+                  <button
+                    v-for="lang in pt.LANGUAGE_OPTIONS"
+                    :key="lang.code"
+                    :class="['pt-tag', { selected: pt.selectedLanguages.value.includes(lang.code) }]"
+                    @click="pt.toggleLanguage(lang.code)"
+                  >{{ lang.label }}</button>
+                </div>
+              </div>
+
               <!-- Track count -->
               <div class="pt-section pt-row">
                 <label class="pt-label">Tracks: {{ pt.trackLimit.value }}</label>
