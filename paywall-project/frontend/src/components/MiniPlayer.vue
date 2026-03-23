@@ -21,7 +21,7 @@
             ref="spotifyPlayerRef"
             :mediaUrl="nowPlaying.url"
             :isPlaylist="nowPlaying.isPlaylist || false"
-            :autoPlay="!!(nowPlaying.resumeOnLoad)"
+            :autoPlay="!!(nowPlaying.resumeOnLoad) && !nowPlaying.trackUris?.length"
             :defaultListOpen="true"
             :startPosition="nowPlaying.position || 0"
             :startTrackUri="nowPlaying.trackUri || ''"
@@ -325,7 +325,19 @@ const onMessage = (e) => {
   } catch { /* ignore */ }
 };
 
-onMounted(() => window.addEventListener('message', onMessage));
+onMounted(() => {
+  window.addEventListener('message', onMessage);
+  // Resume playUris-based playlists on page refresh (custom:uris: URLs can't go
+  // through SpotifyPlayer's normal play() path — we need playUris with the saved URIs)
+  const np = nowPlaying.value;
+  if (np?.type === 'spotify' && np.trackUris?.length && np.resumeOnLoad) {
+    spotifySDK.playUris(np.trackUris, np.trackMeta || [], {
+      startTrackUri: np.trackUri || '',
+      startPosition: np.position || 0,
+      customUrl: np.url,
+    });
+  }
+});
 onUnmounted(() => window.removeEventListener('message', onMessage));
 
 // Persist Spotify position every 5 s so page refresh can resume from same spot

@@ -437,7 +437,10 @@ const onReady = async ({ device_id }) => {
     _pendingUris = null;
     const found = await waitForDevice();
     if (found) {
-      await spotifyFetch('PUT', `/me/player/play?device_id=${deviceId}`, { uris: pu.uris }).catch(() => {});
+      const body = { uris: pu.uris };
+      if (pu.startTrackUri) body.offset = { uri: pu.startTrackUri };
+      if (pu.startPosition > 0) body.position_ms = pu.startPosition;
+      await spotifyFetch('PUT', `/me/player/play?device_id=${deviceId}`, body).catch(() => {});
     }
   }
 
@@ -748,20 +751,22 @@ const playTrackFromList = async (t) => {
 
 // ── Play an array of track URIs (no playlist/album context) ──────────────────
 let _pendingUris = null;
-const playUris = async (uris, trackMeta = []) => {
+const playUris = async (uris, trackMeta = [], opts = {}) => {
   if (!uris?.length) return;
+  const { startTrackUri = '', startPosition = 0, customUrl = '' } = opts;
 
   if (trackMeta.length) {
     playlistTracks.value = trackMeta.map((t, i) => ({
       name: t.name || '', uri: t.uri || uris[i],
-      artist: t.artist || '', duration: t.duration_ms || 0,
+      artist: t.artist || '', duration: t.duration_ms || t.duration || 0,
       art: t.art || '', index: i,
     }));
     fullTracksFetched = true;
   }
   _isPlaylist = true;
-  currentMediaUrl.value = `custom:uris:${Date.now()}`;
-  position.value = 0;
+  // Use provided customUrl (for resume) or generate a fresh one
+  currentMediaUrl.value = customUrl || `custom:uris:${Date.now()}`;
+  position.value = startPosition;
 
   if (!player || sdkState.value !== 'ready') {
     if (!player) {
@@ -771,13 +776,16 @@ const playUris = async (uris, trackMeta = []) => {
       await loadSDK();
       await createPlayer();
     }
-    _pendingUris = { uris, trackMeta };
+    _pendingUris = { uris, trackMeta, startTrackUri, startPosition };
     return;
   }
 
   const found = await waitForDevice();
   if (!found) { sdkState.value = 'unavailable'; return; }
-  await spotifyFetch('PUT', `/me/player/play?device_id=${deviceId}`, { uris }).catch(() => {});
+  const body = { uris };
+  if (startTrackUri) body.offset = { uri: startTrackUri };
+  if (startPosition > 0) body.position_ms = startPosition;
+  await spotifyFetch('PUT', `/me/player/play?device_id=${deviceId}`, body).catch(() => {});
 };
 
 // ── Disconnect ───────────────────────────────────────────────────────────────

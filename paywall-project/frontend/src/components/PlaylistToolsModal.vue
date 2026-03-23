@@ -717,6 +717,9 @@ const handlePlayNow = () => {
     playlistIndex: 0,
     resumeOnLoad: true,
     trackUri: tracks[0]?.uri || '',
+    // Persist URIs so refresh can resume via playUris
+    trackUris: tracks.map(t => t.uri),
+    trackMeta: tracks.map(t => ({ name: t.name, uri: t.uri, artist: t.artist, duration: t.duration_ms || t.duration || 0, art: t.art || '' })),
   });
   pt.minimize();
 };
