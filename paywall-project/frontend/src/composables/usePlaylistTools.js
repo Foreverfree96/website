@@ -809,7 +809,11 @@ export function usePlaylistTools() {
         if (!spRes.ok) {
           let msg = `Spotify fetch failed (${spRes.status})`;
           try { const d = await spRes.json(); msg = d.message || msg; } catch { /* non-JSON */ }
-          if (spRes.status === 403) scopeMissing.value = true;
+          if (spRes.status === 403) {
+            // Don't flag scopeMissing for spotify-to-yt — user doesn't need Spotify connected
+            // Public playlists work via client credentials; 403 likely means private playlist
+            msg = 'Could not access this playlist — it may be private. Try a public playlist URL.';
+          }
           throw new Error(msg);
         }
         const spData = await spRes.json();
