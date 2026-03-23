@@ -707,8 +707,10 @@ const handlePlayNow = () => {
     tracks.map((t) => t.uri),
     tracks,
   );
+  // Use the currentMediaUrl that playUris just set (synchronously) so
+  // SpotifyPlayer's isActive check matches and shows the player UI
   popOutMini({
-    url: tracks[0]?.uri || `custom:playlist:${Date.now()}`,
+    url: sdk.currentMediaUrl.value,
     type: 'spotify',
     isPlaylist: tracks.length > 1,
     position: 0,
