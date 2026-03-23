@@ -702,6 +702,9 @@ export const generatePlaylist = async (req, res) => {
     const TIMEOUT_MS = 180000; // 3 min — allows time for rate-limit waits
     const seenIds = new Set(uniqueIds); // exclude seed tracks from results
     const collected = [];
+    const artistCount = new Map(); // track how many songs per primary artist
+    const MAX_PER_ARTIST = 2;
+    const overflow = []; // tracks that exceed the per-artist cap (used as backfill)
 
     // Language market codes for Spotify API and search keywords
     const LANG_MARKETS = { en: 'US', fr: 'FR', es: 'ES', ar: 'SA', ja: 'JP', ko: 'KR' };
@@ -866,12 +869,22 @@ export const generatePlaylist = async (req, res) => {
         if (collected.length >= limit) break;
         if (seenIds.has(t.id)) continue;
         seenIds.add(t.id);
-        collected.push({
+
+        const primaryArtist = (t.artists?.[0]?.name || '').toLowerCase();
+        const count = artistCount.get(primaryArtist) || 0;
+        const track = {
           id: t.id, uri: t.uri, name: t.name,
           artist: t.artists?.map(a => a.name).join(', ') || '',
           album: t.album?.name || '', art: t.album?.images?.[0]?.url || '',
           duration_ms: t.duration_ms, popularity: t.popularity || 0,
-        });
+        };
+
+        if (count >= MAX_PER_ARTIST) {
+          overflow.push(track); // save for backfill if we can't fill enough
+          continue;
+        }
+        artistCount.set(primaryArtist, count + 1);
+        collected.push(track);
         added++;
       }
       if (qi < 3 || added === 0) console.log(`   Query ${qi}: "${uniqueQueries[qi]}" → ${items.length} results, +${added} new`);
@@ -887,14 +900,40 @@ export const generatePlaylist = async (req, res) => {
       }
     }
 
+    // Backfill from overflow if we didn't reach the limit (relax the cap)
+    if (collected.length < limit && overflow.length) {
+      overflow.sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
+      for (const t of overflow) {
+        if (collected.length >= limit) break;
+        collected.push(t);
+      }
+    }
+
     emitProgress(90, 'Finalizing...');
 
     // Weighted shuffle — popular tracks float higher but still randomized
+    // Also spread artists apart so the same artist doesn't appear back-to-back
     collected.sort((a, b) => {
       const pa = (a.popularity || 0) + Math.random() * 40;
       const pb = (b.popularity || 0) + Math.random() * 40;
       return pb - pa;
     });
+
+    // Post-shuffle: spread same-artist tracks apart
+    for (let i = 1; i < collected.length; i++) {
+      const prevArtist = (collected[i - 1].artist || '').split(',')[0].trim().toLowerCase();
+      const curArtist  = (collected[i].artist || '').split(',')[0].trim().toLowerCase();
+      if (prevArtist && prevArtist === curArtist) {
+        // Find the nearest different-artist track to swap with
+        for (let j = i + 1; j < Math.min(i + 6, collected.length); j++) {
+          const swapArtist = (collected[j].artist || '').split(',')[0].trim().toLowerCase();
+          if (swapArtist !== prevArtist) {
+            [collected[i], collected[j]] = [collected[j], collected[i]];
+            break;
+          }
+        }
+      }
+    }
 
     emitProgress(100, `Done! ${collected.length} tracks`);
     console.log(`✅ Generate: ${collected.length} tracks (requested ${limit}) [user-token]`);
