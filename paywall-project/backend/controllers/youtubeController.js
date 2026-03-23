@@ -402,6 +402,17 @@ export const matchYoutubeTracks = async (req, res) => {
     const available = _ytKeys.length - _exhaustedUntil.size;
     console.log(`   Keys available: ${available}/${_ytKeys.length}`);
 
+    // If ALL keys are already exhausted, return 429 immediately — don't waste time looping
+    if (available === 0) {
+      let soonest = Infinity;
+      for (const until of _exhaustedUntil.values()) soonest = Math.min(soonest, until);
+      const retryAfter = Math.max(1, Math.ceil((soonest - Date.now()) / 1000));
+      console.log(`❌ YouTube match: all ${_ytKeys.length} keys exhausted, retryAfter=${retryAfter}s`);
+      return res.status(429)
+        .set('Retry-After', String(retryAfter))
+        .json({ message: "YouTube API quota exhausted — try again later", retryAfter, matches: [] });
+    }
+
     let _quotaExhausted = false;
 
     const searchYT = async (query) => {
@@ -412,7 +423,7 @@ export const matchYoutubeTracks = async (req, res) => {
       const MAX_RATE_RETRIES = 5;
       while (keyRotations < _ytKeys.length && rateLimitRetries < MAX_RATE_RETRIES) {
         const usedKey = API_KEY();
-        if (!usedKey) break;
+        if (!usedKey) { _quotaExhausted = true; break; }
         try {
           const r = await axios.get(`${BASE}/search`, {
             params: { part: "snippet", type: "video", q: query, maxResults: 15, key: usedKey },
