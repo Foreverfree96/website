@@ -37,6 +37,38 @@ const getClientCredToken = async () => {
   return access_token;
 };
 
+// ─── SERVICE ACCOUNT TOKEN (real user token fallback for Dev Mode) ─────────────
+// Spotify Dev Mode (Feb 2026+) strips track data from client-credentials responses.
+// A service account (the app owner's own Spotify account) provides user-level access
+// as a registered test user, bypassing Dev Mode track restrictions.
+let _serviceTokenCache = null; // { token, expiresAt }
+
+const getServiceToken = async () => {
+  if (!process.env.SPOTIFY_SERVICE_REFRESH_TOKEN) return null;
+  if (_serviceTokenCache && Date.now() < _serviceTokenCache.expiresAt - 60_000) {
+    return _serviceTokenCache.token;
+  }
+  try {
+    const credentials = Buffer.from(
+      `${process.env.SPOTIFY_CLIENT_ID}:${process.env.SPOTIFY_CLIENT_SECRET}`
+    ).toString("base64");
+    const res = await axios.post(
+      "https://accounts.spotify.com/api/token",
+      new URLSearchParams({
+        grant_type: "refresh_token",
+        refresh_token: process.env.SPOTIFY_SERVICE_REFRESH_TOKEN,
+      }),
+      { headers: { Authorization: `Basic ${credentials}`, "Content-Type": "application/x-www-form-urlencoded" } }
+    );
+    const { access_token, expires_in } = res.data;
+    _serviceTokenCache = { token: access_token, expiresAt: Date.now() + expires_in * 1000 };
+    return access_token;
+  } catch (err) {
+    console.error("❌ Service account token refresh failed:", err.response?.data || err.message);
+    return null;
+  }
+};
+
 // ─── SHARED HELPER: refresh access token ──────────────────────────────────────
 const refreshAccessToken = async (userId, refreshToken) => {
   const credentials = Buffer.from(
@@ -496,6 +528,48 @@ export const getPlaylistTracks = async (req, res) => {
       if (err.response?.status === 429) setRateLimit(err.response.headers?.['retry-after']);
     }
 
+    // 5. Service account fallback — uses a real Spotify user token (app owner)
+    //    to bypass Dev Mode restrictions that strip track data from client creds.
+    try {
+      const serviceToken = await getServiceToken();
+      if (serviceToken) {
+        console.log(`   [5] Trying service account for ${playlistId}...`);
+        const svcAuth = { Authorization: `Bearer ${serviceToken}` };
+
+        // 5a. Try /tracks
+        let items = [];
+        try {
+          items = await fetchAllPages(
+            `https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=100`,
+            svcAuth
+          );
+        } catch { /* fall through */ }
+
+        // 5b. Try parent object
+        if (!items.length) {
+          try {
+            const r = await axios.get(`https://api.spotify.com/v1/playlists/${playlistId}`, { headers: svcAuth });
+            const tracksObj = r.data.tracks || {};
+            const firstItems = parseItems(tracksObj, '5b');
+            let allItems = firstItems;
+            if (tracksObj.next) {
+              const remaining = await fetchAllPages(tracksObj.next, svcAuth);
+              allItems = allItems.concat(remaining);
+            }
+            items = allItems;
+          } catch { /* fall through */ }
+        }
+
+        if (items.length) {
+          console.log(`   [5] Service account returned ${items.length} tracks`);
+          return cacheAndReturn(items);
+        }
+        console.log(`   [5] Service account returned 0 items`);
+      }
+    } catch (err) {
+      console.error(`   [5] Service account failed:`, err.message);
+    }
+
     return null; // no tracks found
   })();
 
@@ -676,12 +750,13 @@ export const generatePlaylist = async (req, res) => {
     console.log(`🎵 Generate request: ${seedTrackIds.length} trackIds, ${seedTrackMeta.length} meta, ${genres.length} genres, limit=${limit}, playlist=${seedPlaylistId || 'none'}`);
     if (seedTrackMeta.length) console.log(`   Meta:`, seedTrackMeta.slice(0, 3).map(m => `${m.name} - ${m.artist}`));
 
-    // Try user token first, fall back to client creds if unavailable
+    // Try user token first, then service account, then client creds
     const result = await getValidToken(req.user.id, false);
     const userToken = result.error ? null : result.accessToken;
-    const ccToken = await getClientCredToken();
-    const fallbackToken = userToken || ccToken;
-    console.log(`   Token: ${userToken ? 'user-token' : 'client-creds-fallback'}`);
+    const serviceToken = !userToken ? await getServiceToken() : null;
+    const ccToken = (!userToken && !serviceToken) ? await getClientCredToken() : null;
+    const fallbackToken = userToken || serviceToken || ccToken;
+    console.log(`   Token: ${userToken ? 'user-token' : serviceToken ? 'service-account' : 'client-creds-fallback'}`);
     const auth = { Authorization: `Bearer ${fallbackToken}` };
 
     // Clean YouTube channel names helper
