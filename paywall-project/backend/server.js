@@ -34,7 +34,6 @@ import twitchRoutes from "./routes/twitchRoutes.js";
 import { onlineUsers } from "./utils/onlineUsers.js";
 import cors from "cors";
 import helmet from "helmet";
-import mongoSanitize from "express-mongo-sanitize";
 import rateLimit from "express-rate-limit";
 import fetch from "node-fetch";
 import jwt from "jsonwebtoken";
@@ -181,7 +180,20 @@ app.use(express.json({ limit: "500kb" }));
 app.use(express.urlencoded({ extended: true, limit: "500kb" }));
 
 // Sanitize request data — strip $ and . from keys to prevent NoSQL injection
-app.use(mongoSanitize());
+// Custom sanitizer (express-mongo-sanitize is incompatible with Express 5's read-only req.query)
+const sanitize = (obj) => {
+  if (!obj || typeof obj !== 'object') return obj;
+  for (const key of Object.keys(obj)) {
+    if (key.startsWith('$') || key.includes('.')) { delete obj[key]; continue; }
+    if (typeof obj[key] === 'object') sanitize(obj[key]);
+  }
+  return obj;
+};
+app.use((req, res, next) => {
+  if (req.body) sanitize(req.body);
+  if (req.params) sanitize(req.params);
+  next();
+});
 
 // ─── RATE LIMITING ────────────────────────────────────────────────────────────
 
