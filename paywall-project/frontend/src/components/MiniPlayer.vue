@@ -325,8 +325,21 @@ const onMessage = (e) => {
   } catch { /* ignore */ }
 };
 
+// Save YouTube position immediately before page refresh so nothing is lost
+const onBeforeUnload = () => {
+  if (nowPlaying.value?.type === 'youtube' && ytTime.value > 0) {
+    nowPlaying.value = {
+      ...nowPlaying.value,
+      position:      Math.floor(ytTime.value * 1000),
+      playlistIndex: ytPlaylistIndex.value || 0,
+      resumeOnLoad:  true,
+    };
+  }
+};
+
 onMounted(() => {
   window.addEventListener('message', onMessage);
+  window.addEventListener('beforeunload', onBeforeUnload);
   // Resume playUris-based playlists on page refresh (custom:uris: URLs can't go
   // through SpotifyPlayer's normal play() path — we need playUris with the saved URIs)
   const np = nowPlaying.value;
@@ -338,7 +351,10 @@ onMounted(() => {
     });
   }
 });
-onUnmounted(() => window.removeEventListener('message', onMessage));
+onUnmounted(() => {
+  window.removeEventListener('message', onMessage);
+  window.removeEventListener('beforeunload', onBeforeUnload);
+});
 
 // Persist Spotify position every 5 s so page refresh can resume from same spot
 let positionSaver = null;
