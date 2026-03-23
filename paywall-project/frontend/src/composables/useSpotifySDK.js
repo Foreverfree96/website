@@ -872,7 +872,7 @@ export function useSpotifySDK() {
     // Computed
     progressPct, displayVolume, spotifyConnectUrl,
     // Methods
-    play, playUris, togglePlay, next, prev, seek, setVolume, toggleMute, toggleShuffle,
+    play, playUris, togglePlay, pause: () => player?.pause(), next, prev, seek, setVolume, toggleMute, toggleShuffle,
     playTrackFromList, disconnect, retryConnect, preloadTracks, dismissReconnect,
     fmtMs, loadCachedTracks, loadSavedPosition, saveCurrentPosition,
   };

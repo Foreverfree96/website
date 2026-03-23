@@ -192,6 +192,14 @@ const isYtPlaylist = computed(() =>
 // Reset when media changes or clears
 watch(nowPlaying, (np, old) => {
   if (!np) {
+    // Safety-net: pause any playing media in case close() was called directly
+    if (old?.type === 'youtube' && iframeEl.value?.contentWindow) {
+      iframeEl.value.contentWindow.postMessage(
+        JSON.stringify({ event: 'command', func: 'pauseVideo', args: [] }), '*'
+      );
+    }
+    if (old?.type === 'spotify') spotifySDK.pause();
+
     expanded.value         = false;
     playerReady.value      = false;
     frozenEmbedUrl.value   = '';
@@ -364,24 +372,35 @@ onUnmounted(() => clearInterval(ytPositionSaver));
 
 const savePositionAndClose = () => {
   if (nowPlaying.value?.type === 'youtube') {
+    // Pause YouTube before closing — prevents silent background playback
+    if (iframeEl.value?.contentWindow) {
+      iframeEl.value.contentWindow.postMessage(
+        JSON.stringify({ event: 'command', func: 'pauseVideo', args: [] }),
+        '*'
+      );
+    }
     nowPlaying.value = {
       ...nowPlaying.value,
       position:      ytTime.value > 0 ? Math.floor(ytTime.value * 1000) : (nowPlaying.value.position || 0),
       playlistIndex: ytPlaylistIndex.value || nowPlaying.value.playlistIndex || 0,
+      resumeOnLoad: false,
     };
   }
   if (nowPlaying.value?.type === 'spotify') {
+    // Pause Spotify before closing — prevents background playback
+    spotifySDK.pause();
     const pos    = spotifySDK.position.value;
     const uri    = spotifySDK.currentTrackUri.value;
-    const isPaused = spotifySDK.paused.value;
     nowPlaying.value = {
       ...nowPlaying.value,
       ...(pos > 0 ? { position: pos } : {}),
-      resumeOnLoad: !isPaused,
-      paused: isPaused,
+      resumeOnLoad: false,
+      paused: true,
       ...(uri ? { trackUri: uri } : {}),
     };
   }
+  // Force iframe removal by clearing the embed URL
+  frozenEmbedUrl.value = '';
   playerReady.value = false;
   expanded.value    = false;
   close();
@@ -650,15 +669,40 @@ const previewLabel = computed(() => {
 .mp-slide-enter-active, .mp-slide-leave-active { transition: opacity 0.22s ease, transform 0.22s ease; }
 .mp-slide-enter-from, .mp-slide-leave-to { opacity: 0; transform: translateY(12px); }
 
-/* ── Mobile / Tablet ── */
+/* ── Tablet (OnePlus Open unfolded ~7.8" / landscape tablets) ── */
+@media (max-width: 820px) {
+  .mp-bubble { width: 52px; height: 52px; font-size: 1.2rem; }
+  .mp-skip-btn { width: 40px; height: 40px; font-size: 1.2rem; }
+}
+
+/* ── Small tablet / large phone (OnePlus Open folded ~6.2") ── */
 @media (max-width: 600px) {
   .mp-root  { bottom: 14px; left: 14px; }
   .mp-panel { width: calc(100vw - 28px); max-width: 360px; }
+  .mp-embed { height: 260px; }
+  .mp-queue-list { max-height: 160px; }
+  .mp-skip-btn { width: 42px; height: 42px; min-width: 42px; min-height: 42px; }
+  .mp-preview-play { padding: 13px; font-size: 1rem; }
 }
+
+/* ── Narrow phones ── */
 @media (max-width: 400px) {
   .mp-root  { bottom: 10px; left: 10px; }
   .mp-panel { width: calc(100vw - 20px); max-width: none; }
   .mp-header { padding: 8px 10px; }
   .mp-label  { font-size: 0.78rem; }
+  .mp-embed { height: 220px; }
+  .mp-bubble { width: 48px; height: 48px; font-size: 1.1rem; }
+  .mp-queue-list { max-height: 140px; }
+  .mp-skip-bar { gap: 12px; padding: 8px 10px; }
+  .mp-skip-label { font-size: 0.72rem; min-width: 60px; }
+}
+
+/* ── Foldable: respect viewport height on compact screens ── */
+@media (max-height: 600px) {
+  .mp-panel { max-height: calc(100vh - 80px); }
+  .mp-embed { height: 200px; }
+  .mp-queue-list { max-height: 120px; }
+  .mp-preview-thumb { height: 120px; }
 }
 </style>
