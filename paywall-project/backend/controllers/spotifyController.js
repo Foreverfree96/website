@@ -39,16 +39,22 @@ const getClientCredToken = async () => {
 
 // ─── SERVICE ACCOUNT TOKEN (real user token fallback for Dev Mode) ─────────────
 // Spotify Dev Mode (Feb 2026+) strips track data from client-credentials responses.
-// A service account (the app owner's own Spotify account) provides user-level access
-// as a registered test user, bypassing Dev Mode track restrictions.
-let _serviceTokenCache = null; // { token, expiresAt }
+// Instead of a hardcoded env var, we grab any connected Spotify user's refresh token
+// from the database and use it to make user-level API calls. This auto-updates
+// whenever any user reconnects — no manual env var changes needed.
+let _serviceTokenCache = null; // { token, refreshToken, expiresAt }
 
 const getServiceToken = async () => {
-  if (!process.env.SPOTIFY_SERVICE_REFRESH_TOKEN) return null;
   if (_serviceTokenCache && Date.now() < _serviceTokenCache.expiresAt - 60_000) {
     return _serviceTokenCache.token;
   }
   try {
+    // Find any user with a valid Spotify refresh token to act as service account
+    const serviceUser = await User.findOne(
+      { spotifyRefreshToken: { $exists: true, $ne: null }, spotifyId: { $exists: true, $ne: null } }
+    ).select('+spotifyRefreshToken').sort({ spotifyTokenExpiry: -1 });
+    if (!serviceUser?.spotifyRefreshToken) return null;
+
     const credentials = Buffer.from(
       `${process.env.SPOTIFY_CLIENT_ID}:${process.env.SPOTIFY_CLIENT_SECRET}`
     ).toString("base64");
@@ -56,15 +62,20 @@ const getServiceToken = async () => {
       "https://accounts.spotify.com/api/token",
       new URLSearchParams({
         grant_type: "refresh_token",
-        refresh_token: process.env.SPOTIFY_SERVICE_REFRESH_TOKEN,
+        refresh_token: serviceUser.spotifyRefreshToken,
       }),
       { headers: { Authorization: `Basic ${credentials}`, "Content-Type": "application/x-www-form-urlencoded" } }
     );
-    const { access_token, expires_in } = res.data;
+    const { access_token, refresh_token: new_refresh, expires_in } = res.data;
     _serviceTokenCache = { token: access_token, expiresAt: Date.now() + expires_in * 1000 };
+    // Persist rotated refresh token if Spotify issued a new one
+    if (new_refresh && new_refresh !== serviceUser.spotifyRefreshToken) {
+      await User.findByIdAndUpdate(serviceUser._id, { spotifyRefreshToken: new_refresh });
+    }
     return access_token;
   } catch (err) {
     console.error("❌ Service account token refresh failed:", err.response?.data || err.message);
+    _serviceTokenCache = null;
     return null;
   }
 };
