@@ -222,11 +222,70 @@ const onMessage = (e) => {
   } catch { /* ignore parse errors */ }
 };
 
+// ── YouTube position persistence ─────────────────────────────────────────────
+const _ytPosKey = computed(() => {
+  if (props.embedType !== 'youtube') return null;
+  const listMatch = props.mediaUrl.match(/[?&]list=([^&]+)/);
+  const vidMatch  = props.mediaUrl.match(/youtu\.be\/([^?&/]+)|[?&]v=([^&]+)/);
+  const id = listMatch?.[1] || vidMatch?.[1] || vidMatch?.[2];
+  return id ? `yt_pos_${id}` : null;
+});
+
+const saveYtPosition = () => {
+  if (!_ytPosKey.value || ytTime.value < 5) return;
+  try {
+    localStorage.setItem(_ytPosKey.value, JSON.stringify({
+      time: ytTime.value, index: ytIndex.value, savedAt: Date.now(),
+    }));
+  } catch { /* localStorage full */ }
+};
+
+const loadYtPosition = () => {
+  if (!_ytPosKey.value) return null;
+  try {
+    const raw = localStorage.getItem(_ytPosKey.value);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    // Expire after 7 days
+    if (Date.now() - data.savedAt > 7 * 24 * 60 * 60 * 1000) {
+      localStorage.removeItem(_ytPosKey.value);
+      return null;
+    }
+    return data;
+  } catch { return null; }
+};
+
+let _ytPosSaver = null;
+let _ytBeforeUnload = null;
+
 onMounted(() => {
   window.addEventListener('message', onMessage);
   fetchTwitchThumb();
+
+  // Restore YouTube position from localStorage on fresh page load
+  if (props.embedType === 'youtube' && !startFrom.value && !startIndex.value) {
+    const saved = loadYtPosition();
+    if (saved) {
+      startFrom.value  = Math.floor(saved.time || 0);
+      startIndex.value = saved.index || 0;
+      embedKey.value++;
+    }
+  }
+
+  // Periodically save YouTube playback position + save on page refresh
+  if (props.embedType === 'youtube') {
+    _ytPosSaver = setInterval(saveYtPosition, 5000);
+    _ytBeforeUnload = () => saveYtPosition();
+    window.addEventListener('beforeunload', _ytBeforeUnload);
+  }
 });
-onUnmounted(() => window.removeEventListener('message', onMessage));
+onUnmounted(() => {
+  window.removeEventListener('message', onMessage);
+  if (_ytPosSaver) { clearInterval(_ytPosSaver); _ytPosSaver = null; }
+  if (_ytBeforeUnload) { window.removeEventListener('beforeunload', _ytBeforeUnload); _ytBeforeUnload = null; }
+  // Save final position on unmount
+  if (props.embedType === 'youtube') saveYtPosition();
+});
 
 // When mini player closes/pops back in, restore position in post embed
 watch(isPoppedOut, (isPopped, wasPopped) => {

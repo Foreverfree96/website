@@ -234,12 +234,26 @@ watch(() => sdk.playlistTracks.value, (tracks) => {
   }
 });
 
+// ── Restore saved position on mount (survives page refresh) ──────────────────
+const restoredPosition = ref(0);
+const restoredTrackUri = ref('');
+
 onMounted(() => {
+  // Load saved position from localStorage if no explicit start position was passed
+  if (!props.startPosition && !props.startTrackUri) {
+    const saved = sdk.loadSavedPosition(props.mediaUrl);
+    if (saved) {
+      restoredPosition.value = saved.positionMs || 0;
+      restoredTrackUri.value = saved.trackUri || '';
+    }
+  }
+
   if (props.isPlaylist) {
     const cached = sdk.loadCachedTracks(props.mediaUrl);
     if (cached?.tracks?.length) {
       localTracks.value = cached.tracks;
-      const t = (props.startTrackUri && cached.tracks.find(t => t.uri === props.startTrackUri)) || cached.tracks[0];
+      const resumeUri = props.startTrackUri || restoredTrackUri.value;
+      const t = (resumeUri && cached.tracks.find(t => t.uri === resumeUri)) || cached.tracks[0];
       if (t) previewTrack.value = { name: t.name, artist: t.artist, art: t.art };
     }
     // Background fetch for preview — also populates localTracks
@@ -280,8 +294,8 @@ const connectAndPlay = () => {
   sdk.play(props.mediaUrl, {
     isPlaylist:    props.isPlaylist,
     autoPlay:      true,
-    startPosition: props.startPosition,
-    startTrackUri: props.startTrackUri,
+    startPosition: props.startPosition || restoredPosition.value,
+    startTrackUri: props.startTrackUri || restoredTrackUri.value,
   });
 };
 
@@ -289,8 +303,8 @@ const handleRetry = () => {
   sdk.retryConnect(props.mediaUrl, {
     isPlaylist:    props.isPlaylist,
     autoPlay:      true,
-    startPosition: props.startPosition,
-    startTrackUri: props.startTrackUri,
+    startPosition: props.startPosition || restoredPosition.value,
+    startTrackUri: props.startTrackUri || restoredTrackUri.value,
   });
 };
 
