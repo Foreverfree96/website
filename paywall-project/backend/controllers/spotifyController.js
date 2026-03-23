@@ -547,28 +547,63 @@ export const getPlaylistTracks = async (req, res) => {
         console.log(`   [5] Trying service account for ${playlistId}...`);
         const svcAuth = { Authorization: `Bearer ${serviceToken}` };
 
-        // 5a. Try /tracks
+        // 5a. Try /items (Dev Mode endpoint)
         let items = [];
         try {
-          items = await fetchAllPages(
-            `https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=100`,
-            svcAuth
-          );
-        } catch { /* fall through */ }
+          const r5a = await axios.get(`https://api.spotify.com/v1/playlists/${playlistId}/items?limit=100`, { headers: svcAuth });
+          console.log(`   [5a] /items keys:`, Object.keys(r5a.data), `total:`, r5a.data.total, `items#:`, r5a.data.items?.length);
+          items = parseItems(r5a.data, '5a');
+          if (items.length) {
+            let nextUrl = r5a.data.next || null;
+            while (nextUrl) {
+              const rn = await axios.get(nextUrl, { headers: svcAuth });
+              items = items.concat(parseItems(rn.data, '5a-page'));
+              nextUrl = rn.data.next || null;
+            }
+          }
+        } catch (e) {
+          console.log(`   [5a] /items failed:`, e.response?.status, e.response?.data?.error?.message || e.message);
+        }
 
-        // 5b. Try parent object
+        // 5b. Try /tracks (legacy)
+        if (!items.length) {
+          try {
+            const r5b = await axios.get(`https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=100`, { headers: svcAuth });
+            console.log(`   [5b] /tracks keys:`, Object.keys(r5b.data), `total:`, r5b.data.total, `items#:`, r5b.data.items?.length);
+            if (r5b.data.items?.length) {
+              const sample = r5b.data.items[0];
+              console.log(`   [5b] First item keys:`, Object.keys(sample || {}), `track?:`, !!sample?.track);
+            }
+            items = parseItems(r5b.data, '5b');
+            if (items.length) {
+              let nextUrl = r5b.data.next || null;
+              while (nextUrl) {
+                const rn = await axios.get(nextUrl, { headers: svcAuth });
+                items = items.concat(parseItems(rn.data, '5b-page'));
+                nextUrl = rn.data.next || null;
+              }
+            }
+          } catch (e) {
+            console.log(`   [5b] /tracks failed:`, e.response?.status, e.response?.data?.error?.message || e.message);
+          }
+        }
+
+        // 5c. Try parent object
         if (!items.length) {
           try {
             const r = await axios.get(`https://api.spotify.com/v1/playlists/${playlistId}`, { headers: svcAuth });
             const tracksObj = r.data.tracks || {};
-            const firstItems = parseItems(tracksObj, '5b');
+            console.log(`   [5c] Parent keys:`, Object.keys(r.data), `tracks total:`, tracksObj.total, `items#:`, tracksObj.items?.length);
+            const firstItems = parseItems(tracksObj, '5c');
             let allItems = firstItems;
             if (tracksObj.next) {
               const remaining = await fetchAllPages(tracksObj.next, svcAuth);
               allItems = allItems.concat(remaining);
             }
             items = allItems;
-          } catch { /* fall through */ }
+          } catch (e) {
+            console.log(`   [5c] Parent failed:`, e.response?.status, e.response?.data?.error?.message || e.message);
+          }
         }
 
         if (items.length) {
