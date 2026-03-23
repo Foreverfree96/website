@@ -179,7 +179,7 @@ _restoreResults();
 
 // ─── Available genres (categorized) ──────────────────────────────────────────
 const GENRE_CATEGORIES = {
-  'Popular':          ['pop', 'hip-hop', 'r-n-b', 'rap', 'trap', 'drill', 'reggaeton'],
+  'Popular':          ['pop', 'hip-hop', 'r-n-b', 'rap', 'trap', 'latin', 'afrobeats'],
   'Country':          ['country', 'country-pop', 'americana', 'bluegrass', 'southern-rock'],
   'Pop':              ['synth-pop', 'indie-pop', 'electro-pop', 'dream-pop', 'k-pop', 'j-pop', 'alt-pop'],
   'Electronic':       ['electronic', 'house', 'techno', 'edm', 'dubstep', 'drum-and-bass', 'trance', 'ambient'],
