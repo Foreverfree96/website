@@ -208,6 +208,7 @@ watch(nowPlaying, (np, old) => {
     ytQueueOpen.value      = false;
     ytVideoIds.value       = [];
     ytTitles.value         = {};
+    _ytResumedIndex        = false;
   } else if (!old) {
     // First pop-out (null → value) — auto-expand and auto-play
     expanded.value    = true;
@@ -271,26 +272,50 @@ const jumpToTrack = (index) => {
 const toggleYtShuffle = () => { ytShuffleOn.value = !ytShuffleOn.value; };
 
 // ── YouTube postMessage: position + playlist tracking ─────────────────────────
+let _ytResumedIndex = false; // prevent double-resume on multiple iframe loads
+
 const onIframeLoad = () => {
   if (nowPlaying.value?.type === 'youtube') {
     iframeEl.value?.contentWindow?.postMessage(JSON.stringify({ event: 'listening' }), '*');
-    // Force play — browsers may block autoplay=1 on dynamically created iframes;
-    // the JS API command is more reliable.
-    if (nowPlaying.value?.resumeOnLoad) {
+    // Force play and resume position — browsers may block autoplay=1 on dynamically created iframes
+    if (nowPlaying.value?.resumeOnLoad && !_ytResumedIndex) {
+      _ytResumedIndex = true;
       const resumeSecs = Math.floor((nowPlaying.value.position || 0) / 1000);
+      const resumeIndex = nowPlaying.value.playlistIndex || 0;
+      const isPlaylistEmbed = nowPlaying.value.isPlaylist || nowPlaying.value.videoIds?.length > 1;
+
       setTimeout(() => {
-        iframeEl.value?.contentWindow?.postMessage(
-          JSON.stringify({ event: 'command', func: 'playVideo', args: [] }),
-          '*'
-        );
-        // Seek to saved position — &start= param is unreliable for playlists
-        if (resumeSecs > 5) {
+        const win = iframeEl.value?.contentWindow;
+        if (!win) return;
+        // Jump to the correct playlist track first
+        if (isPlaylistEmbed && resumeIndex > 0) {
+          win.postMessage(
+            JSON.stringify({ event: 'command', func: 'playVideoAt', args: [resumeIndex] }),
+            '*'
+          );
+          // After switching to the right track, seek to the saved time
           setTimeout(() => {
-            iframeEl.value?.contentWindow?.postMessage(
-              JSON.stringify({ event: 'command', func: 'seekTo', args: [resumeSecs, true] }),
-              '*'
-            );
-          }, 1500);
+            if (resumeSecs > 5) {
+              win.postMessage(
+                JSON.stringify({ event: 'command', func: 'seekTo', args: [resumeSecs, true] }),
+                '*'
+              );
+            }
+          }, 2000);
+        } else {
+          // Single video or first track — just play and seek
+          win.postMessage(
+            JSON.stringify({ event: 'command', func: 'playVideo', args: [] }),
+            '*'
+          );
+          if (resumeSecs > 5) {
+            setTimeout(() => {
+              win.postMessage(
+                JSON.stringify({ event: 'command', func: 'seekTo', args: [resumeSecs, true] }),
+                '*'
+              );
+            }, 1500);
+          }
         }
       }, 800);
     }
