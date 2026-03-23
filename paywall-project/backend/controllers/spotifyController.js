@@ -410,25 +410,50 @@ export const getPlaylistTracks = async (req, res) => {
       }
     }
 
-    // 4. Client credentials — try /items then /tracks
+    // 4. Client credentials — try /items, /tracks, then parent object
     try {
       console.log(`   [4] Trying client-creds for ${playlistId}...`);
       const appToken = await getClientCredToken();
       const ccAuth = { Authorization: `Bearer ${appToken}` };
-      // Try /items first (Dev Mode)
+
+      // 4a. Try /items (Dev Mode — may be restricted to owner/collaborator)
       let items = [];
       try {
         items = await fetchAllPages(
           `https://api.spotify.com/v1/playlists/${playlistId}/items?limit=100`,
           ccAuth
         );
-      } catch { /* fall through to /tracks */ }
+      } catch { /* fall through */ }
+
+      // 4b. Try /tracks (legacy endpoint)
       if (!items.length) {
-        items = await fetchAllPages(
-          `https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=100`,
-          ccAuth
-        );
+        try {
+          items = await fetchAllPages(
+            `https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=100`,
+            ccAuth
+          );
+        } catch { /* fall through */ }
       }
+
+      // 4c. Try parent object /playlists/{id} with embedded tracks
+      if (!items.length) {
+        try {
+          console.log(`   [4c] Trying client-creds GET /playlists/${playlistId}...`);
+          const r = await axios.get(`https://api.spotify.com/v1/playlists/${playlistId}`, { headers: ccAuth });
+          const tracksObj = r.data.tracks || r.data.items || {};
+          const firstItems = parseItems(tracksObj, '4c');
+          let allItems = firstItems;
+          const nextUrl = tracksObj.next || null;
+          if (nextUrl) {
+            const remaining = await fetchAllPages(nextUrl, ccAuth);
+            allItems = allItems.concat(remaining);
+          }
+          items = allItems;
+        } catch (e) {
+          console.error(`   [4c] Parent object failed:`, e.response?.status, e.response?.data?.error?.message || e.message);
+        }
+      }
+
       if (items.length) return cacheAndReturn(items);
       console.log(`   [4] Client-creds returned 0 items`);
     } catch (err) {
@@ -447,12 +472,11 @@ export const getPlaylistTracks = async (req, res) => {
       console.log(`✅ Playlist ${playlistId}: returning ${data.items?.length || 0} tracks`);
       return res.json(data);
     }
-    console.error(`❌ Playlist ${playlistId}: no tracks found (all 4 methods failed)`);
-    // Check if rate-limited — give accurate error instead of always blaming scope
+    console.error(`❌ Playlist ${playlistId}: no tracks found (all methods failed)`);
     if (Date.now() < _rateLimitedUntil) {
       return res.status(429).json({ message: 'Spotify rate limited — try again in a few seconds' });
     }
-    res.status(403).json({ message: 'Could not load playlist — try reconnecting Spotify or check the URL' });
+    res.status(404).json({ message: 'Could not load playlist — check the URL is correct and the playlist is public' });
   } catch (err) {
     _inflight.delete(playlistId);
     const status = err.response?.status || 500;
