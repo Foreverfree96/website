@@ -348,6 +348,29 @@
           </div>
         </div>
 
+        <!-- Download Log -->
+        <div class="analytics-section">
+          <h2 class="analytics-section-title">📋 Download Log</h2>
+          <p v-if="downloadLogsLoading" class="analytics-empty">Loading download logs...</p>
+          <p v-else-if="!downloadLogs.length" class="analytics-empty">No downloads recorded yet.</p>
+          <div v-else class="page-view-table">
+            <div class="pv-row pv-header dl-header">
+              <span>Date</span>
+              <span>User</span>
+              <span>Country</span>
+              <span>IP</span>
+            </div>
+            <div v-for="dl in downloadLogs" :key="dl._id" class="pv-row dl-row">
+              <span class="dl-date">{{ formatDate(dl.createdAt) }}</span>
+              <span class="dl-user" :class="{ 'dl-anon': !dl.userId }">
+                {{ dl.userId?.username ? '@' + dl.userId.username : 'Anonymous' }}
+              </span>
+              <span class="dl-country">{{ dl.country || '—' }}</span>
+              <span class="dl-ip">{{ dl.ip || '—' }}</span>
+            </div>
+          </div>
+        </div>
+
         <!-- Page Views -->
         <div class="analytics-section">
           <h2 class="analytics-section-title">📄 Page Travel</h2>
@@ -725,7 +748,7 @@ const load = async () => {
  */
 const switchTab = (name) => {
   tab.value = name;
-  if (name === 'analytics') loadAnalytics(true);
+  if (name === 'analytics') { loadAnalytics(true); loadDownloadLogs(); }
   else if (name === 'comments') loadReportedComments();
   else if (name === 'users') loadUsers();
   else if (name === 'dms') loadDmReports();
@@ -998,6 +1021,19 @@ const loadAnalytics = async (force = false) => {
   } finally {
     analyticsLoading.value = false;
   }
+};
+
+// Download logs — individual resume download records
+const downloadLogs = ref([]);
+const downloadLogsLoading = ref(false);
+
+const loadDownloadLogs = async () => {
+  downloadLogsLoading.value = true;
+  try {
+    const res = await axios.get(`${API}/download-logs?limit=100`);
+    downloadLogs.value = res.data;
+  } catch { /* ignore */ }
+  finally { downloadLogsLoading.value = false; }
 };
 
 // Silent background refresh — updates numbers in place with no loading spinner.
@@ -2304,6 +2340,20 @@ const formatDate = (d) => new Date(d).toLocaleDateString();
   z-index: 0;
 }
 .pv-bar--loc { background: rgba(20, 83, 45, 0.12); }
+
+/* Download log table — 4-column grid */
+.dl-header {
+  grid-template-columns: 1fr 1fr 0.7fr 1fr;
+}
+.dl-row {
+  grid-template-columns: 1fr 1fr 0.7fr 1fr;
+  font-size: 0.83rem;
+}
+.dl-date { color: #555; font-weight: 500; }
+.dl-user { font-weight: 600; color: #000; }
+.dl-anon { color: #999; font-style: italic; font-weight: 400; }
+.dl-country { font-weight: 500; }
+.dl-ip { font-family: monospace; font-size: 0.78rem; color: #666; }
 
 .btn-refresh-analytics {
   align-self: flex-start;

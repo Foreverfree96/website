@@ -59,7 +59,7 @@ import Conversation from "../models/conversationModel.js";
 import Message from "../models/messageModel.js";
 import DmReport from "../models/dmReportModel.js";
 import BannedEmail from "../models/bannedEmailModel.js";
-import { PageView, LocationStat, SiteStat } from "../models/analyticsModel.js";
+import { PageView, LocationStat, SiteStat, DownloadLog } from "../models/analyticsModel.js";
 import { onlineUsers } from "../utils/onlineUsers.js";
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
@@ -756,6 +756,28 @@ export const getAnalytics = async (req, res) => {
     });
   } catch (err) {
     console.error("❌ getAnalytics Error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+// ─── DOWNLOAD LOGS ──────────────────────────────────────────────────────────
+
+/**
+ * GET /api/admin/download-logs
+ * Returns the most recent resume download log entries (newest first).
+ * Query params: ?limit=50 (default 50, max 200)
+ */
+export const getDownloadLogs = async (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+    const logs = await DownloadLog.find()
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .populate("userId", "username")
+      .lean();
+    res.json(logs);
+  } catch (err) {
+    console.error("❌ getDownloadLogs Error:", err);
     res.status(500).json({ message: "Server error" });
   }
 };

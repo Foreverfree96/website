@@ -59,6 +59,7 @@ import {
   dismissLog,            // DELETE /logs/:logId                  — dismiss a single log entry
   clearLogs,             // DELETE /logs                         — clear all or trim logs (?keepLast=N)
   toggleUnlimited,       // PUT    /users/:userId/unlimited     — toggle rate-limit bypass
+  getDownloadLogs,       // GET    /download-logs              — individual resume download records
 } from "../controllers/adminController.js";
 
 const router = express.Router();
@@ -182,6 +183,7 @@ router.put("/dm-reports/:reportId", updateDmReportStatus);
  * queue sizes, DM report totals, and social graph stats.
  */
 router.get("/analytics", getAnalytics);
+router.get("/download-logs", getDownloadLogs);
 router.get("/online-users", getOnlineUsers);
 router.post("/create-test-user", createTestUser);
 router.get("/appeals", getAppeals);
