@@ -729,11 +729,24 @@ const copyYoutubeLinks = async () => {
     .filter(t => t.videoId || t.url)
     .map(t => t.url || `https://www.youtube.com/watch?v=${t.videoId}`);
   if (!urls.length) return;
+  const text = urls.join('\n');
   try {
-    await navigator.clipboard.writeText(urls.join('\n'));
+    await navigator.clipboard.writeText(text);
     ytCopied.value = true;
     setTimeout(() => { ytCopied.value = false; }, 2000);
-  } catch { /* clipboard not available */ }
+  } catch {
+    // Fallback: create a temporary textarea and exec copy
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    ytCopied.value = true;
+    setTimeout(() => { ytCopied.value = false; }, 2000);
+  }
 };
 
 const openYoutubePlaylist = () => {
