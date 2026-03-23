@@ -12,6 +12,7 @@ import {
   createPlaylist,
   matchTracks,
   saveTrack,
+  savePlaylist,
   getUserPlaylists,
   addToPlaylist,
 } from "../controllers/spotifyController.js";
@@ -34,6 +35,7 @@ router.post("/generate",               protect, generatePlaylist);
 router.post("/playlist",               protect, createPlaylist);
 router.post("/match",                  protect, matchTracks);
 router.put("/save-track",              protect, saveTrack);
+router.put("/save-playlist",           protect, savePlaylist);
 router.get("/playlists",               protect, getUserPlaylists);
 router.post("/playlist/:id/add",       protect, addToPlaylist);
 

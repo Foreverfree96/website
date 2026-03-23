@@ -108,6 +108,27 @@
         </div>
       </div>
 
+      <!-- ── Save actions row ───────────────────────────────────────────── -->
+      <div class="sp-save-row">
+        <button class="sp-like-btn" :class="{ 'sp-like-btn--liked': liked }" @click="toggleLike" :disabled="likeLoading" title="Save to Liked Songs">
+          {{ liked ? '♥' : '♡' }}
+        </button>
+        <div class="sp-add-wrap">
+          <button class="sp-add-btn" @click="togglePlaylistDropdown">+ Add to Playlist</button>
+          <div v-if="showPlaylistDropdown" class="sp-add-dropdown">
+            <div v-if="playlistsLoading" class="sp-add-loading">Loading...</div>
+            <div v-else-if="!playlists.length" class="sp-add-loading">No playlists found</div>
+            <div v-for="p in playlists" :key="p.id" class="sp-add-item" @click="addToPlaylist(p.id, p.name)">
+              {{ p.name }}
+            </div>
+          </div>
+        </div>
+        <button v-if="isPlaylist" class="sp-save-pl-btn" :class="{ 'sp-save-pl-btn--saved': playlistSaved }" @click="saveWholePlaylist" :disabled="playlistSaveLoading">
+          {{ playlistSaved ? 'Saved' : 'Save Playlist' }}
+        </button>
+        <span v-if="saveMsg" class="sp-save-msg">{{ saveMsg }}</span>
+      </div>
+
       <!-- ── Reconnect nudge (missing playlist scope) ────────────────────── -->
       <div v-if="sdk.needsReconnect.value" class="sp-reconnect-banner">
         <div class="sp-reconnect-body">
@@ -155,7 +176,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, nextTick } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
 import { useSpotifySDK } from '../composables/useSpotifySDK.js';
 
 const props = defineProps({
@@ -321,6 +342,105 @@ const startVolScrub = (e) => {
   window.addEventListener('touchmove', onMove, { passive: true });
   window.addEventListener('touchend',  onUp);
 };
+
+// ── Save actions ────────────────────────────────────────────────────────────
+const API = import.meta.env.VITE_API_URL;
+const authHeader = () => ({ Authorization: `Bearer ${localStorage.getItem('jwtToken')}` });
+
+const liked = ref(false);
+const likeLoading = ref(false);
+const playlists = ref([]);
+const playlistsLoading = ref(false);
+const showPlaylistDropdown = ref(false);
+const playlistSaved = ref(false);
+const playlistSaveLoading = ref(false);
+const saveMsg = ref('');
+let saveMsgTimer = null;
+
+const flashMsg = (msg) => {
+  saveMsg.value = msg;
+  clearTimeout(saveMsgTimer);
+  saveMsgTimer = setTimeout(() => { saveMsg.value = ''; }, 2500);
+};
+
+const currentTrackId = computed(() => {
+  const uri = sdk.currentTrackUri.value || '';
+  return uri.replace('spotify:track:', '');
+});
+
+const toggleLike = async () => {
+  if (!currentTrackId.value || likeLoading.value) return;
+  likeLoading.value = true;
+  try {
+    const res = await fetch(`${API}/api/spotify/save-track`, {
+      method: 'PUT',
+      headers: { ...authHeader(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ trackIds: [currentTrackId.value] }),
+    });
+    if (res.ok) { liked.value = true; flashMsg('Saved to Liked Songs'); }
+    else flashMsg('Failed to save');
+  } catch { flashMsg('Failed to save'); }
+  finally { likeLoading.value = false; }
+};
+
+// Reset liked state when track changes
+watch(currentTrackId, () => { liked.value = false; });
+
+const togglePlaylistDropdown = async () => {
+  showPlaylistDropdown.value = !showPlaylistDropdown.value;
+  if (showPlaylistDropdown.value && !playlists.value.length) {
+    playlistsLoading.value = true;
+    try {
+      const res = await fetch(`${API}/api/spotify/playlists`, { headers: authHeader() });
+      if (res.ok) {
+        const data = await res.json();
+        playlists.value = data.playlists || [];
+      }
+    } catch { /* silent */ }
+    finally { playlistsLoading.value = false; }
+  }
+};
+
+const addToPlaylist = async (playlistId, name) => {
+  const uri = sdk.currentTrackUri.value;
+  if (!uri) return;
+  showPlaylistDropdown.value = false;
+  try {
+    const res = await fetch(`${API}/api/spotify/playlist/${playlistId}/add`, {
+      method: 'POST',
+      headers: { ...authHeader(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ trackUris: [uri] }),
+    });
+    if (res.ok) flashMsg(`Added to ${name}`);
+    else flashMsg('Failed to add');
+  } catch { flashMsg('Failed to add'); }
+};
+
+const saveWholePlaylist = async () => {
+  if (playlistSaved.value || playlistSaveLoading.value) return;
+  const m = props.mediaUrl.match(/open\.spotify\.com\/(playlist|album)\/([a-zA-Z0-9]+)/);
+  if (!m) return flashMsg('Could not detect playlist ID');
+  playlistSaveLoading.value = true;
+  try {
+    const res = await fetch(`${API}/api/spotify/save-playlist`, {
+      method: 'PUT',
+      headers: { ...authHeader(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ playlistId: m[2] }),
+    });
+    if (res.ok) { playlistSaved.value = true; flashMsg('Playlist saved to library'); }
+    else flashMsg('Failed to save playlist');
+  } catch { flashMsg('Failed to save playlist'); }
+  finally { playlistSaveLoading.value = false; }
+};
+
+// Close dropdown when clicking outside
+const onDocClick = (e) => {
+  if (showPlaylistDropdown.value && !e.target.closest('.sp-add-wrap')) {
+    showPlaylistDropdown.value = false;
+  }
+};
+onMounted(() => document.addEventListener('click', onDocClick));
+onUnmounted(() => document.removeEventListener('click', onDocClick));
 
 // ── Expose for parent components (backward compatible) ───────────────────────
 defineExpose({
@@ -586,6 +706,115 @@ defineExpose({
 }
 .sp-disconnect-btn:hover { background: #e11d48; color: #fff; }
 
+/* ── Save actions row ── */
+.sp-save-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sp-like-btn {
+  background: #2a2a2a;
+  border: 1px solid #3a3a3a;
+  color: #888;
+  font-size: 1.1rem;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s, background 0.15s, transform 0.1s;
+  flex-shrink: 0;
+}
+.sp-like-btn:hover { color: #ff69b4; background: #3a3a3a; transform: scale(1.1); }
+.sp-like-btn--liked { color: #ff69b4; background: #3a1a2a; border-color: #ff69b4; }
+.sp-like-btn--liked:hover { background: #4a1a2a; }
+
+.sp-add-wrap {
+  position: relative;
+}
+
+.sp-add-btn {
+  background: #2a2a2a;
+  border: 1px solid #3a3a3a;
+  color: #ccc;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 7px 14px;
+  border-radius: 20px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+}
+.sp-add-btn:hover { background: #3a3a3a; color: #fff; }
+
+.sp-add-dropdown {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  min-width: 200px;
+  max-height: 200px;
+  overflow-y: auto;
+  background: #1a1a1a;
+  border: 1px solid #3a3a3a;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+  z-index: 10;
+  scrollbar-width: thin;
+  scrollbar-color: #333 transparent;
+}
+.sp-add-dropdown::-webkit-scrollbar { width: 4px; }
+.sp-add-dropdown::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
+
+.sp-add-item {
+  padding: 9px 14px;
+  font-size: 0.8rem;
+  color: #ccc;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background 0.12s, color 0.12s;
+}
+.sp-add-item:hover { background: #2a2a2a; color: #1db954; }
+
+.sp-add-loading {
+  padding: 12px 14px;
+  font-size: 0.78rem;
+  color: #666;
+  text-align: center;
+}
+
+.sp-save-pl-btn {
+  background: transparent;
+  border: 1px solid #1db954;
+  color: #1db954;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 7px 14px;
+  border-radius: 20px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+}
+.sp-save-pl-btn:hover { background: #1db954; color: #000; }
+.sp-save-pl-btn--saved { background: #1db954; color: #000; cursor: default; }
+
+.sp-save-msg {
+  font-size: 0.72rem;
+  color: #1db954;
+  font-weight: 600;
+  white-space: nowrap;
+  animation: sp-fade-msg 2.5s ease forwards;
+}
+@keyframes sp-fade-msg {
+  0%, 70% { opacity: 1; }
+  100%    { opacity: 0; }
+}
+
 /* ── Mobile ── */
 @media (max-width: 560px) {
   .sp-card { padding: 14px; gap: 14px; }
@@ -607,5 +836,7 @@ defineExpose({
   .sp-connect-title { font-size: 0.9rem; }
   .sp-connect-sub   { font-size: 0.75rem; }
   .sp-inactive-play { font-size: 0.85rem; padding: 8px 16px; }
+  .sp-add-btn, .sp-save-pl-btn { font-size: 0.72rem; padding: 6px 10px; }
+  .sp-like-btn { width: 32px; height: 32px; font-size: 1rem; }
 }
 </style>

@@ -1488,6 +1488,33 @@ export const saveTrack = async (req, res) => {
   }
 };
 
+// PUT /api/spotify/save-playlist
+// Body: { playlistId: "spotify_playlist_id" }
+// Follows (saves) a playlist to the user's Spotify library
+export const savePlaylist = async (req, res) => {
+  try {
+    const { playlistId } = req.body;
+    if (!playlistId) return res.status(400).json({ message: "No playlist ID provided" });
+
+    const result = await getValidToken(req.user.id, false);
+    if (result.error) return res.status(result.error).json({ message: result.message });
+
+    await axios.put(
+      `https://api.spotify.com/v1/playlists/${encodeURIComponent(playlistId)}/followers`,
+      { public: false },
+      { headers: { Authorization: `Bearer ${result.accessToken}`, "Content-Type": "application/json" } }
+    );
+
+    res.json({ saved: true });
+  } catch (err) {
+    if (err.response?.status === 403) {
+      return res.status(403).json({ error: "scope_missing", message: "Reconnect Spotify to save playlists" });
+    }
+    console.error("❌ Spotify save playlist error:", err.response?.data || err.message);
+    res.status(err.response?.status || 500).json({ message: "Failed to save playlist" });
+  }
+};
+
 // ─── SPOTIFY GET USER PLAYLISTS ─────────────────────────────────────────────
 // GET /api/spotify/playlists
 export const getUserPlaylists = async (req, res) => {
