@@ -547,13 +547,20 @@ watch(() => pt.bgDone.value, (done) => {
   }
 });
 
-// Auto-scroll to action buttons when generation results appear
+// Auto-scroll to action buttons when results appear or modal opens with existing results
 const actionsBarRef = ref(null);
+const scrollToActions = () => {
+  nextTick(() => {
+    actionsBarRef.value?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  });
+};
 watch(() => pt.generateSpotifyResults.value.length, (len, oldLen) => {
-  if (len > 0 && oldLen === 0) {
-    nextTick(() => {
-      actionsBarRef.value?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-    });
+  if (len > 0 && oldLen === 0) scrollToActions();
+});
+// Also scroll when modal opens/un-minimizes with existing results
+watch([() => pt.isOpen.value, () => pt.isMinimized.value], ([open, mini]) => {
+  if (open && !mini && (pt.generateSpotifyResults.value.length || pt.generateYoutubeResults.value.length)) {
+    scrollToActions();
   }
 });
 
