@@ -41,7 +41,9 @@ const detectEmbedType = (url) => {
   if (!url) return "";
 
   // YouTube channel/profile URLs (before generic youtube match)
-  if (/youtube\.com\/@[^/?]+\s*$/i.test(url) || /youtube\.com\/channel\/[^/?]+\s*$/i.test(url))
+  // Allow trailing slash, /videos, /featured, /shorts, /streams, /community, /about, /playlists, /channels etc.
+  if (/youtube\.com\/@[^/?]+(\/(videos|featured|shorts|streams|community|about|playlists|channels)?)?\s*$/i.test(url) ||
+      /youtube\.com\/channel\/[^/?]+(\/(videos|featured|shorts|streams|community|about|playlists|channels)?)?\s*$/i.test(url))
     return "yt-channel";
 
   // Twitch channel URLs (not clips or videos)

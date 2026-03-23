@@ -111,6 +111,14 @@ const props = defineProps({
   embedType: { type: String, default: '' },
 });
 
+// Detect misclassified YouTube channel URLs (stored as 'youtube' instead of 'yt-channel')
+const isYtChannelUrl = computed(() =>
+  props.embedType === 'youtube' && props.mediaUrl &&
+  (/youtube\.com\/@[^/?]+/i.test(props.mediaUrl) || /youtube\.com\/channel\/[^/?]+/i.test(props.mediaUrl)) &&
+  !/[?&]v=/.test(props.mediaUrl) && !/youtu\.be\//.test(props.mediaUrl) &&
+  !/\/shorts\//.test(props.mediaUrl) && !/\/watch/.test(props.mediaUrl)
+);
+
 const { nowPlaying, popOut, close: closeMiniPlayer, lastPosition, popIn } = useNowPlaying();
 
 const active            = ref(false);
@@ -322,14 +330,13 @@ const platformLabel = computed(() => ({ instagram: 'View on Instagram', tiktok: 
 
 // ── Channel/Profile embed logic ──────────────────────────────────────────────
 const API = import.meta.env.VITE_API_URL;
-const isChannelEmbed = computed(() => ['yt-channel', 'twitch-channel', 'kick-channel'].includes(props.embedType));
+const isChannelEmbed = computed(() => ['yt-channel', 'twitch-channel', 'kick-channel'].includes(props.embedType) || isYtChannelUrl.value);
 const channelData = ref({ title: '', avatar: '', subscriberCount: '', followerCount: '', videoCount: '', isLive: false, streamTitle: '' });
 
-const channelPlatformLabel = computed(() => ({
-  'yt-channel': 'YouTube Channel',
-  'twitch-channel': 'Twitch Channel',
-  'kick-channel': 'Kick Channel',
-})[props.embedType] || 'Channel');
+const channelPlatformLabel = computed(() => {
+  if (isYtChannelUrl.value) return 'YouTube Channel';
+  return ({ 'yt-channel': 'YouTube Channel', 'twitch-channel': 'Twitch Channel', 'kick-channel': 'Kick Channel' })[props.embedType] || 'Channel';
+});
 
 const extractChannelName = computed(() => {
   const url = props.mediaUrl;
@@ -356,7 +363,7 @@ const openChannel = () => { window.open(props.mediaUrl, '_blank'); };
 
 const fetchChannelData = async () => {
   const token = localStorage.getItem('jwtToken');
-  if (props.embedType === 'yt-channel') {
+  if (props.embedType === 'yt-channel' || isYtChannelUrl.value) {
     const url = props.mediaUrl;
     const handle = url.match(/youtube\.com\/@([^/?]+)/);
     const channelId = url.match(/youtube\.com\/channel\/([^/?]+)/);
@@ -382,8 +389,8 @@ const fetchChannelData = async () => {
   }
 };
 
-watch(() => props.embedType, (type) => {
-  if (type === 'yt-channel' || type === 'twitch-channel') fetchChannelData();
+watch([() => props.embedType, isYtChannelUrl], ([type, isYtCh]) => {
+  if (type === 'yt-channel' || type === 'twitch-channel' || isYtCh) fetchChannelData();
 }, { immediate: true });
 </script>
 

@@ -509,7 +509,8 @@ const detectEmbed = () => {
   if (!url) { detectedType.value = ''; embedLabel.value = ''; return; }
 
   // Test each platform in order of specificity — channel URLs first.
-  if      (/youtube\.com\/@[^/?]+\s*$/i.test(url) || /youtube\.com\/channel\/[^/?]+\s*$/i.test(url))
+  if      (/youtube\.com\/@[^/?]+(\/(videos|featured|shorts|streams|community|about|playlists|channels)?)?\s*$/i.test(url) ||
+           /youtube\.com\/channel\/[^/?]+(\/(videos|featured|shorts|streams|community|about|playlists|channels)?)?\s*$/i.test(url))
                                                  detectedType.value = 'yt-channel';
   else if (/twitch\.tv\/[^/?]+\s*$/i.test(url) && !/\/clip\/|\/videos?\//.test(url))
                                                  detectedType.value = 'twitch-channel';
