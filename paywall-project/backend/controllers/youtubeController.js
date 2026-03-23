@@ -84,9 +84,19 @@ export const getPlaylistTracks = async (req, res) => {
     if (Date.now() > until) _exhaustedUntil.delete(key);
   }
 
-  // Return cached
+  // Return cached even when quota is exhausted
   const cached = _cache.get(playlistId);
   if (cached && Date.now() - cached.cachedAt < CACHE_TTL) return res.json(cached.data);
+
+  // Bail early if all keys are exhausted
+  if (!API_KEY()) {
+    let soonest = Infinity;
+    for (const until of _exhaustedUntil.values()) soonest = Math.min(soonest, until);
+    const retryAfter = Math.max(1, Math.ceil((soonest - Date.now()) / 1000));
+    return res.status(429)
+      .set('Retry-After', String(retryAfter))
+      .json({ message: "YouTube API quota exhausted — try again later", retryAfter });
+  }
 
   // Deduplicate concurrent requests
   if (_inflight.has(playlistId)) {
@@ -102,6 +112,7 @@ export const getPlaylistTracks = async (req, res) => {
       let r;
       for (let keyAttempt = 0; keyAttempt < _ytKeys.length + 2; keyAttempt++) {
         const usedKey = API_KEY();
+        if (!usedKey) break;
         try {
           r = await axios.get(`${BASE}/playlistItems`, {
             params: {
@@ -151,7 +162,18 @@ export const getPlaylistTracks = async (req, res) => {
   } catch (err) {
     _inflight.delete(playlistId);
     console.error("❌ YouTube playlist fetch error:", err.response?.data || err.message);
-    res.status(err.response?.status || 500).json({ message: "Failed to fetch playlist" });
+    // Return proper quota error instead of generic "Failed to fetch"
+    const status = err.response?.status || 500;
+    const isQuota = err.message?.includes('exhausted') || _isQuotaError(err);
+    if (isQuota || status === 403) {
+      let soonest = Infinity;
+      for (const until of _exhaustedUntil.values()) soonest = Math.min(soonest, until);
+      const retryAfter = soonest < Infinity ? Math.max(1, Math.ceil((soonest - Date.now()) / 1000)) : 3600;
+      return res.status(429)
+        .set('Retry-After', String(retryAfter))
+        .json({ message: "YouTube API quota exhausted — try again later", retryAfter });
+    }
+    res.status(status).json({ message: "Failed to fetch playlist" });
   }
 };
 
