@@ -1297,6 +1297,7 @@ const formatTime = (d) => {
 .chat-messages {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 16px;
   display: flex;
   flex-direction: column;
@@ -1357,6 +1358,7 @@ const formatTime = (d) => {
   font-size: 0.92rem;
   line-height: 1.45;
   word-break: break-word;
+  overflow-wrap: anywhere;
   white-space: pre-wrap;
   position: relative;
 }

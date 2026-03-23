@@ -361,7 +361,7 @@ const formatCount = (n) => {
 
 const openChannel = () => { window.open(props.mediaUrl, '_blank'); };
 
-const fetchChannelData = async () => {
+const fetchChannelData = async (retries = 2) => {
   const token = localStorage.getItem('jwtToken');
   if (props.embedType === 'yt-channel' || isYtChannelUrl.value) {
     const url = props.mediaUrl;
@@ -369,12 +369,16 @@ const fetchChannelData = async () => {
     const channelId = url.match(/youtube\.com\/channel\/([^/?]+)/);
     const identifier = handle ? `@${handle[1]}` : channelId?.[1];
     if (!identifier) return;
-    try {
-      const res = await fetch(`${API}/api/youtube/channel/${encodeURIComponent(identifier)}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (res.ok) channelData.value = await res.json();
-    } catch { /* silent */ }
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        if (attempt > 0) await new Promise(r => setTimeout(r, 1500 * attempt));
+        const res = await fetch(`${API}/api/youtube/channel/${encodeURIComponent(identifier)}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok) { channelData.value = await res.json(); return; }
+        if (res.status < 500) return; // 4xx — don't retry
+      } catch { /* retry */ }
+    }
   } else if (props.embedType === 'twitch-channel') {
     const url = props.mediaUrl;
     const m = url.match(/twitch\.tv\/([^/?]+)/);

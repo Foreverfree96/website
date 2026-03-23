@@ -73,6 +73,11 @@ const _cache    = new Map(); // playlistId → { data, cachedAt }
 const _inflight = new Map(); // playlistId → Promise
 const CACHE_TTL = 6 * 60 * 60 * 1000; // 6 hours
 
+// Channel info cache — prevents repeated API calls for the same channel
+const _channelCache    = new Map(); // identifier → { data, cachedAt }
+const _channelInflight = new Map(); // identifier → Promise
+const CHANNEL_CACHE_TTL = 2 * 60 * 60 * 1000; // 2 hours
+
 // ─── GET YOUTUBE PLAYLIST TRACKS ────────────────────────────────────────────
 // GET /api/youtube/playlist/:id/tracks
 export const getPlaylistTracks = async (req, res) => {
@@ -271,56 +276,71 @@ export const searchYoutubeTracks = async (req, res) => {
 // ─── YOUTUBE CHANNEL INFO ───────────────────────────────────────────────────
 // GET /api/youtube/channel/:identifier
 // identifier can be a channel ID (UC...) or handle (@username)
+// Uses in-memory cache + inflight dedup to avoid burning API quota when
+// multiple posts with the same channel load simultaneously on the feed.
+const _fetchChannelFromYT = async (id) => {
+  _loadKeys();
+  if (!_ytKeys.length) throw Object.assign(new Error("YouTube API key not configured"), { status: 500 });
+  for (const [key, until] of _exhaustedUntil) {
+    if (Date.now() > until) _exhaustedUntil.delete(key);
+  }
+  const isHandle = id.startsWith('@');
+  let r;
+  for (let keyAttempt = 0; keyAttempt < _ytKeys.length + 2; keyAttempt++) {
+    const usedKey = API_KEY();
+    if (!usedKey) break;
+    try {
+      const params = { part: "snippet,statistics", key: usedKey };
+      if (isHandle) params.forHandle = id.replace('@', '');
+      else params.id = id;
+      r = await axios.get(`${BASE}/channels`, { params });
+      break;
+    } catch (e) {
+      if (_isQuotaError(e) && _rotateKey(usedKey)) continue;
+      if (_isRateLimitError(e)) {
+        await new Promise(r => setTimeout(r, 2000));
+        continue;
+      }
+      throw e;
+    }
+  }
+  if (!r) throw Object.assign(new Error('All YouTube API keys exhausted'), { status: 503 });
+  const ch = r.data.items?.[0];
+  if (!ch) throw Object.assign(new Error('Channel not found'), { status: 404 });
+  return {
+    id:              ch.id,
+    title:           ch.snippet.title,
+    description:     ch.snippet.description?.slice(0, 200) || "",
+    avatar:          ch.snippet.thumbnails?.medium?.url || ch.snippet.thumbnails?.default?.url || "",
+    subscriberCount: ch.statistics.subscriberCount || "0",
+    videoCount:      ch.statistics.videoCount || "0",
+  };
+};
+
 export const getChannelInfo = async (req, res) => {
   try {
-    _loadKeys();
-    if (!_ytKeys.length) return res.status(500).json({ message: "YouTube API key not configured" });
-    // Clear stale exhausted keys
-    for (const [key, until] of _exhaustedUntil) {
-      if (Date.now() > until) _exhaustedUntil.delete(key);
-    }
-
     const id = req.params.identifier;
-    const isHandle = id.startsWith('@');
 
-    let r;
-    for (let keyAttempt = 0; keyAttempt < _ytKeys.length + 2; keyAttempt++) {
-      const usedKey = API_KEY();
-      if (!usedKey) break;
-      try {
-        const params = {
-          part: "snippet,statistics",
-          key: usedKey,
-        };
-        if (isHandle) params.forHandle = id.replace('@', '');
-        else params.id = id;
-        r = await axios.get(`${BASE}/channels`, { params });
-        break;
-      } catch (e) {
-        if (_isQuotaError(e) && _rotateKey(usedKey)) continue;
-        if (_isRateLimitError(e)) {
-          await new Promise(r => setTimeout(r, 2000));
-          continue;
-        }
-        throw e;
-      }
+    // Check cache first
+    const cached = _channelCache.get(id);
+    if (cached && Date.now() - cached.cachedAt < CHANNEL_CACHE_TTL) {
+      return res.json(cached.data);
     }
-    if (!r) throw new Error('All YouTube API keys exhausted');
 
-    const ch = r.data.items?.[0];
-    if (!ch) return res.status(404).json({ message: "Channel not found" });
+    // Deduplicate concurrent requests for the same channel
+    let promise = _channelInflight.get(id);
+    if (!promise) {
+      promise = _fetchChannelFromYT(id);
+      _channelInflight.set(id, promise);
+      promise.finally(() => _channelInflight.delete(id));
+    }
 
-    res.json({
-      id:             ch.id,
-      title:          ch.snippet.title,
-      description:    ch.snippet.description?.slice(0, 200) || "",
-      avatar:         ch.snippet.thumbnails?.medium?.url || ch.snippet.thumbnails?.default?.url || "",
-      subscriberCount: ch.statistics.subscriberCount || "0",
-      videoCount:     ch.statistics.videoCount || "0",
-    });
+    const data = await promise;
+    _channelCache.set(id, { data, cachedAt: Date.now() });
+    res.json(data);
   } catch (err) {
     console.error("❌ YouTube channel info error:", err.response?.data || err.message);
-    res.status(err.response?.status || 500).json({ message: "Failed to fetch channel info" });
+    res.status(err.status || err.response?.status || 500).json({ message: err.message || "Failed to fetch channel info" });
   }
 };
 

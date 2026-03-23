@@ -108,7 +108,7 @@
                                 <!-- Attach click handler only in report mode; normal bubbles should
                                      not intercept clicks so the unsend button works correctly -->
                                 <div
-                                    v-for="m in messages" :key="m._id"
+                                    v-for="(m, idx) in messages" :key="m._id"
                                     class="cw-bubble-wrap"
                                     :class="[m.sender._id === userId ? 'mine' : 'theirs', reportMode ? 'reportable' : '']"
                                     v-on="reportMode ? { click: () => toggleReportSelect(m) } : {}"
@@ -126,6 +126,7 @@
                                         >✕</button>
                                     </div>
                                     <span class="cw-time">{{ formatTime(m.createdAt) }}</span>
+                                    <span v-if="m.sender._id === userId && idx === lastSeenIndex" class="cw-seen">Seen</span>
                                 </div>
                             </TransitionGroup>
                         </template>
@@ -320,7 +321,7 @@ const route = useRoute();
 const { user } = useAuth();
 
 // Real-time notification helpers and the global DM unread count for the badge
-const { dmUnreadCount, addDmHandler, addClearHandler, decrementDmCount, setDmCount } = useNotifications();
+const { dmUnreadCount, addDmHandler, addClearHandler, addReadHandler, decrementDmCount, setDmCount } = useNotifications();
 
 // ─── COMPUTED: ROUTING & IDENTITY ────────────────────────────────────────────
 
@@ -395,6 +396,16 @@ const mutualsLoading = ref(false);
 // Cleanup functions returned by the socket handler registration calls
 let removeDmHandler = null;
 let removeClearHandler = null;
+let removeReadHandler = null;
+
+// Index of the last own message that has been read — shows "Seen" below it
+const lastSeenIndex = computed(() => {
+    let idx = -1;
+    messages.value.forEach((m, i) => {
+        if (m.sender._id === userId.value && m.read) idx = i;
+    });
+    return idx;
+});
 
 // ─── CONFIRMATION MODAL STATE ─────────────────────────────────────────────────
 
@@ -734,6 +745,17 @@ onMounted(() => {
             fetchConvos();
         }
     });
+
+    // ── SOCKET: READ RECEIPT HANDLER ─────────────────────────────────────────
+    // Fired when the other participant reads our messages — marks all own
+    // messages as read so the "Seen" label appears in real-time.
+    removeReadHandler = addReadHandler((data) => {
+        if (activeConvo.value?._id === data.conversationId) {
+            messages.value.forEach(m => {
+                if (m.sender._id === userId.value) m.read = true;
+            });
+        }
+    });
 });
 
 // ─── LIFECYCLE: UNMOUNT ───────────────────────────────────────────────────────
@@ -742,6 +764,7 @@ onUnmounted(() => {
     // Deregister socket handlers to prevent them firing after the component is gone
     if (removeDmHandler) removeDmHandler();
     if (removeClearHandler) removeClearHandler();
+    if (removeReadHandler) removeReadHandler();
 });
 
 // ─── CONVERSATION ACTIONS ─────────────────────────────────────────────────────
@@ -1285,6 +1308,7 @@ const formatTime = (d) => {
 .cw-messages {
     flex: 1;
     overflow-y: auto;
+    overflow-x: hidden;
     padding: 12px;
     display: flex;
     flex-direction: column;
@@ -1335,6 +1359,7 @@ const formatTime = (d) => {
     font-size: 0.86rem;
     line-height: 1.4;
     word-break: break-word;
+    overflow-wrap: anywhere;
     white-space: pre-wrap;
     position: relative;
 }
@@ -1369,6 +1394,15 @@ const formatTime = (d) => {
     color: #999;
     margin-top: 1px;
     padding: 0 3px;
+}
+
+.cw-seen {
+    font-size: 0.6rem;
+    color: #e91e8c;
+    padding: 0 3px;
+    margin-top: 1px;
+    text-align: right;
+    align-self: flex-end;
 }
 
 /* ── Input row ── */
