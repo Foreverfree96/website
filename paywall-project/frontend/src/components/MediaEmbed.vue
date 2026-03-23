@@ -196,6 +196,15 @@ const embedUrl = computed(() => {
 const onIframeLoad = () => {
   if (props.embedType === 'youtube') {
     iframeEl.value?.contentWindow?.postMessage(JSON.stringify({ event: 'listening' }), '*');
+    // Seek to restored position — &start= param is unreliable for playlists
+    if (startFrom.value > 5) {
+      setTimeout(() => {
+        iframeEl.value?.contentWindow?.postMessage(
+          JSON.stringify({ event: 'command', func: 'seekTo', args: [startFrom.value, true] }),
+          '*'
+        );
+      }, 2000);
+    }
     autoplayOnPopIn.value = false; // reset after iframe loads so it doesn't persist
   }
 };

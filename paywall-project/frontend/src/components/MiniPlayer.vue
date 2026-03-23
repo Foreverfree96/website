@@ -277,11 +277,21 @@ const onIframeLoad = () => {
     // Force play — browsers may block autoplay=1 on dynamically created iframes;
     // the JS API command is more reliable.
     if (nowPlaying.value?.resumeOnLoad) {
+      const resumeSecs = Math.floor((nowPlaying.value.position || 0) / 1000);
       setTimeout(() => {
         iframeEl.value?.contentWindow?.postMessage(
           JSON.stringify({ event: 'command', func: 'playVideo', args: [] }),
           '*'
         );
+        // Seek to saved position — &start= param is unreliable for playlists
+        if (resumeSecs > 5) {
+          setTimeout(() => {
+            iframeEl.value?.contentWindow?.postMessage(
+              JSON.stringify({ event: 'command', func: 'seekTo', args: [resumeSecs, true] }),
+              '*'
+            );
+          }, 1500);
+        }
       }, 800);
     }
   }
