@@ -209,7 +209,7 @@
                 </div>
 
                 <!-- Unified action bar — all save/play options -->
-                <div class="pt-actions">
+                <div class="pt-actions" ref="actionsBarRef">
                   <button v-if="pt.generateTarget.value === 'spotify'" class="pt-btn pt-btn-play" @click="handlePlayNow" :disabled="!pt.generateSpotifyResults.value.length">
                     Play Now
                   </button>
@@ -510,7 +510,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue';
+import { ref, computed, watch, nextTick, onMounted } from 'vue';
 import { usePlaylistTools } from '../composables/usePlaylistTools.js';
 import { useSpotifySDK } from '../composables/useSpotifySDK.js';
 import { useNowPlaying } from '../composables/useNowPlaying.js';
@@ -544,6 +544,16 @@ onMounted(() => {
 watch(() => pt.bgDone.value, (done) => {
   if (done && pt.isMinimized.value) {
     try { playNotifPing(); } catch { /* silent */ }
+  }
+});
+
+// Auto-scroll to action buttons when generation results appear
+const actionsBarRef = ref(null);
+watch(() => pt.generateSpotifyResults.value.length, (len, oldLen) => {
+  if (len > 0 && oldLen === 0) {
+    nextTick(() => {
+      actionsBarRef.value?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    });
   }
 });
 
