@@ -441,6 +441,10 @@ export function usePlaylistTools() {
 
   // ── Generate playlist ─────────────────────────────────────────────────
   const generate = async () => {
+    if (convertLoading.value) {
+      error.value = 'A conversion is in progress — please wait for it to finish.';
+      return;
+    }
     error.value = '';
     generateLoading.value = true;
     bgStatus.value = 'Generating...';
@@ -594,6 +598,10 @@ export function usePlaylistTools() {
 
   // ── Convert playlist ──────────────────────────────────────────────────
   const startConvert = async () => {
+    if (generateLoading.value) {
+      error.value = 'A playlist is being generated — please wait for it to finish.';
+      return;
+    }
     error.value = '';
     convertLoading.value = true;
     bgStatus.value = 'Converting...';
@@ -820,12 +828,42 @@ export function usePlaylistTools() {
         if (!data) { autofillProgress.value = `${b + 1}/${noneIndices.length}`; continue; }
 
         let top = null;
+        let sortedAlts = [];
         if (isYt) {
-          const items = data.items || [];
-          if (items.length) top = { ...items[0], url: `https://www.youtube.com/watch?v=${items[0].videoId}` };
+          const items = (data.items || []).map(t => {
+            let score = 0;
+            const raw = (t.title || '').toLowerCase();
+            // Prefer explicit
+            if (/\bexplicit\b/.test(raw) || /\(e\)/.test(raw)) score += 0.05;
+            if (/\bclean\b/.test(raw) && !/clean\s*bandit/i.test(raw)) score -= 0.05;
+            // Prefer audio/topic channels
+            if (/\s-\s*topic$/i.test(t.channelTitle || '')) score += 0.10;
+            else if (/official\s*audio/i.test(raw)) score += 0.08;
+            else if (/\baudio\b/i.test(raw)) score += 0.06;
+            // Penalize live
+            if (/\b(live\s+(at|in|from|on|version|session|performance|recording)|[\(\[]live[\)\]]|- live\b|live$)/i.test(t.title || '')) score -= 0.10;
+            // Penalize covers, remixes, etc.
+            if (/\b(react|reaction|review|cover|tutorial|karaoke|instrumental|remix|concert|interview)\b/i.test(raw)) score -= 0.08;
+            if (/\b(sped\s*up|slowed|reverb|8d|nightcore|bass\s*boost)/i.test(raw)) score -= 0.06;
+            return { ...t, url: `https://www.youtube.com/watch?v=${t.videoId}`, _score: score };
+          });
+          items.sort((a, b) => b._score - a._score);
+          if (items.length) { top = items[0]; sortedAlts = items.slice(1, 5); }
         } else {
-          const tracks = data.tracks || [];
-          if (tracks.length) top = tracks[0];
+          const tracks = (data.tracks || []).map(t => {
+            let score = 0;
+            // Prefer explicit
+            if (t.explicit) score += 0.05;
+            else score -= 0.02;
+            // Penalize live
+            const name = t.name || '';
+            const album = t.album || '';
+            if (/\b(live\s+(at|in|from|on|version|session|performance|recording)|[\(\[]live[\)\]]|- live\b|live$)/i.test(name)) score -= 0.10;
+            else if (/\b(live\s+(at|in|from|on)|[\(\[]live[\)\]]|- live\b|live$)/i.test(album)) score -= 0.06;
+            return { ...t, _score: score };
+          });
+          tracks.sort((a, b) => b._score - a._score);
+          if (tracks.length) { top = tracks[0]; sortedAlts = tracks.slice(1, 5); }
         }
 
         if (top && matchedTracks.value[idx]) {
@@ -833,9 +871,7 @@ export function usePlaylistTools() {
             ...matchedTracks.value[idx],
             bestMatch: top,
             confidence: 'autofill',
-            alternatives: isYt
-              ? (data.items || []).slice(1, 5).map(t => ({ ...t, url: `https://www.youtube.com/watch?v=${t.videoId}` }))
-              : (data.tracks || []).slice(1, 5),
+            alternatives: sortedAlts,
           };
           filled++;
         }

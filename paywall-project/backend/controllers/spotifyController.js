@@ -547,6 +547,7 @@ export const searchTracks = async (req, res) => {
       album:       t.album?.name || "",
       art:         t.album?.images?.[0]?.url || "",
       duration_ms: t.duration_ms,
+      explicit:    !!t.explicit,
     }));
 
     res.json({ tracks });
