@@ -91,6 +91,15 @@
                     </button>
                 </div>
 
+                <!-- Mute App Sounds -->
+                <div class="dashboard-section">
+                    <h2 class="section-title">App Sounds</h2>
+                    <p class="section-hint">Mute notification pings, DM sounds, and message send sounds. Does not affect Spotify or YouTube playback.</p>
+                    <button @click="toggleAppMute" class="btn-black privacy-toggle-btn" :class="{ 'private-on': audioMuted }">
+                        {{ audioMuted ? '🔇 Sounds Muted' : '🔊 Sounds On' }}
+                    </button>
+                </div>
+
                 <!-- Spotify Connection -->
                 <div class="dashboard-section">
                     <h2 class="section-title">Spotify Connection</h2>
@@ -217,6 +226,7 @@ import { useRouter, useRoute } from 'vue-router';
 import axios from 'axios';
 import { useAuth } from '../composables/useAuth.js';
 import { useSpotifySDK } from '../composables/useSpotifySDK.js';
+import { useNotifications } from '../composables/useNotifications.js';
 
 const API_BASE  = import.meta.env.VITE_API_URL;
 const API_USERS = API_BASE + '/api/users';
@@ -226,6 +236,8 @@ const route  = useRoute();
 const getToken = () => localStorage.getItem('jwtToken') || '';
 const origin = globalThis.location?.origin || '';
 const sdk = useSpotifySDK();
+const { audioMuted, setAudioMuted } = useNotifications();
+const toggleAppMute = () => setAudioMuted(!audioMuted.value);
 
 // ─── AUTH COMPOSABLE ──────────────────────────────────────────────────────────
 

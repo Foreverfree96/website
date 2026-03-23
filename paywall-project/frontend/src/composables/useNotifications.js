@@ -22,9 +22,17 @@
 //     the same event type (e.g. MessagesPage and App.vue both care about DMs).
 // =============================================================================
 
-import { ref } from "vue";
+import { ref, computed } from "vue";
 import axios from "axios";
 import { io as socketIo } from "socket.io-client";
+
+// ── Global mute toggle (persisted in localStorage) ──────────────────────────
+const audioMuted = ref(localStorage.getItem('notif_muted') === 'true');
+
+const setAudioMuted = (val) => {
+  audioMuted.value = val;
+  localStorage.setItem('notif_muted', val ? 'true' : 'false');
+};
 
 // ── Persistent AudioContext for mobile compatibility ─────────────────────────
 let _audioCtx = null;
@@ -69,6 +77,7 @@ if (typeof window !== 'undefined') {
 
 // ── Notification ping (high, bright) ──────────────────────────────────────────
 const playNotifPing = () => {
+  if (audioMuted.value) return;
   try {
     const ctx = getAudioCtx();
     const osc  = ctx.createOscillator();
@@ -85,6 +94,7 @@ const playNotifPing = () => {
 
 // ── Send bump (short, low pop for outgoing messages) ─────────────────────────
 export const playBump = () => {
+  if (audioMuted.value) return;
   try {
     const ctx = getAudioCtx();
     const osc  = ctx.createOscillator();
@@ -101,6 +111,7 @@ export const playBump = () => {
 
 // ── DM ping (softer, lower pitch) ─────────────────────────────────────────────
 const playDmPing = () => {
+  if (audioMuted.value) return;
   try {
     const ctx = getAudioCtx();
     const osc  = ctx.createOscillator();
@@ -416,5 +427,7 @@ export function useNotifications() {
     clearModCount,
     decrementDmCount,
     getSocket: () => socket,
+    audioMuted,
+    setAudioMuted,
   };
 }
