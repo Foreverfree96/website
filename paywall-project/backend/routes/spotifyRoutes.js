@@ -29,7 +29,7 @@ router.get("/status",       protect, spotifyStatus);
 router.get("/token",        protect, spotifyGetToken);
 router.post("/shuffle-off", protect, spotifyShuffleOff);
 router.delete("/disconnect",             protect, spotifyDisconnect);
-router.get("/playlist/:id/tracks",      protect, getPlaylistTracks);
+router.get("/playlist/:id/tracks",      getPlaylistTracks);
 router.get("/search",                  protect, searchTracks);
 router.post("/generate",               protect, generatePlaylist);
 router.post("/playlist",               protect, createPlaylist);
