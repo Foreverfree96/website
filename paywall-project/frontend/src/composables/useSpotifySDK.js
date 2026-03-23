@@ -39,6 +39,7 @@ let firstStateReceived = false;
 let fullTracksFetched  = false;
 let _pendingPlay       = null; // { mediaUrl, isPlaylist, startPosition, startTrackUri }
 let _isPlaylist        = false; // tracks whether current URL is a playlist
+let _wakeLock          = null; // Screen Wake Lock to prevent sleep during playback
 
 // ── Singleton reactive state ─────────────────────────────────────────────────
 const sdkState        = ref('idle');
@@ -72,6 +73,22 @@ const fmtMs = (ms) => {
   const s = Math.floor((ms || 0) / 1000);
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 };
+
+// ── Wake Lock (prevent screen sleep during playback) ──────────────────────
+const acquireWakeLock = async () => {
+  if (_wakeLock || !('wakeLock' in navigator)) return;
+  try { _wakeLock = await navigator.wakeLock.request('screen'); }
+  catch { /* permission denied or not supported */ }
+};
+const releaseWakeLock = () => {
+  if (_wakeLock) { _wakeLock.release().catch(() => {}); _wakeLock = null; }
+};
+// Re-acquire wake lock when tab becomes visible again (lock auto-releases on hide)
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && !paused.value && !_wakeLock) acquireWakeLock();
+  });
+}
 
 const getSpotifyUri = (url) => {
   const m = url.match(/open\.spotify\.com\/(track|playlist|album|artist)\/([a-zA-Z0-9]+)/);
@@ -473,6 +490,23 @@ const onStateChanged = (s) => {
     };
   }
 
+  // Update Media Session for lock screen / background audio controls
+  if ('mediaSession' in navigator) {
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title:   track.value.name,
+      artist:  track.value.artist,
+      album:   track.value.album,
+      artwork: track.value.art
+        ? [{ src: track.value.art, sizes: '300x300', type: 'image/jpeg' }]
+        : [],
+    });
+    navigator.mediaSession.playbackState = s.paused ? 'paused' : 'playing';
+  }
+
+  // Wake lock: acquire while playing, release when paused
+  if (!s.paused) acquireWakeLock();
+  else releaseWakeLock();
+
   // SDK track_window merge — grow tracklist as user listens
   const expectedUri = getSpotifyUri(currentMediaUrl.value);
   const contextMatch = expectedUri ? (s.context?.uri === expectedUri) : true;
@@ -580,6 +614,17 @@ const createPlayer = async () => {
   });
 
   await player.connect();
+
+  // Register Media Session action handlers for lock screen / notification area controls
+  if ('mediaSession' in navigator) {
+    navigator.mediaSession.setActionHandler('play',          () => player?.resume());
+    navigator.mediaSession.setActionHandler('pause',         () => player?.pause());
+    navigator.mediaSession.setActionHandler('previoustrack', () => prev());
+    navigator.mediaSession.setActionHandler('nexttrack',     () => next());
+    navigator.mediaSession.setActionHandler('seekto', (d) => {
+      if (d.seekTime != null) seek(d.seekTime * 1000);
+    });
+  }
 };
 
 // ── Core: play(url, opts) ────────────────────────────────────────────────────
@@ -822,6 +867,7 @@ const disconnect = async () => {
   clearInterval(tokenRefresher); tokenRefresher = null;
   clearInterval(posSaver); posSaver = null;
   stopTicker();
+  releaseWakeLock();
   player?.disconnect();
   player = null;
   deviceId = null;

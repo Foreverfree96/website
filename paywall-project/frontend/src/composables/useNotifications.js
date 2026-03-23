@@ -47,6 +47,24 @@ if (typeof window !== 'undefined') {
   };
   window.addEventListener('touchstart', unlock, true);
   window.addEventListener('click', unlock, true);
+
+  // Keep AudioContext alive when tab is hidden / screen off so notification
+  // and DM sounds still play in the background. Browsers may suspend the
+  // AudioContext when the page loses visibility — proactively resume it.
+  document.addEventListener('visibilitychange', () => {
+    if (_audioCtx && _audioCtx.state === 'suspended') {
+      _audioCtx.resume().catch(() => {});
+    }
+  });
+
+  // Periodic keepalive: browsers throttle timers when hidden but still fire
+  // them every ~1 s–1 min. This ensures AudioContext gets resumed even if the
+  // visibilitychange event alone wasn't enough.
+  setInterval(() => {
+    if (_audioCtx && _audioCtx.state === 'suspended') {
+      _audioCtx.resume().catch(() => {});
+    }
+  }, 10_000);
 }
 
 // ── Notification ping (high, bright) ──────────────────────────────────────────
