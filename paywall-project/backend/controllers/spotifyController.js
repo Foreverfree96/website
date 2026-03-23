@@ -724,64 +724,84 @@ export const generatePlaylist = async (req, res) => {
 
     // Language market codes for Spotify API and search keywords
     const LANG_MARKETS = { en: 'US', fr: 'FR', es: 'ES', ar: 'SA', ja: 'JP', ko: 'KR' };
-    const LANG_KEYWORDS = { fr: 'french', es: 'spanish', ar: 'arabic', ja: 'japanese', ko: 'korean' };
-    const primaryMarket = LANG_MARKETS[languages[0]] || 'US';
-    const isMultiLang = languages.length > 1;
-    const hasNonEnglish = languages.some(l => l !== 'en');
+    const LANG_KEYWORDS = { en: null, fr: 'french', es: 'spanish', ar: 'arabic', ja: 'japanese', ko: 'korean' };
+    const hasEnglish = languages.includes('en');
+    const nonEnglishLangs = languages.filter(l => l !== 'en');
+    const onlyEnglish = hasEnglish && !nonEnglishLangs.length;
+    const onlyNonEnglish = !hasEnglish && nonEnglishLangs.length > 0;
+    // Market code for Spotify API — use the first selected language's market
+    const primaryMarket = onlyNonEnglish
+      ? (LANG_MARKETS[nonEnglishLangs[0]] || 'US')
+      : 'US';
 
     // Chill/lofi diversity keywords — not just "chill" in the title
     const CHILL_DIVERSE = ['chill vibes', 'relaxing', 'mellow', 'laid back', 'downtempo', 'ambient chill', 'easy listening', 'soft', 'calm'];
     const LOFI_DIVERSE = ['lofi hip hop', 'lofi beats', 'lofi chill', 'chillhop', 'study beats', 'lofi jazz'];
 
-    // Build diverse search queries — prioritize simple artist names first
-    const queries = [];
+    // Build base queries from seeds and genres (language-neutral)
+    const baseQueries = [];
 
-    // Simple artist queries first (most reliable)
-    seedArtists.forEach(artist => queries.push(artist));
+    seedArtists.forEach(artist => baseQueries.push(artist));
 
-    // Track name + artist combos (good for finding similar tracks)
     seedTrackMeta.slice(0, 5).forEach(m => {
       const name = (m.name || '').replace(/\s*[\(\[].*[\)\]]$/g, '').trim();
       const artist = cleanArtist(m.artist);
-      if (name && artist) queries.push(`${artist} ${name}`);
-      else if (name) queries.push(name);
+      if (name && artist) baseQueries.push(`${artist} ${name}`);
+      else if (name) baseQueries.push(name);
     });
 
-    // Artist + genre cross queries
     seedArtists.slice(0, 3).forEach(artist => {
-      genres.slice(0, 2).forEach(g => queries.push(`${artist} ${g}`));
+      genres.slice(0, 2).forEach(g => baseQueries.push(`${artist} ${g}`));
     });
 
-    // Genre-only queries — with diverse sub-queries for chill/lofi
     genres.forEach(g => {
       if (g === 'chill') {
         const picks = CHILL_DIVERSE.sort(() => Math.random() - 0.5).slice(0, 3);
-        picks.forEach(q => queries.push(q));
+        picks.forEach(q => baseQueries.push(q));
       } else if (g === 'lofi') {
         const picks = LOFI_DIVERSE.sort(() => Math.random() - 0.5).slice(0, 3);
-        picks.forEach(q => queries.push(q));
+        picks.forEach(q => baseQueries.push(q));
       } else {
-        queries.push(g);
-        queries.push(`${g} hits`);
-        queries.push(`best ${g}`);
+        baseQueries.push(g);
+        baseQueries.push(`${g} hits`);
+        baseQueries.push(`best ${g}`);
       }
     });
 
-    // Language-specific queries for non-English
-    if (hasNonEnglish) {
-      languages.filter(l => l !== 'en').forEach(lang => {
-        const kw = LANG_KEYWORDS[lang];
-        if (kw) {
-          queries.push(`${kw} music`);
-          queries.push(`${kw} hits`);
-          // Cross with genres
-          genres.slice(0, 2).forEach(g => queries.push(`${kw} ${g}`));
-        }
-      });
-    }
+    if (seedArtists.length >= 2) baseQueries.push(`${seedArtists[0]} ${seedArtists[1]}`);
 
-    // Cross-pollination
-    if (seedArtists.length >= 2) queries.push(`${seedArtists[0]} ${seedArtists[1]}`);
+    // Apply language enforcement — tag queries with language keywords
+    // so Spotify returns results ONLY in the selected language(s)
+    const queries = [];
+    if (onlyEnglish) {
+      // English only — use base queries as-is (market=US handles it)
+      baseQueries.forEach(q => queries.push(q));
+    } else if (onlyNonEnglish) {
+      // Non-English only — prefix every query with the language keyword
+      // and add dedicated language queries to ensure results match
+      for (const lang of nonEnglishLangs) {
+        const kw = LANG_KEYWORDS[lang];
+        if (!kw) continue;
+        baseQueries.forEach(q => queries.push(`${kw} ${q}`));
+        queries.push(`${kw} music`);
+        queries.push(`${kw} hits`);
+        queries.push(`top ${kw} songs`);
+        genres.slice(0, 2).forEach(g => queries.push(`${kw} ${g}`));
+      }
+    } else {
+      // Mixed (English + other) — split: base queries for English,
+      // language-tagged queries for non-English languages
+      baseQueries.forEach(q => queries.push(q));
+      for (const lang of nonEnglishLangs) {
+        const kw = LANG_KEYWORDS[lang];
+        if (!kw) continue;
+        // Add proportional language-specific queries
+        seedArtists.slice(0, 2).forEach(a => queries.push(`${kw} ${a}`));
+        queries.push(`${kw} music`);
+        queries.push(`${kw} hits`);
+        genres.slice(0, 2).forEach(g => queries.push(`${kw} ${g}`));
+      }
+    }
 
     // Deduplicate and cap — allow more queries when we need more tracks
     const maxQueries = limit > 50 ? 16 : limit > 20 ? 12 : 10;
