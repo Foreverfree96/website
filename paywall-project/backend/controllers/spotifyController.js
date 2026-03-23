@@ -419,20 +419,49 @@ export const getPlaylistTracks = async (req, res) => {
       // 4a. Try /items (Dev Mode — may be restricted to owner/collaborator)
       let items = [];
       try {
-        items = await fetchAllPages(
-          `https://api.spotify.com/v1/playlists/${playlistId}/items?limit=100`,
-          ccAuth
-        );
-      } catch { /* fall through */ }
+        const r4a = await axios.get(`https://api.spotify.com/v1/playlists/${playlistId}/items?limit=100`, { headers: ccAuth });
+        console.log(`   [4a] /items response keys:`, Object.keys(r4a.data), `total:`, r4a.data.total, `items#:`, r4a.data.items?.length);
+        if (r4a.data.items?.length) {
+          const sample = r4a.data.items[0];
+          console.log(`   [4a] First item keys:`, Object.keys(sample || {}), `track?:`, !!sample?.track, `item?:`, !!sample?.item);
+        }
+        items = parseItems(r4a.data, '4a');
+        if (items.length) {
+          // Paginate remaining
+          let nextUrl = r4a.data.next || null;
+          while (nextUrl) {
+            const rn = await axios.get(nextUrl, { headers: ccAuth });
+            items = items.concat(parseItems(rn.data, '4a-page'));
+            nextUrl = rn.data.next || null;
+          }
+        }
+      } catch (e) {
+        console.log(`   [4a] /items failed:`, e.response?.status, e.response?.data?.error?.message || e.message);
+      }
 
       // 4b. Try /tracks (legacy endpoint)
       if (!items.length) {
         try {
-          items = await fetchAllPages(
-            `https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=100`,
-            ccAuth
-          );
-        } catch { /* fall through */ }
+          const r4b = await axios.get(`https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=100`, { headers: ccAuth });
+          console.log(`   [4b] /tracks response keys:`, Object.keys(r4b.data), `total:`, r4b.data.total, `items#:`, r4b.data.items?.length);
+          if (r4b.data.items?.length) {
+            const sample = r4b.data.items[0];
+            console.log(`   [4b] First item keys:`, Object.keys(sample || {}), `track?:`, !!sample?.track, `item?:`, !!sample?.item, `uri?:`, !!sample?.uri);
+            if (sample?.track) console.log(`   [4b] First track keys:`, Object.keys(sample.track), `uri:`, sample.track.uri);
+            else if (sample) console.log(`   [4b] First item raw:`, JSON.stringify(sample).slice(0, 300));
+          }
+          items = parseItems(r4b.data, '4b');
+          if (items.length) {
+            let nextUrl = r4b.data.next || null;
+            while (nextUrl) {
+              const rn = await axios.get(nextUrl, { headers: ccAuth });
+              items = items.concat(parseItems(rn.data, '4b-page'));
+              nextUrl = rn.data.next || null;
+            }
+          }
+        } catch (e) {
+          console.log(`   [4b] /tracks failed:`, e.response?.status, e.response?.data?.error?.message || e.message);
+        }
       }
 
       // 4c. Try parent object /playlists/{id} with embedded tracks
@@ -440,7 +469,13 @@ export const getPlaylistTracks = async (req, res) => {
         try {
           console.log(`   [4c] Trying client-creds GET /playlists/${playlistId}...`);
           const r = await axios.get(`https://api.spotify.com/v1/playlists/${playlistId}`, { headers: ccAuth });
-          const tracksObj = r.data.tracks || r.data.items || {};
+          const tracksObj = r.data.tracks || {};
+          console.log(`   [4c] Parent keys:`, Object.keys(r.data), `tracks keys:`, Object.keys(tracksObj), `total:`, tracksObj.total, `items#:`, tracksObj.items?.length);
+          if (tracksObj.items?.length) {
+            const sample = tracksObj.items[0];
+            console.log(`   [4c] First item keys:`, Object.keys(sample || {}), `track?:`, !!sample?.track, `item?:`, !!sample?.item);
+            if (!sample?.track && !sample?.item && sample) console.log(`   [4c] First item raw:`, JSON.stringify(sample).slice(0, 300));
+          }
           const firstItems = parseItems(tracksObj, '4c');
           let allItems = firstItems;
           const nextUrl = tracksObj.next || null;
