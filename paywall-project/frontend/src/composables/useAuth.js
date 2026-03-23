@@ -194,10 +194,10 @@ export function useAuth() {
    * PayPal payment). Only updates the `isSubscriber` flag on the user ref
    * rather than replacing the whole object, to avoid clobbering other fields.
    */
-  const subscribe = async () => {
+  const subscribe = async (orderId) => {
     error.value = null;
     try {
-      const res = await axios.put(`${API_URL}/subscribe`);
+      const res = await axios.put(`${API_URL}/subscribe`, { orderId });
       user.value = {
         ...user.value,
         isSubscriber: res.data.isSubscriber,

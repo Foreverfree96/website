@@ -78,9 +78,9 @@ onMounted(() => {
                 const details = await actions.order.capture();
                 console.log("Transaction completed by ", details.payer.name.given_name);
 
-                // 🔑 Call backend to activate subscription
+                // Call backend to activate subscription — pass orderId for server-side verification
                 try {
-                    await subscribe();
+                    await subscribe(data.orderID);
                     alert("You are now a subscriber! Premium content unlocked.");
                 } catch (err) {
                     console.error("Subscription activation failed:", err);

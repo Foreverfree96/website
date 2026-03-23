@@ -19,6 +19,10 @@
  */
 
 import User from "../models/userModel.js";
+import Post from "../models/postModel.js";
+import Notification from "../models/notificationModel.js";
+import Conversation from "../models/conversationModel.js";
+import Message from "../models/messageModel.js";
 import BannedEmail from "../models/bannedEmailModel.js";
 import Appeal from "../models/appealModel.js";
 import jwt from "jsonwebtoken";
@@ -29,6 +33,9 @@ import { siteLog } from "../utils/siteLog.js";
 
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
+
+/** Escape special regex characters in user input to prevent ReDoS / regex injection. */
+const escapeRegex = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
  * Generates a signed JWT for the given user ID.
@@ -132,7 +139,7 @@ export const registerUser = async (req, res) => {
     const emailBanned = await BannedEmail.findOne({ email: email.trim().toLowerCase() });
     if (emailBanned) return res.status(403).json({ message: "This email address is not allowed." });
 
-    const usernameTaken = await User.findOne({ username: new RegExp(`^${username.trim()}$`, 'i') });
+    const usernameTaken = await User.findOne({ username: new RegExp(`^${escapeRegex(username.trim())}$`, 'i') });
     if (usernameTaken) return res.status(400).json({ message: "Username already taken" });
 
     // Hash the password with bcrypt (cost factor 10)
@@ -305,7 +312,7 @@ export const loginUser = async (req, res) => {
     // Try email lookup first, then fall back to username lookup
     const user =
       await User.findOne({ email: identifier.toLowerCase() }) ||
-      await User.findOne({ username: new RegExp(`^${identifier}$`, 'i') });
+      await User.findOne({ username: new RegExp(`^${escapeRegex(identifier)}$`, 'i') });
     if (!user) return res.status(401).json({ message: "Invalid credentials" });
 
     const isPasswordMatch = await bcrypt.compare(password, user.password);
@@ -319,19 +326,9 @@ export const loginUser = async (req, res) => {
     if (user.isBanned)
       return res.status(403).json({ type: "banned", message: "This account has been permanently banned. If you believe this is a mistake, you can submit an appeal below." });
 
-    // Block restricted accounts and tell them exactly how long is left
-    if (user.restrictedUntil && new Date(user.restrictedUntil) > new Date()) {
-      const until = new Date(user.restrictedUntil);
-      const diffMs = until - Date.now();
-      const diffHrs = Math.ceil(diffMs / (1000 * 60 * 60));
-      const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
-      const timeLeft = diffDays > 1 ? `${diffDays} days` : `${diffHrs} hour${diffHrs === 1 ? "" : "s"}`;
-      return res.status(403).json({
-        type: "restricted",
-        message: `Your account is temporarily restricted. You can log in again in ${timeLeft} (${until.toDateString()}).`,
-        restrictedUntil: until,
-      });
-    }
+    // Note: restricted users CAN log in — restrictions are enforced per-action
+    // via the notRestricted middleware on write routes (post, comment, message).
+    // We include restrictedUntil in the response so the frontend can display a banner.
 
     // Auto-grant admin privileges to the designated admin email if not already set
     if (process.env.ADMIN_EMAIL && user.email === process.env.ADMIN_EMAIL && !user.isAdmin) {
@@ -345,6 +342,7 @@ export const loginUser = async (req, res) => {
       email: user.email,
       isSubscriber: user.isSubscriber || false,
       isAdmin: user.isAdmin || false,
+      restrictedUntil: user.restrictedUntil || null,
       token: generateToken(user._id),
     });
     siteLog({ userId: user._id, username: user.username, action: "User Logged In" });
@@ -401,6 +399,23 @@ export const getUserProfile = async (req, res) => {
  */
 export const upgradeToSubscriber = async (req, res) => {
   try {
+    const { orderId } = req.body;
+    if (!orderId) return res.status(400).json({ message: "PayPal order ID is required" });
+
+    // Verify the order was actually captured with PayPal before granting access
+    const ppRes = await axios.get(
+      `https://api-m.sandbox.paypal.com/v2/checkout/orders/${encodeURIComponent(orderId)}`,
+      {
+        headers: {
+          Authorization:
+            "Basic " +
+            Buffer.from(process.env.PAYPAL_CLIENT_ID + ":" + process.env.PAYPAL_SECRET).toString("base64"),
+        },
+      }
+    );
+    if (ppRes.data.status !== "COMPLETED")
+      return res.status(400).json({ message: "Payment has not been completed" });
+
     const user = await User.findById(req.user.id);
     if (!user) return res.status(404).json({ message: "User not found" });
     user.isSubscriber = true;
@@ -428,8 +443,22 @@ export const upgradeToSubscriber = async (req, res) => {
  */
 export const deleteUserAccount = async (req, res) => {
   try {
-    const user = await User.findByIdAndDelete(req.user.id);
+    const userId = req.user.id;
+    const user = await User.findById(userId);
     if (!user) return res.status(404).json({ message: "User not found" });
+
+    // Cascade deletions — remove all user-owned content and references
+    await Post.deleteMany({ author: userId });
+    await Notification.deleteMany({ $or: [{ recipient: userId }, { sender: userId }] });
+    await Message.deleteMany({ sender: userId });
+    await Conversation.deleteMany({ participants: { $size: 1, $all: [userId] } });
+    await Conversation.updateMany({ participants: userId }, { $pull: { participants: userId } });
+    await User.updateMany(
+      { $or: [{ followers: userId }, { following: userId }] },
+      { $pull: { followers: userId, following: userId } }
+    );
+    await user.deleteOne();
+
     res.json({ message: "Account deleted successfully" });
   } catch (err) {
     console.error("❌ Delete Account Error:", err);
@@ -487,7 +516,7 @@ export const updateUsername = async (req, res) => {
       return res.status(400).json({ message: "Username must be 2–30 characters (letters, numbers, underscores)" });
 
     // Check uniqueness but exclude the current user's own document
-    const taken = await User.findOne({ username: new RegExp(`^${username.trim()}$`, 'i'), _id: { $ne: req.user.id } });
+    const taken = await User.findOne({ username: new RegExp(`^${escapeRegex(username.trim())}$`, 'i'), _id: { $ne: req.user.id } });
     if (taken) return res.status(400).json({ message: "Username already taken" });
 
     const user = await User.findById(req.user.id);
@@ -823,9 +852,10 @@ export const forgotEmail = async (req, res) => {
     const { username } = req.body;
     if (!username) return res.status(400).json({ message: "Username is required" });
 
-    const user = await User.findOne({ username: new RegExp(`^${username.trim()}$`, 'i') });
+    const user = await User.findOne({ username: new RegExp(`^${escapeRegex(username.trim())}$`, 'i') });
 
-    if (!user) return res.status(404).json({ message: "Username not found." });
+    // Always return success to prevent username enumeration
+    if (!user) return res.json({ message: "If that username exists, we've sent an email with your registered address." });
 
     sendEmail({
       to: user.email,
@@ -840,7 +870,7 @@ export const forgotEmail = async (req, res) => {
       `,
     });
 
-    res.json({ message: "Your email address has been sent to your registered inbox." });
+    res.json({ message: "If that username exists, we've sent an email with your registered address." });
   } catch (err) {
     console.error("❌ Forgot Email Error:", err.message);
     res.status(500).json({ message: "Server error." });
@@ -868,7 +898,7 @@ export const forgotEmail = async (req, res) => {
  */
 export const getCreatorProfile = async (req, res) => {
   try {
-    const user = await User.findOne({ username: new RegExp(`^${req.params.username}$`, 'i') })
+    const user = await User.findOne({ username: new RegExp(`^${escapeRegex(req.params.username)}$`, 'i') })
       .select("username bio categories socialLinks followers following createdAt isPrivateAccount")
       .lean();
     if (!user) return res.status(404).json({ message: "User not found" });
@@ -914,21 +944,21 @@ export const getAllCreators = async (req, res) => {
   try {
     const filter = { isPrivateAccount: { $ne: true } };
     if (req.query.search) {
-      filter.username = { $regex: req.query.search, $options: 'i' };
+      filter.username = { $regex: escapeRegex(req.query.search), $options: 'i' };
     }
-    const users = await User.find(filter)
-      .select('username bio categories followers')
-      .lean();
+    const users = await User.aggregate([
+      { $match: filter },
+      { $project: { username: 1, bio: 1, categories: 1, followerCount: { $size: { $ifNull: ['$followers', []] } } } },
+      { $sort: { followerCount: -1 } },
+    ]);
 
-    const result = users
-      .map(u => ({
-        _id: u._id,
-        username: u.username,
-        bio: u.bio || '',
-        categories: u.categories || [],
-        followerCount: u.followers?.length || 0,
-      }))
-      .sort((a, b) => b.followerCount - a.followerCount);
+    const result = users.map(u => ({
+      _id: u._id,
+      username: u.username,
+      bio: u.bio || '',
+      categories: u.categories || [],
+      followerCount: u.followerCount,
+    }));
 
     res.json(result);
   } catch (err) {
@@ -1080,7 +1110,7 @@ export const unblockUser = async (req, res) => {
  */
 export const toggleFollow = async (req, res) => {
   try {
-    const target = await User.findOne({ username: new RegExp(`^${req.params.username}$`, 'i') });
+    const target = await User.findOne({ username: new RegExp(`^${escapeRegex(req.params.username)}$`, 'i') });
     if (!target) return res.status(404).json({ message: "User not found" });
     if (target._id.toString() === req.user.id)
       return res.status(400).json({ message: "You cannot follow yourself" });
@@ -1201,7 +1231,7 @@ export const checkUsername = async (req, res) => {
     // Short-circuit invalid formats without a DB round trip
     if (!username || !isValidUsername(username.trim()))
       return res.json({ available: false, message: "Invalid username format" });
-    const exists = await User.findOne({ username: new RegExp(`^${username.trim()}$`, 'i') });
+    const exists = await User.findOne({ username: new RegExp(`^${escapeRegex(username.trim())}$`, 'i') });
     res.json({ available: !exists, message: exists ? "Username already taken" : "Username available" });
   } catch (err) {
     res.status(500).json({ message: "Server error" });

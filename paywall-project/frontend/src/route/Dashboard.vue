@@ -232,7 +232,7 @@ onMounted(async () => {
 const goToPost = (id) => router.push(`/post/${id}`);
 
 // Truncate body text for the card preview (default 120 chars).
-const truncate = (text) => text.length > 120 ? text.slice(0, 120) + '...' : text;
+const truncate = (text, len = 120) => text.length > len ? text.slice(0, len) + '...' : text;
 
 // Format an ISO date as a locale short date string.
 const formatDate = (d) => new Date(d).toLocaleDateString();

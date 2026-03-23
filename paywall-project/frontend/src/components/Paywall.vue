@@ -62,7 +62,7 @@ const error = ref("");
  *   - user.isSubscriber must be falsy (don't show the button if already subscribed)
  */
 onMounted(() => {
-    if (window.paypal && !user.isSubscriber) {
+    if (window.paypal && !user.value?.isSubscriber) {
         window.paypal.Buttons({
 
             /**
@@ -81,15 +81,15 @@ onMounted(() => {
              * Called when the user approves the payment in PayPal's popup.
              * Two sequential steps:
              *   1. Capture the funds — finalises the transaction with PayPal
-             *   2. Call our /subscribe backend endpoint — marks the user as a
-             *      subscriber in MongoDB and updates the reactive user ref
+             *   2. Call our /subscribe backend endpoint with the orderId so the
+             *      backend can verify the payment before granting access
              * On success, sets status to a confirmation message.
              * On failure, sets error so the template shows feedback.
              */
             onApprove: async (data, actions) => {
                 try {
                     await actions.order.capture(); // Capture payment
-                    await subscribe(); // Call backend to mark user as subscriber
+                    await subscribe(data.orderID); // Pass orderId for server-side verification
                     status.value = "Payment successful! You are now a subscriber.";
                 } catch (err) {
                     console.error(err);

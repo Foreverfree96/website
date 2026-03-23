@@ -124,8 +124,10 @@ router.beforeEach((to) => {
     if (!token) return "/login";
   }
 
-  // Redirect non-admins away from /admin
+  // Redirect non-admins away from /admin — also require a token
   if (to.path === "/admin") {
+    const token = localStorage.getItem("jwtToken");
+    if (!token) return "/login";
     if (user.value.id !== null && !user.value.isAdmin) return "/";
   }
 });

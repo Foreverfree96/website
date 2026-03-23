@@ -235,7 +235,7 @@ export const getPost = async (req, res) => {
     if (post.moderationStatus === "flagged")
       return res.status(403).json({ message: "This post has been removed for violating community guidelines." });
 
-    const isOwner = post.author._id.toString() === req.user?.id;
+    const isOwner = post.author?._id?.toString() === req.user?.id;
     const isAdmin = req.user?.isAdmin;
 
     // Private posts (paywalled) are only visible to their author
@@ -243,7 +243,7 @@ export const getPost = async (req, res) => {
       return res.status(403).json({ message: "This post is private." });
 
     // Posts from private accounts are only visible to the account owner or admins
-    if (post.author.isPrivateAccount && !isOwner && !isAdmin)
+    if (post.author?.isPrivateAccount && !isOwner && !isAdmin)
       return res.status(403).json({ message: "This account is private." });
 
     res.json(post);
@@ -741,7 +741,7 @@ export const reportPost = async (req, res) => {
     const { reason } = req.body;
     if (!reason?.trim()) return res.status(400).json({ message: "A reason is required to report a post." });
 
-    const post = await Post.findById(req.params.id);
+    const post = await Post.findById(req.params.id).populate("author", "username");
     if (!post) return res.status(404).json({ message: "Post not found" });
 
     // Prevent duplicate reports from the same user

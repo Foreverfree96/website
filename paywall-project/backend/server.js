@@ -34,6 +34,7 @@ import twitchRoutes from "./routes/twitchRoutes.js";
 import { onlineUsers } from "./utils/onlineUsers.js";
 import cors from "cors";
 import helmet from "helmet";
+import mongoSanitize from "express-mongo-sanitize";
 import rateLimit from "express-rate-limit";
 import fetch from "node-fetch";
 import jwt from "jsonwebtoken";
@@ -178,6 +179,9 @@ app.use(cors({
 // while still blocking unreasonably large requests
 app.use(express.json({ limit: "500kb" }));
 app.use(express.urlencoded({ extended: true, limit: "500kb" }));
+
+// Sanitize request data — strip $ and . from keys to prevent NoSQL injection
+app.use(mongoSanitize());
 
 // ─── RATE LIMITING ────────────────────────────────────────────────────────────
 

@@ -62,8 +62,8 @@ export const protect = async (req, res, next) => {
       if (req.user?.isBanned)
         return res.status(403).json({ type: "banned", message: "Your account has been permanently banned." });
 
-      if (req.user?.restrictedUntil && new Date(req.user.restrictedUntil) > new Date())
-        return res.status(403).json({ type: "restricted", message: "Your account is temporarily restricted.", restrictedUntil: req.user.restrictedUntil });
+      // Note: restricted users pass through protect — restrictions are enforced
+      // per-action via the notRestricted middleware on write routes.
 
       next();
     } catch (err) {
@@ -98,7 +98,9 @@ export const optionalAuth = async (req, res, next) => {
     try {
       const token = auth.split(" ")[1];
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      req.user = await User.findById(decoded.id).select("username email isSubscriber isAdmin isVerified blockedUsers");
+      const u = await User.findById(decoded.id).select("username email isSubscriber isAdmin isVerified blockedUsers isBanned restrictedUntil");
+      // Don't attach banned users — treat them as unauthenticated
+      if (!u?.isBanned) req.user = u;
     } catch {
       // Invalid or expired token — just continue without attaching a user.
       // The route handler is responsible for checking whether req.user exists.

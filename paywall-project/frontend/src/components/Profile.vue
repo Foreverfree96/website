@@ -102,10 +102,10 @@
                     <p v-else class="section-hint">Connect your Spotify account to enable playlist features and playback.</p>
                     <div class="spotify-actions">
                         <a v-if="!spotifyStatus.connected"
-                           :href="`${API_BASE}/api/spotify/login?token=${jwtToken}&returnTo=${encodeURIComponent(origin + '/profile')}`"
+                           :href="`${API_BASE}/api/spotify/login?token=${getToken()}&returnTo=${encodeURIComponent(origin + '/profile')}`"
                            class="btn-black spotify-btn">Connect Spotify</a>
                         <a v-else
-                           :href="`${API_BASE}/api/spotify/login?token=${jwtToken}&returnTo=${encodeURIComponent(origin + '/profile')}`"
+                           :href="`${API_BASE}/api/spotify/login?token=${getToken()}&returnTo=${encodeURIComponent(origin + '/profile')}`"
                            class="btn-black spotify-btn">Reconnect</a>
                         <button v-if="spotifyStatus.connected" class="btn-black spotify-disconnect-btn" @click="handleSpotifyDisconnect">Disconnect</button>
                     </div>
@@ -121,10 +121,10 @@
                     <p v-else class="section-hint">Connect your YouTube account to save playlists directly to YouTube.</p>
                     <div class="spotify-actions">
                         <a v-if="!youtubeStatus.connected"
-                           :href="`${API_BASE}/api/youtube/auth?token=${jwtToken}&returnTo=${encodeURIComponent(origin + '/profile')}`"
+                           :href="`${API_BASE}/api/youtube/auth?token=${getToken()}&returnTo=${encodeURIComponent(origin + '/profile')}`"
                            class="btn-black spotify-btn">Connect YouTube</a>
                         <a v-else
-                           :href="`${API_BASE}/api/youtube/auth?token=${jwtToken}&returnTo=${encodeURIComponent(origin + '/profile')}`"
+                           :href="`${API_BASE}/api/youtube/auth?token=${getToken()}&returnTo=${encodeURIComponent(origin + '/profile')}`"
                            class="btn-black spotify-btn">Reconnect</a>
                         <button v-if="youtubeStatus.connected" class="btn-black spotify-disconnect-btn" @click="handleYoutubeDisconnect">Disconnect</button>
                     </div>
@@ -222,7 +222,8 @@ const API_BASE  = import.meta.env.VITE_API_URL;
 const API_USERS = API_BASE + '/api/users';
 const router = useRouter();
 const route  = useRoute();
-const jwtToken = localStorage.getItem('jwtToken') || '';
+// Use a getter so the token is always fresh (not captured once at setup time)
+const getToken = () => localStorage.getItem('jwtToken') || '';
 const origin = globalThis.location?.origin || '';
 const sdk = useSpotifySDK();
 
@@ -249,7 +250,7 @@ const spotifyStatus = ref({ connected: false, displayName: null, isPremium: fals
 const fetchSpotifyStatus = async () => {
     try {
         const res = await axios.get(`${API_BASE}/api/spotify/status`, {
-            headers: { Authorization: `Bearer ${jwtToken}` },
+            headers: { Authorization: `Bearer ${getToken()}` },
         });
         spotifyStatus.value = res.data;
     } catch { /* non-critical */ }
@@ -279,7 +280,7 @@ const youtubeStatus = ref({ connected: false, displayName: null });
 const fetchYoutubeStatus = async () => {
     try {
         const res = await axios.get(`${API_BASE}/api/youtube/status`, {
-            headers: { Authorization: `Bearer ${jwtToken}` },
+            headers: { Authorization: `Bearer ${getToken()}` },
         });
         youtubeStatus.value = res.data;
     } catch (e) {
@@ -290,7 +291,7 @@ const fetchYoutubeStatus = async () => {
 const handleYoutubeDisconnect = async () => {
     try {
         await axios.delete(`${API_BASE}/api/youtube/disconnect`, {
-            headers: { Authorization: `Bearer ${jwtToken}` },
+            headers: { Authorization: `Bearer ${getToken()}` },
         });
         youtubeStatus.value = { connected: false, displayName: null };
         errorMessage.value = 'YouTube disconnected.';

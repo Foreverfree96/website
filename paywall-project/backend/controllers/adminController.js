@@ -27,6 +27,8 @@ import axios from "axios";
 import Appeal from "../models/appealModel.js";
 import AdminLog from "../models/adminLogModel.js";
 
+const escapeRegex = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 /** Helper — fire-and-forget admin log entry with optional source link */
 const log = (req, action, target, detail = "", extras = {}) => {
   AdminLog.create({
@@ -53,6 +55,8 @@ const log = (req, action, target, detail = "", extras = {}) => {
     .catch(() => {});
 };
 import Notification from "../models/notificationModel.js";
+import Conversation from "../models/conversationModel.js";
+import Message from "../models/messageModel.js";
 import DmReport from "../models/dmReportModel.js";
 import BannedEmail from "../models/bannedEmailModel.js";
 import { PageView, LocationStat, SiteStat } from "../models/analyticsModel.js";
@@ -334,8 +338,9 @@ export const clearReports = async (req, res) => {
     const post = await Post.findById(req.params.id);
     if (!post) return res.status(404).json({ message: "Post not found" });
 
-    // Clear reporter list and re-approve the post so it re-appears in the feed
+    // Clear reporter list, detailed reports, and re-approve the post
     post.reportedBy = [];
+    post.reports = [];
     post.moderationStatus = "approved";
     await post.save();
 
@@ -443,7 +448,11 @@ export const adminDeleteUser = async (req, res) => {
       { $pull: { followers: userId, following: userId } }
     );
 
-    // 4. Finally delete the user document
+    // 4. Clean up conversations and messages
+    await Message.deleteMany({ sender: userId });
+    await Conversation.updateMany({ participants: userId }, { $pull: { participants: userId } });
+
+    // 5. Finally delete the user document
     await user.deleteOne();
 
     log(req, "Deleted user", user);
@@ -800,7 +809,7 @@ export const createTestUser = async (req, res) => {
     if (!username || !email || !password)
       return res.status(400).json({ message: "username, email, and password are required" });
 
-    const usernameTaken = await User.findOne({ username: new RegExp(`^${username.trim()}$`, "i") });
+    const usernameTaken = await User.findOne({ username: new RegExp(`^${escapeRegex(username.trim())}$`, "i") });
     if (usernameTaken) return res.status(400).json({ message: "Username already taken" });
 
     // Make the email unique in the DB by appending a +tag before the @.
