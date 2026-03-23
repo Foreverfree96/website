@@ -18,7 +18,9 @@ const selectedGenres  = ref([]);
 const trackLimit      = ref(30);
 const generatedTracks = ref([]);
 const generateLoading = ref(false);
-const generateTarget  = ref('spotify'); // 'spotify' | 'youtube'
+const generateTarget  = ref('spotify'); // 'spotify' | 'youtube' — post-generation view toggle
+const generateSpotifyResults = ref([]); // Spotify tracks from generation
+const generateYoutubeResults = ref([]); // YouTube-matched tracks from generation
 
 // Convert tab
 const convertUrl       = ref('');
@@ -116,6 +118,9 @@ const _persistResults = () => {
       activeTab: activeTab.value,
       generatedTracks: generatedTracks.value,
       generateResults: generateResults.value,
+      generateSpotifyResults: generateSpotifyResults.value,
+      generateYoutubeResults: generateYoutubeResults.value,
+      generateTarget: generateTarget.value,
       matchedTracks: matchedTracks.value,
       convertResults: convertResults.value,
       resultTracks: resultTracks.value,
@@ -148,6 +153,9 @@ const _restoreResults = () => {
     activeTab.value = state.activeTab || 'generate';
     generatedTracks.value = state.generatedTracks || [];
     generateResults.value = state.generateResults || [];
+    generateSpotifyResults.value = state.generateSpotifyResults || [];
+    generateYoutubeResults.value = state.generateYoutubeResults || [];
+    generateTarget.value = state.generateTarget || 'spotify';
     matchedTracks.value = state.matchedTracks || [];
     convertResults.value = state.convertResults || [];
     resultTracks.value = state.resultTracks || [];
@@ -232,6 +240,16 @@ export function usePlaylistTools() {
     syncResultTracks();
   };
 
+  const setGenerateTarget = (target) => {
+    generateTarget.value = target;
+    const results = target === 'youtube' ? generateYoutubeResults.value : generateSpotifyResults.value;
+    if (results.length) {
+      generatedTracks.value = results;
+      generateResults.value = [...results];
+      resultTracks.value = [...results];
+    }
+  };
+
   const open = (tab) => {
     if (isOpen.value && isMinimized.value) {
       // Restore from minimized
@@ -270,6 +288,8 @@ export function usePlaylistTools() {
     trackLimit.value = 30;
     generatedTracks.value = [];
     generateResults.value = [];
+    generateSpotifyResults.value = [];
+    generateYoutubeResults.value = [];
     generateLoading.value = false;
     generateTarget.value = 'spotify';
     convertUrl.value = '';
@@ -538,46 +558,55 @@ export function usePlaylistTools() {
       const spTracks = data.tracks || [];
       console.log('[Generate] Got', spTracks.length, 'tracks from backend');
 
-      if (generateTarget.value === 'youtube' && spTracks.length) {
-        // Match Spotify recommendations to YouTube
-        bgStatus.value = `Matching ${spTracks.length} tracks to YouTube...`;
-        const matchBody = spTracks.map(t => ({ title: t.name, artist: t.artist }));
-        const matchRes = await fetch(`${API}/api/youtube/match`, {
-          method: 'POST',
-          headers: headers(),
-          body: JSON.stringify({ tracks: matchBody }),
-          signal,
-        });
-        if (matchRes.ok) {
-          const matchData = await matchRes.json();
-          const ytTracks = (matchData.matches || [])
-            .filter(m => m.bestMatch)
-            .map(m => ({
-              id:      m.bestMatch.videoId,
-              name:    m.bestMatch.title,
-              artist:  m.bestMatch.channelTitle,
-              art:     m.bestMatch.thumbnail,
-              url:     m.bestMatch.url,
-              videoId: m.bestMatch.videoId,
-              _source: 'youtube',
-            }));
-          generatedTracks.value = ytTracks;
-        } else {
-          // Fallback: still show Spotify results
-          generatedTracks.value = spTracks;
-        }
-      } else {
-        generatedTracks.value = spTracks;
-      }
+      // Store Spotify results
+      generateSpotifyResults.value = spTracks;
 
+      // Always match to YouTube too (don't block on failure)
+      let ytTracks = [];
+      if (spTracks.length) {
+        try {
+          bgStatus.value = `Matching ${spTracks.length} tracks to YouTube...`;
+          const matchBody = spTracks.map(t => ({ title: t.name, artist: t.artist }));
+          const matchRes = await fetch(`${API}/api/youtube/match`, {
+            method: 'POST',
+            headers: headers(),
+            body: JSON.stringify({ tracks: matchBody }),
+            signal,
+          });
+          if (matchRes.ok) {
+            const matchData = await matchRes.json();
+            ytTracks = (matchData.matches || [])
+              .filter(m => m.bestMatch)
+              .map(m => ({
+                id:      m.bestMatch.videoId,
+                name:    m.bestMatch.title,
+                artist:  m.bestMatch.channelTitle,
+                art:     m.bestMatch.thumbnail,
+                url:     m.bestMatch.url,
+                videoId: m.bestMatch.videoId,
+                _source: 'youtube',
+              }));
+          }
+        } catch (e) {
+          if (e.name === 'AbortError') throw e;
+          console.warn('[Generate] YouTube matching failed:', e.message);
+        }
+      }
+      generateYoutubeResults.value = ytTracks;
+
+      // Show whichever platform is currently selected
+      const activeResults = generateTarget.value === 'youtube' ? ytTracks : spTracks;
+      generatedTracks.value = activeResults.length ? activeResults : spTracks;
       generateResults.value = [...generatedTracks.value];
       resultTracks.value = [...generateResults.value];
-      if (!generatedTracks.value.length) {
+
+      if (!spTracks.length) {
         error.value = 'No tracks found — try different inputs for better results';
         bgStatus.value = 'No results';
         _stopProgress(generateProgress, false);
       } else {
-        bgStatus.value = `Done! ${generatedTracks.value.length} tracks`;
+        const ytNote = ytTracks.length ? ` (${ytTracks.length} YouTube)` : '';
+        bgStatus.value = `Done! ${spTracks.length} Spotify${ytNote}`;
         _stopProgress(generateProgress, true);
       }
       bgDone.value = true;
@@ -1021,7 +1050,11 @@ export function usePlaylistTools() {
     saving.value = true;
     saveResult.value = null;
     try {
-      const uris = resultTracks.value
+      // Use Spotify results directly (not resultTracks which may show YouTube view)
+      const spTracks = generateSpotifyResults.value.length
+        ? generateSpotifyResults.value
+        : resultTracks.value;
+      const uris = spTracks
         .map((t) => t.uri)
         .filter(Boolean);
       if (!uris.length) throw new Error('No Spotify tracks to save');
@@ -1086,11 +1119,15 @@ export function usePlaylistTools() {
     ytSaving.value = true;
     ytSaveResult.value = null;
     try {
-      const videoIds = resultTracks.value
+      // Use YouTube results directly (not resultTracks which may show Spotify view)
+      const ytTracks = generateYoutubeResults.value.length
+        ? generateYoutubeResults.value
+        : resultTracks.value;
+      const videoIds = ytTracks
         .map(t => (t.videoId || t.id || '').trim())
         .filter(v => v.length > 0);
       if (!videoIds.length) throw new Error('No YouTube videos to save');
-      console.log(`[YT Save] Sending ${videoIds.length} videoIds (from ${resultTracks.value.length} result tracks)`);
+      console.log(`[YT Save] Sending ${videoIds.length} videoIds (from ${ytTracks.length} result tracks)`);
 
       const ctrl = new AbortController();
       const tm = setTimeout(() => ctrl.abort(), 300000); // 5min for large playlists
@@ -1171,6 +1208,9 @@ export function usePlaylistTools() {
         trackLimit: trackLimit.value,
         generatedTracks: generatedTracks.value,
         generateResults: generateResults.value,
+        generateSpotifyResults: generateSpotifyResults.value,
+        generateYoutubeResults: generateYoutubeResults.value,
+        generateTarget: generateTarget.value,
         convertUrl: convertUrl.value,
         convertDirection: convertDirection.value,
         sourceTracks: sourceTracks.value,
@@ -1198,6 +1238,9 @@ export function usePlaylistTools() {
       trackLimit.value = state.trackLimit || 30;
       generatedTracks.value = state.generatedTracks || [];
       generateResults.value = state.generateResults || [];
+      generateSpotifyResults.value = state.generateSpotifyResults || [];
+      generateYoutubeResults.value = state.generateYoutubeResults || [];
+      generateTarget.value = state.generateTarget || 'spotify';
       convertUrl.value = state.convertUrl || '';
       convertDirection.value = state.convertDirection || null;
       sourceTracks.value = state.sourceTracks || [];
@@ -1216,6 +1259,7 @@ export function usePlaylistTools() {
     isOpen, activeTab, isMinimized, bgStatus, bgDone,
     seedTracks, seedPlaylistUrl, selectedGenres, trackLimit,
     generatedTracks, generateLoading, generateTarget, generateProgress,
+    generateSpotifyResults, generateYoutubeResults,
     convertUrl, convertDirection, sourceTracks, matchedTracks, convertLoading, convertProgress,
     resultTracks, saving, saveResult, error, scopeMissing,
     searchQuery, searchResults, searchLoading, searchError,
@@ -1226,7 +1270,7 @@ export function usePlaylistTools() {
     ytSaving, ytSaveResult, ytUserPlaylists, ytPlaylistsLoading, ytScopeMissing,
 
     // Methods
-    open, close, minimize, reset, setTab,
+    open, close, minimize, reset, setTab, setGenerateTarget,
     searchSeeds, addSeed, removeSeed, toggleGenre, addCustomGenre,
     generate, cancelGenerate, startConvert, cancelConvert,
     swapMatch, autofillUnmatched, removeResult,

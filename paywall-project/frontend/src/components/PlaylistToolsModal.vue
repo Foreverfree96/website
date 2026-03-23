@@ -155,21 +155,6 @@
                 <input type="range" min="10" max="100" step="5" v-model.number="pt.trackLimit.value" class="pt-range" />
               </div>
 
-              <!-- Generate target toggle -->
-              <div class="pt-section">
-                <label class="pt-label">Output Platform</label>
-                <div class="pt-target-toggle">
-                  <button
-                    :class="['pt-target-btn', { active: pt.generateTarget.value === 'spotify' }]"
-                    @click="pt.generateTarget.value = 'spotify'"
-                  >Spotify</button>
-                  <button
-                    :class="['pt-target-btn', { active: pt.generateTarget.value === 'youtube' }]"
-                    @click="pt.generateTarget.value = 'youtube'"
-                  >YouTube</button>
-                </div>
-              </div>
-
               <!-- Progress pill + Cancel button -->
               <div v-if="pt.generateLoading.value" class="pt-progress-wrap">
                 <div class="pt-progress-pill">
@@ -187,42 +172,60 @@
                 @click="pt.generate()"
                 :disabled="!pt.seedTracks.value.length && !pt.selectedGenres.value.length && !pt.seedPlaylistUrl.value.trim()"
               >
-                Generate {{ pt.generateTarget.value === 'youtube' ? 'YouTube' : 'Spotify' }} Playlist
+                Generate Playlist
               </button>
 
               <!-- Results -->
-              <div v-if="pt.generatedTracks.value.length" class="pt-results">
+              <div v-if="pt.generateSpotifyResults.value.length || pt.generateYoutubeResults.value.length" class="pt-results">
+                <!-- Platform toggle (post-generation) -->
                 <div class="pt-results-header">
-                  <span>{{ pt.resultTracks.value.length }} tracks</span>
+                  <div class="pt-target-toggle">
+                    <button
+                      :class="['pt-target-btn', { active: pt.generateTarget.value === 'spotify' }]"
+                      @click="pt.setGenerateTarget('spotify')"
+                    >Spotify ({{ pt.generateSpotifyResults.value.length }})</button>
+                    <button
+                      :class="['pt-target-btn', { active: pt.generateTarget.value === 'youtube' }]"
+                      @click="pt.setGenerateTarget('youtube')"
+                    >YouTube ({{ pt.generateYoutubeResults.value.length }})</button>
+                  </div>
                 </div>
-                <div class="pt-track-list">
-                  <div v-for="(t, i) in pt.resultTracks.value" :key="t.id || i" class="pt-track">
-                    <img v-if="t.art" :src="t.art" class="pt-track-art" alt="" />
+
+                <!-- YouTube quota message -->
+                <div v-if="pt.generateTarget.value === 'youtube' && !pt.generateYoutubeResults.value.length" class="pt-empty-msg">
+                  YouTube matching unavailable — API quota may be exhausted. Try again later.
+                </div>
+
+                <div v-else class="pt-track-list">
+                  <div v-for="(t, i) in pt.resultTracks.value" :key="t.id || t.videoId || i" class="pt-track">
+                    <img v-if="t.art || t.thumbnail" :src="t.art || t.thumbnail" class="pt-track-art" alt="" />
                     <div class="pt-track-info">
-                      <span class="pt-track-name">{{ t.name }}</span>
-                      <span class="pt-track-artist">{{ t.artist }}</span>
+                      <span class="pt-track-name">{{ t.name || t.title }}</span>
+                      <span class="pt-track-artist">{{ t.artist || t.channelTitle }}</span>
                     </div>
-                    <button v-if="t.id" class="pt-like-btn" :class="{ liked: pt.likedIds.value.has(t.id) }" @click="pt.likeTrack(t.id)" title="Save to Liked Songs">♥</button>
+                    <button v-if="t.id && pt.generateTarget.value === 'spotify'" class="pt-like-btn" :class="{ liked: pt.likedIds.value.has(t.id) }" @click="pt.likeTrack(t.id)" title="Save to Liked Songs">♥</button>
                     <button class="pt-track-remove" @click="pt.removeResult(i)" title="Remove">&times;</button>
                   </div>
                 </div>
-                <!-- Action bar -->
-                <div class="pt-actions" v-if="pt.generateTarget.value === 'spotify'">
-                  <button class="pt-btn pt-btn-play" @click="handlePlayNow" :disabled="!pt.resultTracks.value.length">
+
+                <!-- Unified action bar — all save/play options -->
+                <div class="pt-actions">
+                  <button v-if="pt.generateTarget.value === 'spotify'" class="pt-btn pt-btn-play" @click="handlePlayNow" :disabled="!pt.generateSpotifyResults.value.length">
                     Play Now
                   </button>
-                  <button class="pt-btn pt-btn-save" @click="showSaveDialog = true" :disabled="!pt.resultTracks.value.length">
+                  <button v-if="pt.generateTarget.value === 'youtube'" class="pt-btn pt-btn-play" @click="handlePlayNowYoutube" :disabled="!pt.generateYoutubeResults.value.length">
+                    Play Now
+                  </button>
+                  <button class="pt-btn pt-btn-save" @click="showSaveDialog = true" :disabled="!pt.generateSpotifyResults.value.length">
                     Save to Spotify
                   </button>
-                </div>
-                <div class="pt-actions" v-else>
-                  <button class="pt-btn pt-btn-yt-save" @click="openYtSaveDialog" :disabled="!pt.resultTracks.value.length">
+                  <button class="pt-btn pt-btn-yt-save" @click="openYtSaveDialog" :disabled="!pt.generateYoutubeResults.value.length">
                     Save to YouTube
                   </button>
-                  <button class="pt-btn pt-btn-primary" @click="copyYoutubeLinks" :disabled="!pt.resultTracks.value.length">
+                  <button class="pt-btn pt-btn-primary" @click="copyYoutubeLinks" :disabled="!pt.generateYoutubeResults.value.length">
                     {{ ytCopied ? 'Copied!' : 'Copy All Links' }}
                   </button>
-                  <button class="pt-btn" @click="openYoutubePlaylist" :disabled="!pt.resultTracks.value.length">
+                  <button class="pt-btn" @click="openYoutubePlaylist" :disabled="!pt.generateYoutubeResults.value.length">
                     Open Playlist
                   </button>
                 </div>
@@ -309,23 +312,27 @@
                   </div>
                 </div>
 
-                <!-- Actions (only for yt-to-spotify direction since we can play/save Spotify tracks) -->
-                <div class="pt-actions" v-if="pt.convertDirection.value === 'yt-to-spotify'">
-                  <button class="pt-btn pt-btn-play" @click="handlePlayNow" :disabled="!pt.resultTracks.value.length">
+                <!-- Actions — all save/play options for both directions -->
+                <div class="pt-actions" v-if="pt.convertDirection.value">
+                  <button v-if="pt.convertDirection.value === 'yt-to-spotify'" class="pt-btn pt-btn-play" @click="handlePlayNow" :disabled="!pt.resultTracks.value.length">
                     Play Now
                   </button>
-                  <button class="pt-btn pt-btn-save" @click="showSaveDialog = true" :disabled="!pt.resultTracks.value.length">
+                  <button v-if="pt.convertDirection.value === 'spotify-to-yt'" class="pt-btn pt-btn-play" @click="handlePlayNowYoutube" :disabled="!pt.resultTracks.value.length">
+                    Play Now
+                  </button>
+                  <button v-if="pt.convertDirection.value === 'yt-to-spotify'" class="pt-btn pt-btn-save" @click="showSaveDialog = true" :disabled="!pt.resultTracks.value.length">
                     Save to Spotify
                   </button>
-                </div>
-                <div class="pt-actions" v-else-if="pt.convertDirection.value === 'spotify-to-yt'">
-                  <button class="pt-btn pt-btn-yt-save" @click="openYtSaveDialog" :disabled="!pt.resultTracks.value.length">
+                  <button class="pt-btn pt-btn-yt-save" @click="openYtSaveDialog" :disabled="!pt.resultTracks.value.filter(t => t.videoId).length">
                     Save to YouTube
                   </button>
-                  <button class="pt-btn pt-btn-primary" @click="copyYoutubeLinks" :disabled="!pt.resultTracks.value.length">
+                  <button v-if="pt.convertDirection.value === 'spotify-to-yt'" class="pt-btn pt-btn-save" @click="showSaveDialog = true" :disabled="!pt.resultTracks.value.filter(t => t.uri).length">
+                    Save to Spotify
+                  </button>
+                  <button class="pt-btn pt-btn-primary" @click="copyYoutubeLinks" :disabled="!pt.resultTracks.value.filter(t => t.videoId || t.url).length">
                     {{ ytCopied ? 'Copied!' : 'Copy All Links' }}
                   </button>
-                  <button class="pt-btn" @click="openYoutubePlaylist" :disabled="!pt.resultTracks.value.length">
+                  <button class="pt-btn" @click="openYoutubePlaylist" :disabled="!pt.resultTracks.value.filter(t => t.videoId).length">
                     Open Playlist
                   </button>
                 </div>
@@ -691,13 +698,15 @@ const debounceSwapSearch = () => {
 };
 
 const handlePlayNow = () => {
-  const tracks = pt.resultTracks.value.filter((t) => t.uri);
+  // Always play Spotify results regardless of which view is active
+  const tracks = pt.generateSpotifyResults.value.length
+    ? pt.generateSpotifyResults.value.filter((t) => t.uri)
+    : pt.resultTracks.value.filter((t) => t.uri);
   if (!tracks.length) return;
   sdk.playUris(
     tracks.map((t) => t.uri),
     tracks,
   );
-  // Open the mini player so the user has playback controls
   popOutMini({
     url: tracks[0]?.uri || `custom:playlist:${Date.now()}`,
     type: 'spotify',
@@ -707,7 +716,27 @@ const handlePlayNow = () => {
     resumeOnLoad: true,
     trackUri: tracks[0]?.uri || '',
   });
-  // Minimize instead of closing — user can reopen from pill
+  pt.minimize();
+};
+
+const handlePlayNowYoutube = () => {
+  const ytTracks = pt.generateYoutubeResults.value.length
+    ? pt.generateYoutubeResults.value.filter(t => t.videoId)
+    : pt.resultTracks.value.filter(t => t.videoId);
+  if (!ytTracks.length) return;
+  const ids = ytTracks.map(t => t.videoId);
+  // Build URL: first video + remaining as playlist parameter for full queue
+  const url = `https://www.youtube.com/watch?v=${ids[0]}${ids.length > 1 ? '&list=' + ids.join(',') : ''}`;
+  popOutMini({
+    url,
+    type: 'youtube',
+    isPlaylist: ids.length > 1,
+    position: 0,
+    playlistIndex: 0,
+    resumeOnLoad: true,
+    // Store video IDs so MiniPlayer can build the embed with full queue
+    videoIds: ids,
+  });
   pt.minimize();
 };
 
@@ -725,7 +754,11 @@ const loadPlaylists = () => {
 const ytCopied = ref(false);
 
 const copyYoutubeLinks = async () => {
-  const urls = pt.resultTracks.value
+  // Use YouTube results directly (not resultTracks which may show Spotify view)
+  const ytTracks = pt.generateYoutubeResults.value.length
+    ? pt.generateYoutubeResults.value
+    : pt.resultTracks.value;
+  const urls = ytTracks
     .filter(t => t.videoId || t.url)
     .map(t => t.url || `https://www.youtube.com/watch?v=${t.videoId}`);
   if (!urls.length) {
@@ -753,7 +786,10 @@ const copyYoutubeLinks = async () => {
 };
 
 const openYoutubePlaylist = () => {
-  const ids = pt.resultTracks.value
+  const ytTracks = pt.generateYoutubeResults.value.length
+    ? pt.generateYoutubeResults.value
+    : pt.resultTracks.value;
+  const ids = ytTracks
     .map(t => t.videoId)
     .filter(Boolean);
   if (!ids.length) return;
@@ -1260,6 +1296,12 @@ const handleAddToExistingYt = (playlistId) => {
 }
 
 /* ─── Error / Success banners ─────────────────────────────────────────────── */
+.pt-empty-msg {
+  padding: 20px 16px;
+  text-align: center;
+  color: #9ca3af;
+  font-size: 13px;
+}
 .pt-error {
   background: #3b1111;
   border: 1px solid #7f1d1d;

@@ -148,6 +148,15 @@ const buildEmbedUrl = (np) => {
   const startSecs = Math.floor(position / 1000);
 
   if (type === 'youtube') {
+    // Ad-hoc video queue (from generated playlist Play Now)
+    if (np.videoIds?.length > 1) {
+      const ids = np.videoIds;
+      const idx = playlistIndex || 0;
+      const currentId = ids[idx] || ids[0];
+      const rest = ids.filter((_, i) => i !== idx).join(',');
+      const start = startSecs > 0 ? `&start=${startSecs}` : '';
+      return `https://www.youtube.com/embed/${currentId}?playlist=${rest}&autoplay=1&enablejsapi=1${start}`;
+    }
     const listMatch    = url.match(/[?&]list=([^&]+)/);
     const videoIdMatch = url.match(/youtu\.be\/([^?&/]+)|[?&]v=([^&]+)/);
     const videoId      = videoIdMatch?.[1] || videoIdMatch?.[2] || null;
