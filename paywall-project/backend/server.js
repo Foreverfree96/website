@@ -406,6 +406,21 @@ app.use((err, req, res, next) => {
 
 // ─── START SERVER ─────────────────────────────────────────────────────────────
 
+// ─── CRASH PROTECTION ─────────────────────────────────────────────────────────
+// Prevent the entire Node process from dying on unhandled errors.
+// Without these, a single unhandled promise rejection kills the server,
+// Render returns 502 with no CORS headers, and every request fails.
+
+process.on("unhandledRejection", (reason) => {
+  console.error("⚠️ Unhandled Rejection:", reason);
+});
+
+process.on("uncaughtException", (err) => {
+  console.error("⚠️ Uncaught Exception:", err);
+});
+
+// ─── START SERVER ─────────────────────────────────────────────────────────────
+
 const PORT = process.env.PORT || 5000;
 httpServer.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 

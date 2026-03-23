@@ -328,7 +328,7 @@ const ytThumb = computed(() => {
   const id = m?.[1] || m?.[2];
   if (id) return `https://img.youtube.com/vi/${id}/hqdefault.jpg`;
   // Playlist-only URL — use a generic YouTube playlist icon
-  if (/[?&]list=/.test(props.mediaUrl)) return 'https://img.youtube.com/vi/default/hqdefault.jpg';
+  if (/[?&]list=/.test(props.mediaUrl)) return null;
   return null;
 });
 
