@@ -778,7 +778,9 @@ export function usePlaylistTools() {
     let filled = 0;
 
     // Process one at a time with proper rate limit handling
-    let delay = 1200; // gap between requests
+    // YouTube search = 100 quota units each, so space them out more
+    let delay = isYt ? 2500 : 1200;
+    let consecutive429s = 0;
     for (let b = 0; b < noneIndices.length; b++) {
       const idx = noneIndices[b];
       const m = matchedTracks.value[idx];
@@ -801,20 +803,43 @@ export function usePlaylistTools() {
           const res = await fetch(endpoint, { headers: headers() });
           if (res.ok) {
             data = await res.json();
-            delay = 1200; // reset on success
+            consecutive429s = 0;
+            // Gradually ease delay back down after sustained success, not instant reset
+            if (delay > (isYt ? 2500 : 1200)) delay = Math.max(isYt ? 2500 : 1200, Math.floor(delay * 0.75));
             break;
           }
           if (res.status === 429) {
+            consecutive429s++;
             // Parse retry-after: prefer header, then JSON body
             let retryAfter = parseInt(res.headers.get('retry-after') || '0', 10);
             if (!retryAfter) {
               try { const j = await res.json(); retryAfter = j.retryAfter || 0; } catch {}
             }
-            // Wait the FULL retry-after period (minimum 3s)
-            const waitSecs = Math.max(retryAfter || 5, 3);
+            // If quota exhausted (retryAfter > 300s), stop autofill entirely
+            if (retryAfter > 300) {
+              autofillProgress.value = `Stopped — API quota exhausted`;
+              matchedTracks.value = [...matchedTracks.value];
+              convertResults.value = matchedTracks.value.filter(m => m.bestMatch).map(m => m.bestMatch);
+              resultTracks.value = [...convertResults.value];
+              autofillLoading.value = false;
+              _persistResults();
+              return;
+            }
+            // Wait the FULL retry-after period (minimum 5s)
+            const waitSecs = Math.max(retryAfter || 5, 5);
             autofillProgress.value = `${b + 1}/${noneIndices.length} (rate limited, waiting ${waitSecs}s)`;
             await new Promise(r => setTimeout(r, waitSecs * 1000));
-            delay = Math.min(delay * 2, 8000); // back off future requests
+            delay = Math.min(delay * 2, 15000); // back off future requests
+            // After 5 consecutive 429s, give up — quota is likely gone
+            if (consecutive429s >= 5) {
+              autofillProgress.value = `Stopped — too many rate limits`;
+              matchedTracks.value = [...matchedTracks.value];
+              convertResults.value = matchedTracks.value.filter(m => m.bestMatch).map(m => m.bestMatch);
+              resultTracks.value = [...convertResults.value];
+              autofillLoading.value = false;
+              _persistResults();
+              return;
+            }
             continue;
           }
           // Server error (500 = quota exhausted, etc) — retry once after delay
