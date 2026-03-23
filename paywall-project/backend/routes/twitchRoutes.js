@@ -4,6 +4,6 @@ import { protect } from "../middleware/auth.js";
 
 const router = express.Router();
 
-router.get("/channel/:username", protect, getChannelInfo);
+router.get("/channel/:username", getChannelInfo);
 
 export default router;

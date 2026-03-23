@@ -326,7 +326,10 @@ const ytThumb = computed(() => {
   if (props.embedType !== 'youtube') return null;
   const m = props.mediaUrl.match(/youtu\.be\/([^?&/]+)|[?&]v=([^&]+)/);
   const id = m?.[1] || m?.[2];
-  return id ? `https://img.youtube.com/vi/${id}/hqdefault.jpg` : null;
+  if (id) return `https://img.youtube.com/vi/${id}/hqdefault.jpg`;
+  // Playlist-only URL — use a generic YouTube playlist icon
+  if (/[?&]list=/.test(props.mediaUrl)) return 'https://img.youtube.com/vi/default/hqdefault.jpg';
+  return null;
 });
 
 // ── Twitch thumbnail + channel info (for stream/clip embeds) ─────────────────
@@ -339,9 +342,8 @@ const fetchTwitchThumb = async () => {
   if (!m) return;
   try {
     const token = localStorage.getItem('jwtToken');
-    const res = await fetch(`${API}/api/twitch/channel/${encodeURIComponent(m[1])}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+    const res = await fetch(`${API}/api/twitch/channel/${encodeURIComponent(m[1])}`, { headers });
     if (res.ok) {
       const data = await res.json();
       twitchThumb.value = data.avatar || null;
@@ -431,6 +433,7 @@ const openChannel = () => { window.open(props.mediaUrl, '_blank'); };
 
 const fetchChannelData = async (retries = 2) => {
   const token = localStorage.getItem('jwtToken');
+  const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
   if (props.embedType === 'yt-channel' || isYtChannelUrl.value) {
     const url = props.mediaUrl;
     const handle = url.match(/youtube\.com\/@([^/?]+)/);
@@ -441,7 +444,7 @@ const fetchChannelData = async (retries = 2) => {
       try {
         if (attempt > 0) await new Promise(r => setTimeout(r, 1500 * attempt));
         const res = await fetch(`${API}/api/youtube/channel/${encodeURIComponent(identifier)}`, {
-          headers: { Authorization: `Bearer ${token}` },
+          headers: authHeaders,
         });
         if (res.ok) { channelData.value = await res.json(); return; }
         if (res.status < 500) return; // 4xx — don't retry
@@ -454,7 +457,7 @@ const fetchChannelData = async (retries = 2) => {
     if (!username) return;
     try {
       const res = await fetch(`${API}/api/twitch/channel/${encodeURIComponent(username)}`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: authHeaders,
       });
       if (res.ok) channelData.value = await res.json();
     } catch { /* silent */ }

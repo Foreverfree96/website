@@ -33,6 +33,6 @@ router.post("/playlist/:id/add",  protect, addToYouTubePlaylist);
 router.get("/playlist/:id/tracks", protect, getPlaylistTracks);
 router.get("/search",              protect, searchYoutubeTracks);
 router.post("/match",              protect, matchYoutubeTracks);
-router.get("/channel/:identifier", protect, getChannelInfo);
+router.get("/channel/:identifier", getChannelInfo);
 
 export default router;
