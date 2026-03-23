@@ -1,5 +1,6 @@
 import fetch from "node-fetch";
-import { PageView, LocationStat, SiteStat } from "../models/analyticsModel.js";
+import { PageView, LocationStat, SiteStat, DownloadLog } from "../models/analyticsModel.js";
+import jwt from "jsonwebtoken";
 import { getIo } from "../utils/socketEmitter.js";
 
 // Paths that should never be counted (health checks, API calls, etc.)
@@ -66,12 +67,42 @@ export const trackPageView = async (req, res) => {
 export const trackDownload = async (req, res) => {
   res.sendStatus(204);
   try {
+    // Increment global counter
     await SiteStat.findOneAndUpdate(
       { key: "downloads" },
       { $inc: { count: 1 } },
       { upsert: true }
     );
+
+    // Extract visitor info
+    const ip = (req.headers["x-forwarded-for"] || req.ip || "")
+      .split(",")[0]
+      .trim();
+    const userAgent = req.headers["user-agent"] || "";
+
+    // Try to identify logged-in user
+    let userId = null;
+    const auth = req.headers.authorization;
+    if (auth?.startsWith("Bearer ")) {
+      try {
+        const decoded = jwt.verify(auth.split(" ")[1], process.env.JWT_SECRET);
+        userId = decoded.id;
+      } catch { /* anonymous visitor */ }
+    }
+
+    // Geo lookup
+    let country = "";
+    const isLocal = !ip || ip === "::1" || ip.startsWith("127.") || ip.startsWith("192.168.");
+    if (!isLocal) {
+      const geo = await fetch(`http://ip-api.com/json/${ip}?fields=country,status`, {
+        signal: AbortSignal.timeout(3000),
+      }).then(r => r.json()).catch(() => null);
+      if (geo?.status === "success" && geo.country) country = geo.country;
+    }
+
+    // Save individual download log
+    await DownloadLog.create({ ip, userAgent, country, userId });
   } catch {
-    // ignore
+    // fire-and-forget
   }
 };

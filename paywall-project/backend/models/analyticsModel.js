@@ -18,6 +18,16 @@ const siteStatSchema = new mongoose.Schema({
   count: { type: Number, default: 0 },
 });
 
+// Individual download log — one document per resume download
+const downloadLogSchema = new mongoose.Schema({
+  ip:        { type: String, default: "" },
+  userAgent: { type: String, default: "" },
+  country:   { type: String, default: "" },
+  userId:    { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+  createdAt: { type: Date, default: Date.now },
+});
+
 export const PageView     = mongoose.model("PageView",     pageViewSchema);
 export const LocationStat = mongoose.model("LocationStat", locationStatSchema);
 export const SiteStat     = mongoose.model("SiteStat",     siteStatSchema);
+export const DownloadLog  = mongoose.model("DownloadLog",  downloadLogSchema);
