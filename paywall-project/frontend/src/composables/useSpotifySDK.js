@@ -428,9 +428,9 @@ const startPlayback = async (mediaUrl, opts = {}) => {
     }
   }
 
-  // Turn shuffle off on initial play
-  shuffleOn.value = false;
-  await spotifyFetch('PUT', `/me/player/shuffle?state=false&device_id=${deviceId}`).catch(() => {});
+  // Restore saved shuffle preference (defaults to off for first-time users)
+  await spotifyFetch('PUT', `/me/player/shuffle?state=${_savedShuffle}&device_id=${deviceId}`).catch(() => {});
+  shuffleOn.value = _savedShuffle;
 };
 
 // ── SDK event handlers (attached ONCE, never re-attached) ────────────────────
