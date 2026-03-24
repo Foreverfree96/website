@@ -398,8 +398,19 @@ export const getPlaylistTracks = async (req, res) => {
   // Wrap the actual fetch in a promise stored in _inflight so concurrent
   // requests can await the same work instead of each calling Spotify.
   const fetchPromise = (async () => {
-    const result = req.user?.id
-      ? await getValidToken(req.user.id, false)
+    // Optional auth — route has no protect middleware, so parse JWT manually if present
+    let userId = req.user?.id;
+    if (!userId) {
+      const auth = req.headers.authorization;
+      if (auth?.startsWith('Bearer ')) {
+        try {
+          const decoded = jwt.verify(auth.split(' ')[1], process.env.JWT_SECRET);
+          userId = decoded.id;
+        } catch { /* invalid token — continue without user */ }
+      }
+    }
+    const result = userId
+      ? await getValidToken(userId, false)
       : { error: true, message: 'No authenticated user' };
     console.log(`   Token status: ${result.error ? 'FAILED (' + result.message + ')' : 'valid'}`);
 

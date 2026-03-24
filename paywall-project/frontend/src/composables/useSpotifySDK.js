@@ -712,8 +712,13 @@ const play = async (mediaUrl, opts = {}) => {
   fullTracksFetched = false;
   playlistTracks.value = [];
   position.value = startPosition;
+  _isPlaylist = isPlaylist;
 
   if (isPlaylist) {
+    // Clear forbidden cache for this playlist so a fresh attempt is made
+    const plMatch = mediaUrl.match(/open\.spotify\.com\/(playlist|album)\/([a-zA-Z0-9]+)/);
+    if (plMatch && _w._forbidden) _w._forbidden.delete(`${plMatch[1]}:${plMatch[2]}`);
+
     const cached = loadCachedTracks(mediaUrl);
     if (cached?.tracks?.length) {
       playlistTracks.value = cached.tracks;
