@@ -4,19 +4,38 @@ import User from "../models/userModel.js";
 
 // YouTube API key rotation — each key has its own 10k units/day quota.
 // When one key is exhausted, we rotate to the next.
+//
+// Two pools:
+//   _ytKeys        — general pool (search, match, etc.) — all keys EXCEPT content-only
+//   _ytContentKeys — content-only pool (playlist tracks, channel info, video lookups)
+//                    Uses YOUTUBE_API_KEY_CONTENT, YOUTUBE_API_KEY_CONTENT_2, etc.
+//                    Falls back to general pool if content keys are all exhausted.
 const _ytKeys = [];
+const _ytContentKeys = [];
 let _ytKeyIndex = 0;
+let _ytContentKeyIndex = 0;
 const _exhaustedUntil = new Map(); // key → timestamp when quota resets
 
 const _loadKeys = () => {
-  if (_ytKeys.length) return;
+  if (_ytKeys.length || _ytContentKeys.length) return;
+
+  // Content-only keys (dedicated for loading posts/embeds)
+  const contentPrimary = process.env.YOUTUBE_API_KEY_CONTENT;
+  if (contentPrimary) _ytContentKeys.push(contentPrimary);
+  for (let i = 2; i <= 10; i++) {
+    const k = process.env[`YOUTUBE_API_KEY_CONTENT_${i}`];
+    if (k) _ytContentKeys.push(k);
+  }
+
+  // General keys (search, match, everything else)
   const primary = process.env.YOUTUBE_API_KEY;
   if (primary) _ytKeys.push(primary);
   for (let i = 2; i <= 10; i++) {
     const k = process.env[`YOUTUBE_API_KEY_${i}`];
     if (k) _ytKeys.push(k);
   }
-  console.log(`🔑 YouTube: ${_ytKeys.length} API key(s) loaded${_ytKeys.map((k,i) => ` [${i+1}:${k.slice(-6)}]`).join('')}`);
+
+  console.log(`🔑 YouTube: ${_ytKeys.length} general key(s), ${_ytContentKeys.length} content-only key(s)`);
 };
 
 const _isExhausted = (key) => {
@@ -26,13 +45,26 @@ const _isExhausted = (key) => {
   return true;
 };
 
+// Pick a key from the general pool (for search/match)
 const API_KEY = () => {
   _loadKeys();
   for (let i = 0; i < _ytKeys.length; i++) {
     const idx = (_ytKeyIndex + i) % _ytKeys.length;
     if (!_isExhausted(_ytKeys[idx])) return _ytKeys[idx];
   }
-  return null; // all keys exhausted — don't return an exhausted key
+  return null;
+};
+
+// Pick a key from the content-only pool (for loading posts, playlists, channels)
+// Falls back to general pool if content keys are all exhausted
+const CONTENT_API_KEY = () => {
+  _loadKeys();
+  for (let i = 0; i < _ytContentKeys.length; i++) {
+    const idx = (_ytContentKeyIndex + i) % _ytContentKeys.length;
+    if (!_isExhausted(_ytContentKeys[idx])) return _ytContentKeys[idx];
+  }
+  // Fallback to general pool
+  return API_KEY();
 };
 
 const _isQuotaError = (err) => {
@@ -47,19 +79,24 @@ const _isRateLimitError = (err) => {
 
 const _rotateKey = (failedKey) => {
   _loadKeys();
-  // Mark the specific key that failed, not whatever _ytKeyIndex points to
   const keyToMark = failedKey || _ytKeys[_ytKeyIndex];
   if (keyToMark) {
     _exhaustedUntil.set(keyToMark, Date.now() + 60 * 60 * 1000);
-    const keyNum = _ytKeys.indexOf(keyToMark) + 1;
-    console.log(`   Key #${keyNum} [${keyToMark.slice(-6)}] quota exhausted, blocked for 1h`);
+    // Identify which pool the key belongs to
+    const genIdx = _ytKeys.indexOf(keyToMark);
+    const conIdx = _ytContentKeys.indexOf(keyToMark);
+    const label = conIdx >= 0 ? `Content#${conIdx + 1}` : `General#${genIdx + 1}`;
+    console.log(`   ${label} [${keyToMark.slice(-6)}] quota exhausted, blocked for 1h`);
   }
-  // Find next available key
-  for (let i = 0; i < _ytKeys.length; i++) {
-    const idx = (_ytKeyIndex + i) % _ytKeys.length;
-    if (!_isExhausted(_ytKeys[idx])) {
-      _ytKeyIndex = idx;
-      console.log(`🔄 YouTube API key rotated to key #${idx + 1} (${_ytKeys.length - _exhaustedUntil.size} available)`);
+  // Advance the appropriate pool index
+  const isContent = _ytContentKeys.includes(keyToMark);
+  const pool = isContent ? _ytContentKeys : _ytKeys;
+  const startIdx = isContent ? _ytContentKeyIndex : _ytKeyIndex;
+  for (let i = 0; i < pool.length; i++) {
+    const idx = (startIdx + i) % pool.length;
+    if (!_isExhausted(pool[idx])) {
+      if (isContent) _ytContentKeyIndex = idx; else _ytKeyIndex = idx;
+      console.log(`🔄 YouTube ${isContent ? 'content' : 'general'} key rotated to #${idx + 1}`);
       return true;
     }
   }
@@ -83,7 +120,7 @@ const CHANNEL_CACHE_TTL = 2 * 60 * 60 * 1000; // 2 hours
 export const getPlaylistTracks = async (req, res) => {
   const playlistId = req.params.id;
   _loadKeys();
-  if (!_ytKeys.length) return res.status(500).json({ message: "YouTube API key not configured" });
+  if (!_ytKeys.length && !_ytContentKeys.length) return res.status(500).json({ message: "YouTube API key not configured" });
   // Clear stale exhausted keys
   for (const [key, until] of _exhaustedUntil) {
     if (Date.now() > until) _exhaustedUntil.delete(key);
@@ -93,8 +130,8 @@ export const getPlaylistTracks = async (req, res) => {
   const cached = _cache.get(playlistId);
   if (cached && Date.now() - cached.cachedAt < CACHE_TTL) return res.json(cached.data);
 
-  // Bail early if all keys are exhausted
-  if (!API_KEY()) {
+  // Bail early if all keys are exhausted (content pool + general fallback)
+  if (!CONTENT_API_KEY()) {
     let soonest = Infinity;
     for (const until of _exhaustedUntil.values()) soonest = Math.min(soonest, until);
     const retryAfter = Math.max(1, Math.ceil((soonest - Date.now()) / 1000));
@@ -109,14 +146,15 @@ export const getPlaylistTracks = async (req, res) => {
     catch { return res.status(500).json({ message: "Failed to fetch playlist" }); }
   }
 
+  const maxAttempts = _ytContentKeys.length + _ytKeys.length + 2;
   const fetchPromise = (async () => {
     let allItems = [];
     let nextPageToken = "";
 
     do {
       let r;
-      for (let keyAttempt = 0; keyAttempt < _ytKeys.length + 2; keyAttempt++) {
-        const usedKey = API_KEY();
+      for (let keyAttempt = 0; keyAttempt < maxAttempts; keyAttempt++) {
+        const usedKey = CONTENT_API_KEY();
         if (!usedKey) break;
         try {
           r = await axios.get(`${BASE}/playlistItems`, {
@@ -280,14 +318,15 @@ export const searchYoutubeTracks = async (req, res) => {
 // multiple posts with the same channel load simultaneously on the feed.
 const _fetchChannelFromYT = async (id) => {
   _loadKeys();
-  if (!_ytKeys.length) throw Object.assign(new Error("YouTube API key not configured"), { status: 500 });
+  if (!_ytKeys.length && !_ytContentKeys.length) throw Object.assign(new Error("YouTube API key not configured"), { status: 500 });
   for (const [key, until] of _exhaustedUntil) {
     if (Date.now() > until) _exhaustedUntil.delete(key);
   }
   const isHandle = id.startsWith('@');
   let r;
-  for (let keyAttempt = 0; keyAttempt < _ytKeys.length + 2; keyAttempt++) {
-    const usedKey = API_KEY();
+  const maxAttempts = _ytContentKeys.length + _ytKeys.length + 2;
+  for (let keyAttempt = 0; keyAttempt < maxAttempts; keyAttempt++) {
+    const usedKey = CONTENT_API_KEY();
     if (!usedKey) break;
     try {
       const params = { part: "snippet,statistics", key: usedKey };
@@ -920,50 +959,41 @@ export const youtubeKeyHealth = async (req, res) => {
     if (Date.now() > until) _exhaustedUntil.delete(key);
   }
 
-  const results = [];
-  for (let i = 0; i < _ytKeys.length; i++) {
-    const key = _ytKeys[i];
-    const entry = { key: i + 1, suffix: key.slice(-6), status: 'unknown' };
-
-    // Check in-memory exhaustion
+  const testKey = async (key, label) => {
+    const entry = { label, suffix: key.slice(-6), status: 'unknown' };
     const until = _exhaustedUntil.get(key);
-    if (until) {
-      entry.exhaustedFor = `${Math.ceil((until - Date.now()) / 60000)}m remaining`;
-    }
-
-    // Test with a cheap API call (videos.list with part=id costs 1 unit)
+    if (until) entry.exhaustedFor = `${Math.ceil((until - Date.now()) / 60000)}m remaining`;
     try {
-      await axios.get(`${BASE}/videos`, {
-        params: { part: "id", id: "dQw4w9WgXcQ", key },
-      });
+      await axios.get(`${BASE}/videos`, { params: { part: "id", id: "dQw4w9WgXcQ", key } });
       entry.status = 'active';
-      // If it was marked exhausted but actually works, clear it
-      if (until) {
-        _exhaustedUntil.delete(key);
-        entry.exhaustedFor = 'cleared (key is alive)';
-      }
+      if (until) { _exhaustedUntil.delete(key); entry.exhaustedFor = 'cleared (key is alive)'; }
     } catch (e) {
       const reason = e.response?.data?.error?.errors?.[0]?.reason || '';
-      if (_isQuotaError(e)) {
-        entry.status = 'quota_exhausted';
-        entry.reason = reason;
-      } else if (_isRateLimitError(e)) {
-        entry.status = 'rate_limited';
-        entry.reason = reason;
-      } else {
-        entry.status = 'error';
-        entry.reason = reason || `${e.response?.status || e.message}`;
-      }
+      if (_isQuotaError(e)) { entry.status = 'quota_exhausted'; entry.reason = reason; }
+      else if (_isRateLimitError(e)) { entry.status = 'rate_limited'; entry.reason = reason; }
+      else { entry.status = 'error'; entry.reason = reason || `${e.response?.status || e.message}`; }
     }
-    results.push(entry);
+    return entry;
+  };
+
+  const results = [];
+  for (let i = 0; i < _ytContentKeys.length; i++) {
+    results.push(await testKey(_ytContentKeys[i], `Content#${i + 1}`));
+  }
+  for (let i = 0; i < _ytKeys.length; i++) {
+    results.push(await testKey(_ytKeys[i], `General#${i + 1}`));
   }
 
   const active = results.filter(r => r.status === 'active').length;
-  console.log(`🔑 Key health check: ${active}/${_ytKeys.length} active`);
+  const total = _ytKeys.length + _ytContentKeys.length;
+  console.log(`🔑 Key health check: ${active}/${total} active`);
   res.json({
-    totalKeys: _ytKeys.length,
+    totalKeys: total,
+    contentKeys: _ytContentKeys.length,
+    generalKeys: _ytKeys.length,
     activeKeys: active,
-    currentKeyIndex: _ytKeyIndex + 1,
+    currentContentKeyIndex: _ytContentKeyIndex + 1,
+    currentGeneralKeyIndex: _ytKeyIndex + 1,
     keys: results,
   });
 };
