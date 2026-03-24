@@ -2,6 +2,22 @@ import axios from "axios";
 import jwt from "jsonwebtoken";
 import User from "../models/userModel.js";
 
+// ── Retry wrapper for Spotify 429 ────────────────────────────────────────────
+const spotifyRetry = async (fn, maxRetries = 2) => {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (err.response?.status === 429 && attempt < maxRetries) {
+        const secs = Math.min(parseInt(err.response.headers?.['retry-after'] || '3', 10), 10);
+        await new Promise(r => setTimeout(r, secs * 1000 + 200));
+        continue;
+      }
+      throw err;
+    }
+  }
+};
+
 const SCOPES = [
   "user-read-private",
   "user-read-email",
@@ -1194,10 +1210,9 @@ export const createPlaylist = async (req, res) => {
 
     // Verify the token actually belongs to this Spotify user
     try {
-      const me = await axios.get("https://api.spotify.com/v1/me", { headers: auth });
+      const me = await spotifyRetry(() => axios.get("https://api.spotify.com/v1/me", { headers: auth }));
       console.log(`🔑 Create playlist: token user=${me.data.id}, stored spotifyId=${user.spotifyId}`);
       if (me.data.id !== user.spotifyId) {
-        // Fix the mismatch — update stored ID to match the token
         console.log(`⚠️ Fixing spotifyId mismatch: ${user.spotifyId} → ${me.data.id}`);
         await User.findByIdAndUpdate(req.user.id, { spotifyId: me.data.id });
         user.spotifyId = me.data.id;
@@ -1209,24 +1224,24 @@ export const createPlaylist = async (req, res) => {
     // Create the playlist — Dev Mode (Feb 2026) uses /me/playlists instead of /users/{id}/playlists
     let playlistId;
     try {
-      let r;
-      try {
-        // Try Dev Mode endpoint first
-        r = await axios.post(
-          `https://api.spotify.com/v1/me/playlists`,
-          { name, description, public: false },
-          { headers: { ...auth, "Content-Type": "application/json" } }
-        );
-      } catch (e) {
-        if (e.response?.status === 403 || e.response?.status === 404) {
-          // Fallback to legacy endpoint (Extended Quota Mode)
-          r = await axios.post(
-            `https://api.spotify.com/v1/users/${user.spotifyId}/playlists`,
+      const r = await spotifyRetry(async () => {
+        try {
+          return await axios.post(
+            `https://api.spotify.com/v1/me/playlists`,
             { name, description, public: false },
             { headers: { ...auth, "Content-Type": "application/json" } }
           );
-        } else throw e;
-      }
+        } catch (e) {
+          if (e.response?.status === 403 || e.response?.status === 404) {
+            return await axios.post(
+              `https://api.spotify.com/v1/users/${user.spotifyId}/playlists`,
+              { name, description, public: false },
+              { headers: { ...auth, "Content-Type": "application/json" } }
+            );
+          }
+          throw e;
+        }
+      });
       playlistId = r.data.id;
       console.log(`✅ Playlist created: ${playlistId} (${name})`);
     } catch (err) {
@@ -1236,6 +1251,9 @@ export const createPlaylist = async (req, res) => {
           error: "scope_missing",
           message: "Reconnect Spotify to enable playlist creation",
         });
+      }
+      if (err.response?.status === 429) {
+        return res.status(429).json({ message: "Spotify rate limited — try again in a few seconds" });
       }
       throw err;
     }
@@ -1720,10 +1738,10 @@ export const getUserPlaylists = async (req, res) => {
       });
     }
 
-    const r = await axios.get("https://api.spotify.com/v1/me/playlists", {
+    const r = await spotifyRetry(() => axios.get("https://api.spotify.com/v1/me/playlists", {
       params: { limit: 50 },
       headers: { Authorization: `Bearer ${result.accessToken}` },
-    });
+    }));
 
     const playlists = (r.data.items || []).map((p) => ({
       id:    p.id,
@@ -1735,6 +1753,9 @@ export const getUserPlaylists = async (req, res) => {
     res.json({ playlists });
   } catch (err) {
     console.error("❌ Spotify get playlists error:", err.response?.data || err.message);
+    if (err.response?.status === 429) {
+      return res.status(429).json({ message: "Rate limited — try again in a few seconds" });
+    }
     if (err.response?.status === 403) {
       return res.status(403).json({ error: "scope_missing", message: "Reconnect Spotify to access playlists" });
     }

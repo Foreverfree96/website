@@ -1096,22 +1096,34 @@ export function usePlaylistTools() {
   const userPlaylists = ref([]);
   const playlistsLoading = ref(false);
 
+  let _playlistsFetchPromise = null;
   const fetchUserPlaylists = async () => {
+    // Dedup concurrent calls
+    if (_playlistsFetchPromise) return _playlistsFetchPromise;
     playlistsLoading.value = true;
-    try {
-      const res = await fetch(`${API}/api/spotify/playlists`, { headers: headers() });
-      if (!res.ok) {
-        if (res.status === 403 || res.status === 401 || res.status === 404) {
-          scopeMissing.value = true;
-          error.value = 'Reconnect Spotify to access your playlists';
+    _playlistsFetchPromise = (async () => {
+      try {
+        const res = await fetch(`${API}/api/spotify/playlists`, { headers: headers() });
+        if (res.status === 429) {
+          const retryAfter = parseInt(res.headers.get('retry-after') || '3', 10);
+          await new Promise(r => setTimeout(r, retryAfter * 1000));
+          const res2 = await fetch(`${API}/api/spotify/playlists`, { headers: headers() });
+          if (res2.ok) { const d = await res2.json(); userPlaylists.value = d.playlists || []; }
+        } else if (!res.ok) {
+          if (res.status === 403 || res.status === 401 || res.status === 404) {
+            scopeMissing.value = true;
+            error.value = 'Reconnect Spotify to access your playlists';
+          }
+          userPlaylists.value = [];
+        } else {
+          const data = await res.json();
+          userPlaylists.value = data.playlists || [];
         }
-        userPlaylists.value = [];
-      } else {
-        const data = await res.json();
-        userPlaylists.value = data.playlists || [];
-      }
-    } catch { userPlaylists.value = []; }
-    playlistsLoading.value = false;
+      } catch { userPlaylists.value = []; }
+      playlistsLoading.value = false;
+      _playlistsFetchPromise = null;
+    })();
+    return _playlistsFetchPromise;
   };
 
   const addToExistingPlaylist = async (playlistId) => {
@@ -1236,13 +1248,23 @@ export function usePlaylistTools() {
 
       const saveController = new AbortController();
       const saveTimeout = setTimeout(() => saveController.abort(), 120000);
-      const res = await fetch(`${API}/api/spotify/playlist`, {
-        method: 'POST',
-        headers: headers(),
-        body: JSON.stringify({ name, trackUris: uris }),
-        signal: saveController.signal,
-      });
+      const doSave = async () => {
+        const r = await fetch(`${API}/api/spotify/playlist`, {
+          method: 'POST',
+          headers: headers(),
+          body: JSON.stringify({ name, trackUris: uris }),
+          signal: saveController.signal,
+        });
+        return r;
+      };
+      let res = await doSave();
       clearTimeout(saveTimeout);
+      // Auto-retry once on 429
+      if (res.status === 429) {
+        const wait = parseInt(res.headers.get('retry-after') || '4', 10);
+        await new Promise(r => setTimeout(r, wait * 1000));
+        res = await doSave();
+      }
       if (!res.ok) {
         let msg = 'Failed to save playlist';
         let isScopeProblem = false;
@@ -1252,6 +1274,7 @@ export function usePlaylistTools() {
           if (data.error === 'scope_missing') isScopeProblem = true;
         } catch { /* non-JSON */ }
         if (res.status === 403 || res.status === 404) isScopeProblem = true;
+        if (res.status === 429) msg = 'Spotify rate limited — wait a moment and try again';
         if (isScopeProblem) {
           scopeMissing.value = true;
           msg = 'Reconnect Spotify to enable playlist creation';
