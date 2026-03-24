@@ -197,16 +197,34 @@ const isYtPlaylist = computed(() =>
   nowPlaying.value?.type === 'youtube' && nowPlaying.value?.isPlaylist
 );
 
+// ── Force-stop helpers — ensure the other player actually stops ─────────────
+const forceStopYoutube = () => {
+  // Pause via postMessage
+  if (iframeEl.value?.contentWindow) {
+    iframeEl.value.contentWindow.postMessage(
+      JSON.stringify({ event: 'command', func: 'pauseVideo', args: [] }), '*'
+    );
+  }
+  // Nuke the iframe entirely so audio can't leak
+  frozenEmbedUrl.value = '';
+  playerReady.value = false;
+  iframeKey.value++;
+};
+
+const forceStopSpotify = () => {
+  // Call pause on the SDK player (synchronous attempt)
+  spotifySDK.pause();
+  // Also seek to force the player state update — some browsers ignore pause
+  // without a state change, so we double-tap pause after a short delay
+  setTimeout(() => spotifySDK.pause(), 200);
+};
+
 // Reset when media changes or clears
 watch(nowPlaying, (np, old) => {
   if (!np) {
     // Safety-net: pause any playing media in case close() was called directly
-    if (old?.type === 'youtube' && iframeEl.value?.contentWindow) {
-      iframeEl.value.contentWindow.postMessage(
-        JSON.stringify({ event: 'command', func: 'pauseVideo', args: [] }), '*'
-      );
-    }
-    if (old?.type === 'spotify') spotifySDK.pause();
+    if (old?.type === 'youtube') forceStopYoutube();
+    if (old?.type === 'spotify') forceStopSpotify();
 
     expanded.value         = false;
     playerReady.value      = false;
@@ -222,14 +240,14 @@ watch(nowPlaying, (np, old) => {
     expanded.value    = true;
     playerReady.value = !!(np.resumeOnLoad && np.type !== 'spotify');
     ytPlaylistIndex.value = np.playlistIndex || 0;
+    // If starting YouTube, make sure Spotify is paused
+    if (np.type !== 'spotify') forceStopSpotify();
+    // If starting Spotify, make sure YouTube is stopped
+    if (np.type === 'spotify') forceStopYoutube();
   } else if (old.url !== np.url || old.type !== np.type) {
     // Stop the OLD player before switching to the new one
-    if (old.type === 'youtube' && iframeEl.value?.contentWindow) {
-      iframeEl.value.contentWindow.postMessage(
-        JSON.stringify({ event: 'command', func: 'pauseVideo', args: [] }), '*'
-      );
-    }
-    if (old.type === 'spotify') spotifySDK.pause();
+    if (old.type === 'youtube') forceStopYoutube();
+    if (old.type === 'spotify') forceStopSpotify();
 
     // Save the OLD content's fresh position so its MediaEmbed can restore
     if (old.url) {
