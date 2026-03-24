@@ -738,27 +738,71 @@ const previewLabel = computed(() => {
   .mp-skip-btn { width: 40px; height: 40px; font-size: 1.2rem; }
 }
 
-/* ── Small tablet / large phone (OnePlus Open folded ~6.2") ── */
-@media (max-width: 600px) {
-  .mp-root  { bottom: 14px; left: 14px; }
-  .mp-panel { width: calc(100vw - 28px); max-width: 360px; }
+/* ── Mobile + Tablet (matches ChatWidget breakpoint) ── */
+@media (max-width: 900px) {
+  .mp-bubble {
+    position: fixed;
+    bottom: 14px;
+    bottom: max(14px, env(safe-area-inset-bottom));
+    left: 14px;
+    z-index: 1001;
+  }
+
+  .mp-panel {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    max-height: 48dvh;
+    min-height: 260px;
+    border-radius: 0 0 16px 16px;
+    border-top: none;
+  }
+
+  .mp-header { padding: 7px 10px; }
   .mp-embed { height: 260px; }
   .mp-queue-list { max-height: 160px; }
   .mp-skip-btn { width: 42px; height: 42px; min-width: 42px; min-height: 42px; }
+}
+
+/* ── Mobile: full-width panel ── */
+@media (max-width: 600px) {
+  .mp-root { bottom: 0; left: 0; }
+  .mp-panel {
+    width: 100%;
+    height: 55dvh;
+    min-height: 280px;
+    max-height: 55dvh;
+    border-radius: 0 0 12px 12px;
+  }
   .mp-preview-play { padding: 13px; font-size: 1rem; }
 }
 
-/* ── Narrow phones ── */
-@media (max-width: 400px) {
-  .mp-root  { bottom: 10px; left: 10px; }
-  .mp-panel { width: calc(100vw - 20px); max-width: none; }
-  .mp-header { padding: 8px 10px; }
+/* ── Small mobile ── */
+@media (max-width: 480px) {
+  .mp-panel {
+    height: 60dvh;
+    max-height: 60dvh;
+    border-radius: 0;
+    border: none;
+    border-bottom: 1px solid #2a2a2a;
+  }
+  .mp-header { padding: 6px 8px; }
   .mp-label  { font-size: 0.78rem; }
   .mp-embed { height: 220px; }
   .mp-bubble { width: 48px; height: 48px; font-size: 1.1rem; }
   .mp-queue-list { max-height: 140px; }
   .mp-skip-bar { gap: 12px; padding: 8px 10px; }
   .mp-skip-label { font-size: 0.72rem; min-width: 60px; }
+}
+
+/* ── Extra-small mobile ── */
+@media (max-width: 360px) {
+  .mp-panel {
+    height: 65dvh;
+    max-height: 65dvh;
+  }
 }
 
 /* ── Foldable: respect viewport height on compact screens ── */
