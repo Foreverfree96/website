@@ -1849,43 +1849,59 @@ const MIXED_NAMES = [
 
 export const generatePlaylistName = async (req, res) => {
   try {
-    const { trackIds = [], artistIds: rawArtistIds = [] } = req.body;
-    if (!trackIds.length && !rawArtistIds.length) {
+    const { trackIds = [], artistIds: rawArtistIds = [], playlistId } = req.body;
+
+    const result = await getValidToken(req.user.id, false);
+    if (result.error) return res.json({ name: MIXED_NAMES[Math.floor(Math.random() * MIXED_NAMES.length)] });
+
+    const auth = { Authorization: `Bearer ${result.accessToken}` };
+    let artistIds = [...rawArtistIds];
+    let resolvedTrackIds = [...trackIds];
+
+    // If playlistId provided, fetch tracks from the existing playlist
+    if (playlistId && !resolvedTrackIds.length && !artistIds.length) {
+      try {
+        const r = await axios.get(`https://api.spotify.com/v1/playlists/${encodeURIComponent(playlistId)}/tracks`, {
+          params: { limit: 100, fields: 'items(track(id,artists(id)))' },
+          headers: auth,
+        });
+        for (const item of (r.data.items || [])) {
+          if (item.track?.id) resolvedTrackIds.push(item.track.id);
+          if (item.track?.artists) artistIds.push(...item.track.artists.map(a => a.id));
+        }
+      } catch { /* continue with empty */ }
+    }
+
+    if (!resolvedTrackIds.length && !artistIds.length) {
       return res.json({ name: MIXED_NAMES[Math.floor(Math.random() * MIXED_NAMES.length)] });
     }
 
-    const result = await getValidToken(req.user.id, false);
     const allGenres = [];
 
-    if (!result.error) {
-      const auth = { Authorization: `Bearer ${result.accessToken}` };
-      let artistIds = [...rawArtistIds];
-
-      // If trackIds provided, resolve artist IDs from tracks first
-      if (trackIds.length && !artistIds.length) {
-        const unique = [...new Set(trackIds)].slice(0, 50);
-        for (let i = 0; i < unique.length; i += 50) {
-          const batch = unique.slice(i, i + 50).join(',');
-          try {
-            const r = await axios.get(`https://api.spotify.com/v1/tracks?ids=${batch}`, { headers: auth });
-            for (const t of (r.data.tracks || [])) {
-              if (t?.artists) artistIds.push(...t.artists.map(a => a.id));
-            }
-          } catch { /* continue */ }
-        }
-      }
-
-      // Fetch artist genres (batches of 50)
-      const uniqueArtists = [...new Set(artistIds)].slice(0, 100);
-      for (let i = 0; i < uniqueArtists.length; i += 50) {
-        const batch = uniqueArtists.slice(i, i + 50).join(',');
+    // If only trackIds (no artistIds yet), resolve artist IDs from tracks
+    if (resolvedTrackIds.length && !artistIds.length) {
+      const unique = [...new Set(resolvedTrackIds)].slice(0, 50);
+      for (let i = 0; i < unique.length; i += 50) {
+        const batch = unique.slice(i, i + 50).join(',');
         try {
-          const r = await axios.get(`https://api.spotify.com/v1/artists?ids=${batch}`, { headers: auth });
-          for (const artist of (r.data.artists || [])) {
-            if (artist?.genres) allGenres.push(...artist.genres);
+          const r = await axios.get(`https://api.spotify.com/v1/tracks?ids=${batch}`, { headers: auth });
+          for (const t of (r.data.tracks || [])) {
+            if (t?.artists) artistIds.push(...t.artists.map(a => a.id));
           }
-        } catch { /* continue with what we have */ }
+        } catch { /* continue */ }
       }
+    }
+
+    // Fetch artist genres (batches of 50)
+    const uniqueArtists = [...new Set(artistIds)].slice(0, 100);
+    for (let i = 0; i < uniqueArtists.length; i += 50) {
+      const batch = uniqueArtists.slice(i, i + 50).join(',');
+      try {
+        const r = await axios.get(`https://api.spotify.com/v1/artists?ids=${batch}`, { headers: auth });
+        for (const artist of (r.data.artists || [])) {
+          if (artist?.genres) allGenres.push(...artist.genres);
+        }
+      } catch { /* continue with what we have */ }
     }
 
     // Tally vibes from genres
@@ -1914,5 +1930,33 @@ export const generatePlaylistName = async (req, res) => {
   } catch (err) {
     console.error("❌ Playlist name generation error:", err.message);
     res.json({ name: MIXED_NAMES[Math.floor(Math.random() * MIXED_NAMES.length)] });
+  }
+};
+
+// ─── RENAME PLAYLIST ────────────────────────────────────────────────────────
+// PUT /api/spotify/playlist/:id/rename
+export const renamePlaylist = async (req, res) => {
+  try {
+    const { id: playlistId } = req.params;
+    const { name } = req.body;
+    if (!playlistId) return res.status(400).json({ message: "No playlist ID" });
+    if (!name?.trim()) return res.status(400).json({ message: "No name provided" });
+
+    const result = await getValidToken(req.user.id, false);
+    if (result.error) return res.status(result.error).json({ message: result.message });
+
+    await axios.put(
+      `https://api.spotify.com/v1/playlists/${encodeURIComponent(playlistId)}`,
+      { name: name.trim() },
+      { headers: { Authorization: `Bearer ${result.accessToken}`, "Content-Type": "application/json" } }
+    );
+
+    res.json({ renamed: true, name: name.trim() });
+  } catch (err) {
+    if (err.response?.status === 403) {
+      return res.status(403).json({ error: "scope_missing", message: "Reconnect Spotify to rename playlists" });
+    }
+    console.error("❌ Spotify rename playlist error:", err.response?.data || err.message);
+    res.status(err.response?.status || 500).json({ message: "Failed to rename playlist" });
   }
 };

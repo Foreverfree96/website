@@ -1172,6 +1172,52 @@ export function usePlaylistTools() {
     return suggestedName.value;
   };
 
+  // ── Suggest name for an existing playlist by ID ─────────────────────
+  const suggestNameForPlaylist = async (playlistId) => {
+    suggestingName.value = true;
+    suggestedName.value = '';
+    try {
+      const res = await fetch(`${API}/api/spotify/playlist-name`, {
+        method: 'POST',
+        headers: headers(),
+        body: JSON.stringify({ playlistId }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        suggestedName.value = data.name || '';
+      }
+    } catch { /* silent */ }
+    suggestingName.value = false;
+    return suggestedName.value;
+  };
+
+  // ── Rename an existing Spotify playlist ────────────────────────────
+  const renamingPlaylist = ref(false);
+  const renamePlaylist = async (playlistId, newName) => {
+    error.value = '';
+    renamingPlaylist.value = true;
+    try {
+      const res = await fetch(`${API}/api/spotify/playlist/${playlistId}/rename`, {
+        method: 'PUT',
+        headers: headers(),
+        body: JSON.stringify({ name: newName }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        if (res.status === 403) { error.value = 'Reconnect Spotify to rename playlists'; scopeMissing.value = true; }
+        else error.value = data.message || 'Failed to rename';
+        renamingPlaylist.value = false;
+        return false;
+      }
+      renamingPlaylist.value = false;
+      return true;
+    } catch {
+      error.value = 'Failed to rename playlist';
+      renamingPlaylist.value = false;
+      return false;
+    }
+  };
+
   // ── Save to Spotify ───────────────────────────────────────────────────
   const saveToSpotify = async (name) => {
     error.value = '';
@@ -1398,7 +1444,7 @@ export function usePlaylistTools() {
 
     likedIds, userPlaylists, playlistsLoading,
     ytSaving, ytSaveResult, ytUserPlaylists, ytPlaylistsLoading, ytScopeMissing,
-    suggestedName, suggestingName,
+    suggestedName, suggestingName, renamingPlaylist,
 
     // Methods
     open, close, minimize, reset, setTab, setGenerateTarget,
@@ -1406,7 +1452,8 @@ export function usePlaylistTools() {
     generate, cancelGenerate, startConvert, cancelConvert,
     swapMatch, autofillUnmatched, removeResult,
     likeTrack, fetchUserPlaylists, addToExistingPlaylist,
-    saveToSpotify, suggestName, saveState, restoreState,
+    saveToSpotify, suggestName, suggestNameForPlaylist, renamePlaylist,
+    saveState, restoreState,
     saveToYouTube, addToExistingYouTubePlaylist, fetchUserYouTubePlaylists,
   };
 }

@@ -30,6 +30,10 @@
                   :class="['pt-tab', { active: pt.activeTab.value === 'convert' }]"
                   @click="pt.setTab('convert')"
                 >Convert</button>
+                <button
+                  :class="['pt-tab', { active: pt.activeTab.value === 'rename' }]"
+                  @click="pt.setTab('rename'); loadRenamePlaylists()"
+                >Rename</button>
               </div>
               <button class="pt-minimize" @click="pt.minimize()" title="Minimize">&#x2015;</button>
               <button class="pt-close" @click="pt.close()" title="Close">&times;</button>
@@ -349,6 +353,60 @@
                     Open Playlist
                   </button>
                 </div>
+              </div>
+            </div>
+
+            <!-- ═══════════════════════ RENAME TAB ═══════════════════════ -->
+            <div v-if="pt.activeTab.value === 'rename'" class="pt-body">
+              <div class="pt-section">
+                <label class="pt-label">Select a playlist to auto-rename based on its vibe</label>
+              </div>
+
+              <div v-if="pt.playlistsLoading.value" class="pt-hint">Loading playlists...</div>
+              <div v-else-if="!pt.userPlaylists.value.length" class="pt-hint">No playlists found.</div>
+              <div v-else class="pt-existing-list">
+                <div
+                  v-for="pl in pt.userPlaylists.value"
+                  :key="pl.id"
+                  class="pt-existing-item pt-rename-item"
+                >
+                  <img v-if="pl.image" :src="pl.image" class="pt-existing-art" alt="" />
+                  <div class="pt-existing-info">
+                    <span class="pt-existing-name">{{ renamingId === pl.id && renameNewName ? renameNewName : pl.name }}</span>
+                    <span class="pt-existing-count">{{ pl.tracks }} tracks</span>
+                  </div>
+                  <div class="pt-rename-actions">
+                    <button
+                      v-if="renamingId !== pl.id"
+                      class="pt-rename-btn"
+                      @click.stop="startRename(pl)"
+                      :disabled="pt.suggestingName.value"
+                    >
+                      {{ pt.suggestingName.value ? '...' : 'Rename' }}
+                    </button>
+                    <template v-else>
+                      <input
+                        class="pt-input pt-rename-input"
+                        v-model="renameNewName"
+                        @keydown.enter="confirmRename(pl)"
+                        @click.stop
+                        placeholder="New name..."
+                      />
+                      <button class="pt-rename-btn pt-rename-regen" @click.stop="regenerateRename(pl)" :disabled="pt.suggestingName.value" title="Regenerate">
+                        {{ pt.suggestingName.value ? '...' : '🔄' }}
+                      </button>
+                      <button class="pt-rename-btn pt-rename-confirm" @click.stop="confirmRename(pl)" :disabled="pt.renamingPlaylist.value || !renameNewName.trim()">
+                        {{ pt.renamingPlaylist.value ? '...' : '✓' }}
+                      </button>
+                      <button class="pt-rename-btn pt-rename-cancel" @click.stop="renamingId = null; renameNewName = ''">✕</button>
+                    </template>
+                  </div>
+                </div>
+              </div>
+
+              <div v-if="renameSuccess" class="pt-success" style="margin-top:10px">
+                <span>Renamed to "<strong>{{ renameSuccess }}</strong>"!</span>
+                <button class="pt-success-dismiss" @click="renameSuccess = ''">&times;</button>
               </div>
             </div>
 
@@ -802,6 +860,41 @@ const regenerateName = async () => {
 
 const loadPlaylists = () => {
   if (!pt.userPlaylists.value.length) pt.fetchUserPlaylists();
+};
+
+// ── Rename tab logic ──────────────────────────────────────────────────────
+const renamingId      = ref(null);
+const renameNewName   = ref('');
+const renameSuccess   = ref('');
+
+const loadRenamePlaylists = () => {
+  if (!pt.userPlaylists.value.length) pt.fetchUserPlaylists();
+};
+
+const startRename = async (pl) => {
+  renamingId.value = pl.id;
+  renameNewName.value = '';
+  renameSuccess.value = '';
+  const name = await pt.suggestNameForPlaylist(pl.id);
+  if (name) renameNewName.value = name;
+};
+
+const regenerateRename = async (pl) => {
+  const name = await pt.suggestNameForPlaylist(pl.id);
+  if (name) renameNewName.value = name;
+};
+
+const confirmRename = async (pl) => {
+  if (!renameNewName.value.trim()) return;
+  const ok = await pt.renamePlaylist(pl.id, renameNewName.value.trim());
+  if (ok) {
+    renameSuccess.value = renameNewName.value.trim();
+    // Update the local list
+    const idx = pt.userPlaylists.value.findIndex(p => p.id === pl.id);
+    if (idx >= 0) pt.userPlaylists.value[idx].name = renameNewName.value.trim();
+    renamingId.value = null;
+    renameNewName.value = '';
+  }
 };
 
 const ytCopied = ref(false);
@@ -1549,6 +1642,27 @@ const handleAddToExistingYt = (playlistId) => {
 .pt-existing-info { display: flex; flex-direction: column; overflow: hidden; }
 .pt-existing-name { font-size: 13px; color: #eee; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pt-existing-count { font-size: 11px; color: #666; }
+
+/* ─── Rename tab ──────────────────────────────────────────────────────────── */
+.pt-rename-item { cursor: default; }
+.pt-rename-item .pt-existing-info { flex: 1; min-width: 0; }
+.pt-rename-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; margin-left: auto; }
+.pt-rename-btn {
+  background: #2a2a2a; border: 1px solid #333; color: #ccc; border-radius: 6px;
+  padding: 4px 10px; font-size: 11px; font-weight: 600; cursor: pointer;
+  transition: background 0.15s, color 0.15s; white-space: nowrap;
+}
+.pt-rename-btn:hover { background: #3a3a3a; color: #fff; }
+.pt-rename-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.pt-rename-confirm { background: #1db954; color: #000; border-color: #1db954; }
+.pt-rename-confirm:hover { background: #1ed760; }
+.pt-rename-cancel { background: #e11d48; color: #fff; border-color: #e11d48; }
+.pt-rename-cancel:hover { background: #f43f5e; }
+.pt-rename-regen { font-size: 13px; padding: 3px 6px; }
+.pt-rename-input {
+  width: 120px; min-width: 80px; padding: 4px 8px; font-size: 12px;
+  background: #1a1a1a; border: 1px solid #444; border-radius: 6px; color: #eee;
+}
 
 /* ─── Mobile ──────────────────────────────────────────────────────────────── */
 @media (max-width: 600px) {
