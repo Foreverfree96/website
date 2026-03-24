@@ -818,11 +818,13 @@ export const searchTracks = async (req, res) => {
 // search queries from artist names + genres, collect and deduplicate results.
 export const generatePlaylist = async (req, res) => {
   try {
-    let { seedTrackIds = [], seedTrackMeta = [], seedPlaylistId, genres = [], languages = ['en'], limit = 30 } = req.body;
+    let { seedTrackIds = [], seedTrackMeta = [], seedPlaylistId, seedPlaylistIds = [], genres = [], languages = ['en'], limit = 30 } = req.body;
     limit = Math.max(1, Math.min(Number(limit) || 30, 100));
     if (!Array.isArray(languages) || !languages.length) languages = ['en'];
 
-    console.log(`🎵 Generate request: ${seedTrackIds.length} trackIds, ${seedTrackMeta.length} meta, ${genres.length} genres, limit=${limit}, playlist=${seedPlaylistId || 'none'}`);
+    // Support both singular and plural for backward compatibility
+    const playlistIds = seedPlaylistIds.length ? seedPlaylistIds : (seedPlaylistId ? [seedPlaylistId] : []);
+    console.log(`🎵 Generate request: ${seedTrackIds.length} trackIds, ${seedTrackMeta.length} meta, ${genres.length} genres, limit=${limit}, playlists=${playlistIds.length ? playlistIds.join(',') : 'none'}`);
     if (seedTrackMeta.length) console.log(`   Meta:`, seedTrackMeta.slice(0, 3).map(m => `${m.name} - ${m.artist}`));
 
     // Try user token first, then service account, then client creds
@@ -854,40 +856,44 @@ export const generatePlaylist = async (req, res) => {
       if (artist && !seedArtists.includes(artist)) seedArtists.push(artist);
     });
 
-    // If a reference playlist is provided, pull tracks from it
-    if (seedPlaylistId) {
-      const cached = getCachedPlaylist(seedPlaylistId);
-      let items = cached?.items;
-      if (!items) {
-        try {
-          const r = await axios.get(
-            `https://api.spotify.com/v1/playlists/${seedPlaylistId}/tracks?limit=100`,
-            { headers: auth }
-          );
-          items = (r.data.items || []).filter((i) => i?.track?.id);
-        } catch (e) {
-          console.error(`❌ Playlist seed fetch failed:`, e.response?.status || e.message);
+    // If reference playlist(s) provided, pull tracks from them
+    if (playlistIds.length) {
+      const isStandalone = !seedTrackIds.length && !genres.length && !seedTrackMeta.length;
+      for (const playlistId of playlistIds) {
+        const cached = getCachedPlaylist(playlistId);
+        let items = cached?.items;
+        if (!items) {
+          try {
+            const r = await axios.get(
+              `https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=100`,
+              { headers: auth }
+            );
+            items = (r.data.items || []).filter((i) => i?.track?.id);
+          } catch (e) {
+            console.error(`❌ Playlist seed fetch failed (${playlistId}):`, e.response?.status || e.message);
+          }
+          if (!items) items = [];
         }
-        if (!items) items = [];
-      }
-      if (items?.length) {
-        // If reference playlist is the main/only input, sample more aggressively
-        const isStandalone = !seedTrackIds.length && !genres.length && !seedTrackMeta.length;
-        const sampleSize = isStandalone ? Math.min(items.length, 15) : 5;
-        const shuffled = items.sort(() => Math.random() - 0.5);
-        shuffled.slice(0, sampleSize).forEach((i) => {
-          const artist = i.track?.artists?.[0]?.name;
-          if (artist && !seedArtists.includes(artist)) seedArtists.push(artist);
-          if (i.track?.id) seedTrackIds.push(i.track.id);
-        });
-        // For standalone, also extract track names for search queries
-        if (isStandalone) {
-          shuffled.slice(0, 8).forEach((i) => {
-            const name = i.track?.name;
-            if (name) {
-              seedTrackMeta.push({ name, artist: i.track?.artists?.[0]?.name || "" });
-            }
+        if (items?.length) {
+          // Sample tracks — when using multiple playlists, sample less per playlist
+          const sampleSize = isStandalone
+            ? Math.min(items.length, Math.max(8, Math.floor(15 / playlistIds.length)))
+            : Math.max(3, Math.floor(5 / playlistIds.length));
+          const shuffled = items.sort(() => Math.random() - 0.5);
+          shuffled.slice(0, sampleSize).forEach((i) => {
+            const artist = i.track?.artists?.[0]?.name;
+            if (artist && !seedArtists.includes(artist)) seedArtists.push(artist);
+            if (i.track?.id && !seedTrackIds.includes(i.track.id)) seedTrackIds.push(i.track.id);
           });
+          // For standalone, also extract track names for search queries
+          if (isStandalone) {
+            shuffled.slice(0, Math.floor(8 / playlistIds.length)).forEach((i) => {
+              const name = i.track?.name;
+              if (name) {
+                seedTrackMeta.push({ name, artist: i.track?.artists?.[0]?.name || "" });
+              }
+            });
+          }
         }
       }
     }

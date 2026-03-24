@@ -103,14 +103,25 @@
                 </div>
               </div>
 
-              <!-- Reference URL (playlist or single track) -->
+              <!-- Reference URLs (playlists or tracks) -->
               <div class="pt-section">
-                <label class="pt-label">Reference URL (optional)</label>
-                <input
-                  class="pt-input"
-                  v-model="pt.seedPlaylistUrl.value"
-                  placeholder="Paste a Spotify or YouTube link (song or playlist)..."
-                />
+                <label class="pt-label">Reference Playlists/Tracks (optional)</label>
+                <div class="pt-seed-urls-row">
+                  <input
+                    class="pt-input pt-seed-url-input"
+                    v-model="refUrlInput"
+                    placeholder="Paste a Spotify or YouTube link..."
+                    @keydown.enter="addRefUrl"
+                  />
+                  <button class="pt-btn pt-btn-sm pt-btn-primary" @click="addRefUrl" :disabled="!refUrlInput.trim()">Add</button>
+                </div>
+                <!-- Added reference URLs -->
+                <div v-if="pt.seedPlaylistUrls.value.length" class="pt-seed-urls-list">
+                  <div v-for="(url, idx) in pt.seedPlaylistUrls.value" :key="idx" class="pt-seed-url-chip">
+                    <span class="pt-seed-url-text">{{ url.length > 50 ? url.substring(0, 47) + '...' : url }}</span>
+                    <button class="pt-seed-url-x" @click="pt.removeSeedPlaylistUrl(idx)" title="Remove">✕</button>
+                  </div>
+                </div>
               </div>
 
               <!-- Genre/mood tags -->
@@ -674,7 +685,15 @@ const youtubeReconnectUrl = computed(() => {
 });
 const altOpen          = ref(null);
 const customGenreInput = ref('');
+const refUrlInput      = ref(''); // for adding reference playlist URLs
 const openCats         = ref(new Set(['Popular', 'Moods']));
+
+const addRefUrl = () => {
+  const url = refUrlInput.value.trim();
+  if (!url) return;
+  pt.addSeedPlaylistUrl(url);
+  refUrlInput.value = '';
+};
 
 const toggleCat = (cat) => {
   const s = openCats.value;
@@ -1222,6 +1241,21 @@ const handleAddToExistingYt = (playlistId) => {
 }
 .pt-tag:hover:not(.selected) { border-color: #555; color: #ddd; }
 
+/* ─── Reference URLs ──────────────────────────────────────────────────────── */
+.pt-seed-urls-row { display: flex; gap: 8px; margin-bottom: 8px; }
+.pt-seed-url-input { flex: 1; }
+.pt-seed-urls-list { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; max-height: 120px; overflow-y: auto; }
+.pt-seed-url-chip {
+  display: flex; align-items: center; gap: 6px; padding: 6px 10px;
+  background: #1a1a1a; border-radius: 6px; border: 1px solid #333;
+}
+.pt-seed-url-text { font-size: 11px; color: #aaa; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pt-seed-url-x {
+  background: none; border: none; color: #888; cursor: pointer; font-size: 14px;
+  padding: 0; min-width: auto; transition: color 0.15s;
+}
+.pt-seed-url-x:hover { color: #f87171; }
+
 /* ─── Genre search + categories ──────────────────────────────────────────── */
 .pt-genre-search-row { display: flex; gap: 8px; margin-bottom: 8px; }
 .pt-genre-search { flex: 1; }
@@ -1266,6 +1300,8 @@ const handleAddToExistingYt = (playlistId) => {
 
 .pt-btn-primary { background: #7c3aed; border-color: #7c3aed; color: #fff; }
 .pt-btn-primary:hover:not(:disabled) { background: #6d28d9; }
+
+.pt-btn-sm { padding: 6px 12px; font-size: 12px; min-height: auto; white-space: nowrap; }
 
 .pt-btn-full { width: 100%; text-align: center; }
 

@@ -13,7 +13,7 @@ const activeTab = ref('generate'); // 'generate' | 'convert'
 
 // Generate tab
 const seedTracks      = ref([]);
-const seedPlaylistUrl = ref('');
+const seedPlaylistUrls = ref([]); // array of URLs to reference
 const selectedGenres  = ref([]);
 const trackLimit      = ref(30);
 const generatedTracks = ref([]);
@@ -131,7 +131,7 @@ const _persistResults = () => {
       convertDirection: convertDirection.value,
       convertUrl: convertUrl.value,
       seedTracks: seedTracks.value,
-      seedPlaylistUrl: seedPlaylistUrl.value,
+      seedPlaylistUrls: seedPlaylistUrls.value,
       selectedGenres: selectedGenres.value,
       selectedLanguages: selectedLanguages.value,
       trackLimit: trackLimit.value,
@@ -322,7 +322,7 @@ export function usePlaylistTools() {
 
   const reset = () => {
     seedTracks.value = [];
-    seedPlaylistUrl.value = '';
+    seedPlaylistUrls.value = [];
     selectedGenres.value = [];
     trackLimit.value = 30;
     generatedTracks.value = [];
@@ -509,6 +509,17 @@ export function usePlaylistTools() {
     selectedGenres.value.push(g);
   };
 
+  // ── Reference playlist URLs ──────────────────────────────────────────────
+  const addSeedPlaylistUrl = (url) => {
+    const trimmed = url.trim();
+    if (!trimmed || seedPlaylistUrls.value.includes(trimmed)) return;
+    seedPlaylistUrls.value.push(trimmed);
+  };
+
+  const removeSeedPlaylistUrl = (index) => {
+    seedPlaylistUrls.value.splice(index, 1);
+  };
+
   // ── Generate playlist ─────────────────────────────────────────────────
   const generate = async () => {
     if (convertLoading.value) {
@@ -537,74 +548,75 @@ export function usePlaylistTools() {
         limit: trackLimit.value,
       };
 
-      // If user pasted a URL — detect single track vs playlist
-      if (seedPlaylistUrl.value) {
-        const platform = detectPlatform(seedPlaylistUrl.value);
-        const url = seedPlaylistUrl.value;
+      // If user pasted URL(s) — process each one
+      const seedPlaylistIds = [];
+      if (seedPlaylistUrls.value.length) {
+        for (const url of seedPlaylistUrls.value) {
+          const platform = detectPlatform(url);
 
-        // ── Single track URL handling ──
-        if (isSingleTrackUrl(url)) {
-          if (platform === 'spotify') {
-            const trackId = extractSpotifyTrackId(url);
-            if (trackId) {
-              try {
-                bgStatus.value = 'Fetching track info...';
-                const tRes = await fetch(`${API}/api/spotify/search?q=&trackId=${trackId}`, { headers: headers(), signal });
-                if (tRes.ok) {
-                  const tData = await tRes.json();
-                  const t = tData.track;
-                  if (t) {
-                    if (!body.seedTrackIds.includes(trackId)) body.seedTrackIds.push(trackId);
-                    body.seedTrackMeta.push({ name: t.name, artist: t.artist || t.artists?.[0]?.name || '' });
+          // ── Single track URL handling ──
+          if (isSingleTrackUrl(url)) {
+            if (platform === 'spotify') {
+              const trackId = extractSpotifyTrackId(url);
+              if (trackId) {
+                try {
+                  bgStatus.value = 'Fetching track info...';
+                  const tRes = await fetch(`${API}/api/spotify/search?q=&trackId=${trackId}`, { headers: headers(), signal });
+                  if (tRes.ok) {
+                    const tData = await tRes.json();
+                    const t = tData.track;
+                    if (t) {
+                      if (!body.seedTrackIds.includes(trackId)) body.seedTrackIds.push(trackId);
+                      body.seedTrackMeta.push({ name: t.name, artist: t.artist || t.artists?.[0]?.name || '' });
+                    }
                   }
-                }
-              } catch (e) { if (e.name === 'AbortError') throw e; }
-            }
-          } else if (isYoutubePlatform(platform)) {
-            const videoId = extractYoutubeVideoId(url);
-            if (videoId) {
-              try {
-                bgStatus.value = 'Fetching video info...';
-                const vRes = await fetch(`${API}/api/youtube/search?q=&videoId=${videoId}`, { headers: headers(), signal });
-                if (vRes.ok) {
-                  const vData = await vRes.json();
-                  const item = vData.item || vData.items?.[0];
-                  if (item) {
-                    let artist = (item.channelTitle || '')
-                      .replace(/\s*-\s*topic$/i, '').replace(/\s*VEVO$/i, '')
-                      .replace(/\s*Official$/i, '').replace(/\s*Music$/i, '')
-                      .replace(/\s*Records$/i, '').trim();
-                    let name = item.title || '';
-                    const dash = name.match(/^(.+?)\s*[-–—]\s+(.+)$/);
-                    if (dash) { name = dash[2].replace(/\s*[\(\[].*[\)\]]$/g, '').trim(); if (!artist) artist = dash[1].trim(); }
-                    body.seedTrackMeta.push({ name, artist });
+                } catch (e) { if (e.name === 'AbortError') throw e; }
+              }
+            } else if (isYoutubePlatform(platform)) {
+              const videoId = extractYoutubeVideoId(url);
+              if (videoId) {
+                try {
+                  bgStatus.value = 'Fetching video info...';
+                  const vRes = await fetch(`${API}/api/youtube/search?q=&videoId=${videoId}`, { headers: headers(), signal });
+                  if (vRes.ok) {
+                    const vData = await vRes.json();
+                    const item = vData.item || vData.items?.[0];
+                    if (item) {
+                      let artist = (item.channelTitle || '')
+                        .replace(/\s*-\s*topic$/i, '').replace(/\s*VEVO$/i, '')
+                        .replace(/\s*Official$/i, '').replace(/\s*Music$/i, '')
+                        .replace(/\s*Records$/i, '').trim();
+                      let name = item.title || '';
+                      const dash = name.match(/^(.+?)\s*[-–—]\s+(.+)$/);
+                      if (dash) { name = dash[2].replace(/\s*[\(\[].*[\)\]]$/g, '').trim(); if (!artist) artist = dash[1].trim(); }
+                      body.seedTrackMeta.push({ name, artist });
+                    }
                   }
-                }
-              } catch (e) { if (e.name === 'AbortError') throw e; }
+                } catch (e) { if (e.name === 'AbortError') throw e; }
+              }
             }
           }
-        }
-        // ── Playlist URL handling ──
-        else if (platform === 'spotify') {
-          const spId = extractSpotifyPlaylistId(url);
-          if (spId) body.seedPlaylistId = spId;
-        } else if (isYoutubePlatform(platform)) {
-          const ytId = extractYoutubePlaylistId(seedPlaylistUrl.value);
-          if (ytId) {
-            try {
-              bgStatus.value = 'Fetching playlist tracks...';
-              const ytRes = await fetch(`${API}/api/youtube/playlist/${ytId}/tracks`, { headers: headers(), signal });
-              const ytData = await ytRes.json();
-              if (ytRes.ok && ytData.items?.length) {
-                // Sample more tracks when playlist is the only input
-                const isOnlyInput = !body.seedTrackIds.length && !body.genres.length;
-                const sampleSize = isOnlyInput ? Math.min(ytData.items.length, 20) : 10;
-                const sampled = ytData.items.sort(() => Math.random() - 0.5).slice(0, sampleSize);
-                const ytSeeds = sampled.map(t => {
-                  // Clean YouTube channel names
-                  let artist = (t.channelTitle || '')
-                    .replace(/\s*-\s*topic$/i, '')
-                    .replace(/\s*VEVO$/i, '')
+          // ── Playlist URL handling ──
+          else if (platform === 'spotify') {
+            const spId = extractSpotifyPlaylistId(url);
+            if (spId) seedPlaylistIds.push(spId);
+          } else if (isYoutubePlatform(platform)) {
+            const ytId = extractYoutubePlaylistId(url);
+            if (ytId) {
+              try {
+                bgStatus.value = 'Fetching playlist tracks...';
+                const ytRes = await fetch(`${API}/api/youtube/playlist/${ytId}/tracks`, { headers: headers(), signal });
+                const ytData = await ytRes.json();
+                if (ytRes.ok && ytData.items?.length) {
+                  // Sample more tracks when playlist is the only input
+                  const isOnlyInput = !body.seedTrackIds.length && !body.genres.length;
+                  const sampleSize = isOnlyInput ? Math.min(ytData.items.length, 20) : 10;
+                  const sampled = ytData.items.sort(() => Math.random() - 0.5).slice(0, sampleSize);
+                  const ytSeeds = sampled.map(t => {
+                    // Clean YouTube channel names
+                    let artist = (t.channelTitle || '')
+                      .replace(/\s*-\s*topic$/i, '')
+                      .replace(/\s*VEVO$/i, '')
                     .replace(/\s*Official$/i, '')
                     .replace(/\s*Music$/i, '')
                     .replace(/\s*Records$/i, '')
@@ -634,7 +646,10 @@ export function usePlaylistTools() {
         }
       }
 
-      console.log('[Generate] Sending request:', { seedTrackIds: body.seedTrackIds?.length, seedTrackMeta: body.seedTrackMeta?.length, genres: body.genres, limit: body.limit, playlist: body.seedPlaylistId || 'none' });
+      // Add seed playlist IDs if any were collected
+      if (seedPlaylistIds.length) body.seedPlaylistIds = seedPlaylistIds;
+
+      console.log('[Generate] Sending request:', { seedTrackIds: body.seedTrackIds?.length, seedTrackMeta: body.seedTrackMeta?.length, genres: body.genres, limit: body.limit, playlists: body.seedPlaylistIds?.length || 'none' });
       const genTimeout = setTimeout(() => { if (!signal.aborted) _generateAbort?.abort(); }, 360000);
       const res = await fetch(`${API}/api/spotify/generate`, {
         method: 'POST',
@@ -1401,7 +1416,7 @@ export function usePlaylistTools() {
       const state = {
         activeTab: activeTab.value,
         seedTracks: seedTracks.value,
-        seedPlaylistUrl: seedPlaylistUrl.value,
+        seedPlaylistUrls: seedPlaylistUrls.value,
         selectedGenres: selectedGenres.value,
         trackLimit: trackLimit.value,
         generatedTracks: generatedTracks.value,
@@ -1431,7 +1446,7 @@ export function usePlaylistTools() {
       if (Date.now() - state.savedAt > 5 * 60 * 1000) return false;
       activeTab.value = state.activeTab || 'generate';
       seedTracks.value = state.seedTracks || [];
-      seedPlaylistUrl.value = state.seedPlaylistUrl || '';
+      seedPlaylistUrls.value = state.seedPlaylistUrls || [];
       selectedGenres.value = state.selectedGenres || [];
       trackLimit.value = state.trackLimit || 30;
       generatedTracks.value = state.generatedTracks || [];
@@ -1455,7 +1470,7 @@ export function usePlaylistTools() {
   return {
     // State
     isOpen, activeTab, isMinimized, bgStatus, bgDone,
-    seedTracks, seedPlaylistUrl, selectedGenres, trackLimit,
+    seedTracks, seedPlaylistUrls, selectedGenres, trackLimit,
     generatedTracks, generateLoading, generateTarget, generateProgress,
     generateSpotifyResults, generateYoutubeResults,
     convertUrl, convertDirection, sourceTracks, matchedTracks, convertLoading, convertProgress,
@@ -1472,6 +1487,7 @@ export function usePlaylistTools() {
     // Methods
     open, close, minimize, reset, setTab, setGenerateTarget,
     searchSeeds, addSeed, removeSeed, toggleGenre, addCustomGenre, toggleLanguage,
+    addSeedPlaylistUrl, removeSeedPlaylistUrl,
     generate, cancelGenerate, startConvert, cancelConvert,
     swapMatch, autofillUnmatched, removeResult,
     likeTrack, fetchUserPlaylists, addToExistingPlaylist,
