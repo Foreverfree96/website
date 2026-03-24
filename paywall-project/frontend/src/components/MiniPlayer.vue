@@ -26,6 +26,14 @@
             :startPosition="nowPlaying.position || 0"
             :startTrackUri="nowPlaying.trackUri || ''"
           />
+          <!-- Spotify skip controls -->
+          <div class="mp-skip-bar">
+            <button class="mp-skip-btn" @click="spotifySDK.prev()" title="Previous">⏮</button>
+            <button class="mp-skip-btn mp-skip-btn--play" @click="spotifySDK.togglePlay()" :title="spotifySDK.paused.value ? 'Play' : 'Pause'">
+              {{ spotifySDK.paused.value ? '▶' : '⏸' }}
+            </button>
+            <button class="mp-skip-btn" @click="spotifySDK.next()" title="Next">⏭</button>
+          </div>
         </div>
 
         <!-- ── All other platforms: preview → iframe ─────────────────────── -->
@@ -689,6 +697,8 @@ const previewLabel = computed(() => {
   transition: background 0.15s, transform 0.1s;
 }
 .mp-skip-btn:hover { background: #1db954; transform: scale(1.1); }
+.mp-skip-btn--play { background: #1db954; color: #000; font-size: 1.2rem; width: 42px; height: 42px; }
+.mp-skip-btn--play:hover { background: #1ed760; }
 .mp-skip-btn--shuffle { font-size: 0.9rem; opacity: 0.5; }
 .mp-skip-btn--shuffle:hover { opacity: 1; }
 .mp-skip-btn--shuffle-on { background: #1db954 !important; color: #000; opacity: 1; }
