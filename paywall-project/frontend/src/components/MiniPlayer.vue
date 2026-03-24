@@ -472,10 +472,43 @@ const savePositionAndClose = () => {
 const handleClose = savePositionAndClose;
 
 // "Pop back in" requested by the in-post embed button
+// Unlike handleClose, pop-back-in preserves the playing state so the post
+// embed can seamlessly continue the same track without resetting.
 watch(popInRequested, (requested) => {
   if (!requested) return;
   popInRequested.value = false;
-  savePositionAndClose();
+
+  if (nowPlaying.value?.type === 'spotify') {
+    const pos    = spotifySDK.position.value;
+    const uri    = spotifySDK.currentTrackUri.value;
+    const wasPlaying = !spotifySDK.paused.value;
+    nowPlaying.value = {
+      ...nowPlaying.value,
+      ...(pos > 0 ? { position: pos } : {}),
+      resumeOnLoad: wasPlaying,
+      paused: !wasPlaying,
+      ...(uri ? { trackUri: uri } : {}),
+    };
+    // Don't pause — the singleton SDK keeps playing; the post embed picks it up
+  } else if (nowPlaying.value?.type === 'youtube') {
+    if (iframeEl.value?.contentWindow) {
+      iframeEl.value.contentWindow.postMessage(
+        JSON.stringify({ event: 'command', func: 'pauseVideo', args: [] }),
+        '*'
+      );
+    }
+    nowPlaying.value = {
+      ...nowPlaying.value,
+      position:      ytTime.value > 0 ? Math.floor(ytTime.value * 1000) : (nowPlaying.value.position || 0),
+      playlistIndex: ytPlaylistIndex.value || nowPlaying.value.playlistIndex || 0,
+      resumeOnLoad: true,
+    };
+  }
+
+  frozenEmbedUrl.value = '';
+  playerReady.value = false;
+  expanded.value    = false;
+  close();
 });
 
 

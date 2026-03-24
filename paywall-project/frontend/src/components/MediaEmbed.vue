@@ -329,12 +329,12 @@ watch(isPoppedOut, (isPopped, wasPopped) => {
     embedKey.value++;
     active.value = true;
   } else if (props.embedType === 'spotify') {
-    // Resume at the track + position that was playing in the mini player.
-    // Only auto-play if it was actually playing when popped back (respect paused state).
+    // The Spotify SDK is a singleton — it's already playing the right track.
+    // Just restore the embed without re-mounting; the SpotifyPlayer component
+    // will pick up the current SDK state (track, position) automatically.
     spStartPosition.value = lastPosition.value.position || 0;
     spStartTrackUri.value = lastPosition.value.trackUri || '';
     autoplayOnPopIn.value = !lastPosition.value.paused;
-    embedKey.value++;
     active.value = true;
   } else {
     embedKey.value++;
