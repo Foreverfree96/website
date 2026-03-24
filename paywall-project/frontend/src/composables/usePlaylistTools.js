@@ -43,6 +43,10 @@ const isMinimized = ref(false);
 const bgStatus    = ref('');   // 'Generating...', 'Converting...', 'Done! 30 tracks', 'Error'
 const bgDone      = ref(false);
 
+// Playlist name suggestion
+const suggestedName    = ref('');
+const suggestingName   = ref(false);
+
 // Progress tracking (0-100) — driven purely by backend Socket.io events
 const generateProgress = ref(0);
 const convertProgress  = ref(0);
@@ -1139,6 +1143,35 @@ export function usePlaylistTools() {
     saving.value = false;
   };
 
+  // ── Suggest playlist name based on track vibes ─────────────────────────
+  const suggestName = async () => {
+    suggestingName.value = true;
+    suggestedName.value = '';
+    try {
+      const tracks = generateSpotifyResults.value.length
+        ? generateSpotifyResults.value
+        : resultTracks.value;
+
+      // Send track IDs — backend will fetch artist genres from Spotify
+      const trackIds = tracks.map(t => {
+        const uri = t.uri || '';
+        return uri.replace('spotify:track:', '');
+      }).filter(Boolean).slice(0, 50);
+
+      const res = await fetch(`${API}/api/spotify/playlist-name`, {
+        method: 'POST',
+        headers: headers(),
+        body: JSON.stringify({ trackIds }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        suggestedName.value = data.name || '';
+      }
+    } catch { /* silent */ }
+    suggestingName.value = false;
+    return suggestedName.value;
+  };
+
   // ── Save to Spotify ───────────────────────────────────────────────────
   const saveToSpotify = async (name) => {
     error.value = '';
@@ -1365,6 +1398,7 @@ export function usePlaylistTools() {
 
     likedIds, userPlaylists, playlistsLoading,
     ytSaving, ytSaveResult, ytUserPlaylists, ytPlaylistsLoading, ytScopeMissing,
+    suggestedName, suggestingName,
 
     // Methods
     open, close, minimize, reset, setTab, setGenerateTarget,
@@ -1372,7 +1406,7 @@ export function usePlaylistTools() {
     generate, cancelGenerate, startConvert, cancelConvert,
     swapMatch, autofillUnmatched, removeResult,
     likeTrack, fetchUserPlaylists, addToExistingPlaylist,
-    saveToSpotify, saveState, restoreState,
+    saveToSpotify, suggestName, saveState, restoreState,
     saveToYouTube, addToExistingYouTubePlaylist, fetchUserYouTubePlaylists,
   };
 }

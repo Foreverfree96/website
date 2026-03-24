@@ -15,6 +15,7 @@ import {
   savePlaylist,
   getUserPlaylists,
   addToPlaylist,
+  generatePlaylistName,
 } from "../controllers/spotifyController.js";
 import { protect } from "../middleware/auth.js";
 
@@ -38,5 +39,6 @@ router.put("/save-track",              protect, saveTrack);
 router.put("/save-playlist",           protect, savePlaylist);
 router.get("/playlists",               protect, getUserPlaylists);
 router.post("/playlist/:id/add",       protect, addToPlaylist);
+router.post("/playlist-name",          protect, generatePlaylistName);
 
 export default router;

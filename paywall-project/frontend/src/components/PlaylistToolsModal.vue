@@ -365,12 +365,17 @@
 
                 <!-- New playlist -->
                 <template v-if="saveMode === 'new'">
-                  <input
-                    class="pt-input"
-                    v-model="playlistName"
-                    placeholder="Playlist name..."
-                    @keydown.enter="handleSave"
-                  />
+                  <div class="pt-name-row">
+                    <input
+                      class="pt-input pt-name-input"
+                      v-model="playlistName"
+                      :placeholder="pt.suggestingName.value ? 'Generating name...' : 'Playlist name...'"
+                      @keydown.enter="handleSave"
+                    />
+                    <button class="pt-name-regen" @click="regenerateName" :disabled="pt.suggestingName.value" title="Generate new name">
+                      {{ pt.suggestingName.value ? '...' : '🔄' }}
+                    </button>
+                  </div>
                   <div class="pt-save-actions">
                     <button class="pt-btn pt-btn-save" @click="handleSave" :disabled="pt.saving.value || !playlistName.trim()">
                       {{ pt.saving.value ? 'Saving...' : 'Create & Save' }}
@@ -591,6 +596,14 @@ const showSaveDialog   = ref(false);
 const playlistName     = ref('');
 const saveMode         = ref('new'); // 'new' | 'existing'
 
+// Auto-suggest playlist name when save dialog opens
+watch(showSaveDialog, async (open) => {
+  if (open && saveMode.value === 'new' && !playlistName.value) {
+    const name = await pt.suggestName();
+    if (name && !playlistName.value) playlistName.value = name;
+  }
+});
+
 // YouTube save dialog
 const showYtSaveDialog = ref(false);
 const ytPlaylistName   = ref('');
@@ -780,6 +793,11 @@ const handleSave = () => {
   pt.saveToSpotify(playlistName.value.trim());
   showSaveDialog.value = false;
   playlistName.value = '';
+};
+
+const regenerateName = async () => {
+  const name = await pt.suggestName();
+  if (name) playlistName.value = name;
 };
 
 const loadPlaylists = () => {
@@ -1017,6 +1035,16 @@ const handleAddToExistingYt = (playlistId) => {
 }
 .pt-input:focus { border-color: #7c3aed; }
 .pt-input::placeholder { color: #555; }
+
+.pt-name-row { display: flex; gap: 8px; align-items: center; }
+.pt-name-input { flex: 1; }
+.pt-name-regen {
+  background: #2a2a2a; border: 1px solid #333; border-radius: 8px;
+  padding: 8px 12px; cursor: pointer; font-size: 14px; color: #aaa;
+  transition: background 0.15s, color 0.15s; flex-shrink: 0;
+}
+.pt-name-regen:hover { background: #3a3a3a; color: #fff; }
+.pt-name-regen:disabled { opacity: 0.4; cursor: default; }
 
 /* ─── Search dropdown ─────────────────────────────────────────────────────── */
 .pt-search-wrap { position: relative; }

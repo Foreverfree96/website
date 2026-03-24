@@ -1795,3 +1795,113 @@ export const addToPlaylist = async (req, res) => {
     res.status(err.response?.status || 500).json({ message: "Failed to add tracks" });
   }
 };
+
+// ─── GENERATE PLAYLIST NAME ─────────────────────────────────────────────────
+// POST /api/spotify/playlist-name
+// Body: { artistIds: ["id1", "id2", ...] }
+// Fetches artist genres from Spotify, finds the dominant vibe, returns a creative name.
+const VIBE_MAP = {
+  chill:      ['chill', 'lo-fi', 'lofi', 'ambient', 'downtempo', 'chillwave', 'chillhop', 'trip-hop', 'new age', 'sleep'],
+  hype:       ['hip hop', 'hip-hop', 'rap', 'trap', 'drill', 'grime', 'crunk', 'bounce', 'gangster rap', 'dirty south'],
+  smooth:     ['r&b', 'rnb', 'soul', 'neo soul', 'neo-soul', 'quiet storm', 'urban contemporary', 'motown'],
+  indie:      ['indie', 'alternative', 'folk', 'singer-songwriter', 'chamber pop', 'dream pop', 'shoegaze', 'art rock', 'bedroom pop'],
+  pop:        ['pop', 'dance pop', 'electropop', 'synth-pop', 'synthpop', 'teen pop', 'bubblegum', 'k-pop', 'j-pop'],
+  rock:       ['rock', 'punk', 'metal', 'grunge', 'hard rock', 'classic rock', 'emo', 'hardcore', 'post-punk', 'garage rock'],
+  electronic: ['electronic', 'edm', 'house', 'techno', 'trance', 'dubstep', 'drum and bass', 'dnb', 'deep house', 'future bass'],
+  jazz:       ['jazz', 'bossa nova', 'swing', 'bebop', 'smooth jazz', 'acid jazz', 'fusion'],
+  latin:      ['latin', 'reggaeton', 'salsa', 'bachata', 'cumbia', 'dembow', 'latin pop', 'latin hip hop', 'urbano latino'],
+  country:    ['country', 'bluegrass', 'americana', 'country rock', 'outlaw country', 'alt-country'],
+  afro:       ['afrobeats', 'afropop', 'afroswing', 'amapiano', 'highlife', 'dancehall', 'reggae', 'soca'],
+  classical:  ['classical', 'orchestral', 'opera', 'baroque', 'romantic', 'contemporary classical', 'piano'],
+};
+
+const VIBE_NAMES = {
+  chill:      ['Midnight Chill Sessions', 'Velvet Lounge', 'Cloud Nine Drift', 'Slow Burn Sundays', 'Dreamstate', 'Faded Frequencies', 'Soft Landing', 'Calm Before the Storm', 'Blue Hour Bliss', 'Floating'],
+  hype:       ['No Skip Zone', 'Main Character Energy', 'Turn It Up', 'Heat Check', 'Loud & Clear', 'Off the Charts', 'Bar for Bar', 'Run It Back', 'Pressure', 'Hard in the Paint'],
+  smooth:     ['Silk & Soul', 'Golden Hour R&B', 'After Hours Slow Jams', 'Mood Ring', 'Pillow Talk Playlist', 'Satin Vibes', 'Butterscotch Sunset', 'Candlelit', 'Smooth Operator', 'Honey Drip'],
+  indie:      ['Rooftop Sunsets', 'Lost in the Static', 'Backroads & B-Sides', 'The Quiet Ones', 'Paper Lanterns', 'Thrift Store Finds', 'Sun-Bleached Tapes', 'Off the Beaten Path', 'Daydream Gazette', 'Window Seat'],
+  pop:        ['Hit Parade', 'Instant Classic', 'Sugar Rush', 'Crystal Clear', 'Spotlight', 'Certified Bops', 'Good Energy Only', 'Bright Side', 'Pop Perfection', 'Electric Feel'],
+  rock:       ['Loud & Alive', 'Garage Days', 'Full Volume', 'Grit & Glory', 'Feedback Loop', 'Concrete Jungle Anthems', 'Raw Power', 'Midnight Riot', 'Amp It Up', 'Riff Raff'],
+  electronic: ['Neon Nights', 'Waveform', 'Digital Sunrise', 'Bass Culture', 'Pulse', 'Synth City', 'Frequency Shift', 'After Dark', 'Electric Dreams', 'Drop Zone'],
+  jazz:       ['Smoky Room Sessions', 'Blue Note Evenings', 'Uptown Swing', 'Vinyl & Velvet', 'The Jazz Lounge', 'Late Night Brass', 'Cool Cats Only', 'Sax & the City', 'Mellow Gold', 'Bourbon Street'],
+  latin:      ['Fuego', 'Ritmo', 'Caliente', 'Sol y Sombra', 'Tropical Heat', 'La Noche', 'Sabor', 'Perreo Mix', 'Isla Vibes', 'Bailamos'],
+  country:    ['Dust & Diamonds', 'Back Porch Sessions', 'Open Road', 'Honky Tonk Heart', 'Campfire Stories', 'Boots & Bourbon', 'Two-Lane Highway', 'Southern Comfort', 'Wide Open Spaces', 'Steel & Stories'],
+  afro:       ['Afro Heat', 'Lagos to London', 'Sunshine State', 'Carnival Energy', 'Island Time', 'Tropical Thunder', 'Vibe Check', 'Dance Floor Africa', 'Golden Coast', 'Wavy'],
+  classical:  ['Grand Movements', 'Opus in Progress', 'The Quiet Gallery', 'Symphony of Solitude', 'Timeless', 'Ivory Keys', 'Crescendo', 'The Composers Table', 'Adagio', 'Moonlit Sonata'],
+};
+
+const MIXED_NAMES = [
+  'Fresh Finds', 'The Rotation', 'Curated Chaos', 'Good Taste Only', 'Daily Mix',
+  'The Collection', 'Eclectic Ears', 'Genre Fluid', 'Sound Safari', 'Vibe Roulette',
+  'The Algorithm', 'No Rules', 'Mixed Signals', 'Shuffle Culture', 'Audio Passport',
+];
+
+export const generatePlaylistName = async (req, res) => {
+  try {
+    const { trackIds = [], artistIds: rawArtistIds = [] } = req.body;
+    if (!trackIds.length && !rawArtistIds.length) {
+      return res.json({ name: MIXED_NAMES[Math.floor(Math.random() * MIXED_NAMES.length)] });
+    }
+
+    const result = await getValidToken(req.user.id, false);
+    const allGenres = [];
+
+    if (!result.error) {
+      const auth = { Authorization: `Bearer ${result.accessToken}` };
+      let artistIds = [...rawArtistIds];
+
+      // If trackIds provided, resolve artist IDs from tracks first
+      if (trackIds.length && !artistIds.length) {
+        const unique = [...new Set(trackIds)].slice(0, 50);
+        for (let i = 0; i < unique.length; i += 50) {
+          const batch = unique.slice(i, i + 50).join(',');
+          try {
+            const r = await axios.get(`https://api.spotify.com/v1/tracks?ids=${batch}`, { headers: auth });
+            for (const t of (r.data.tracks || [])) {
+              if (t?.artists) artistIds.push(...t.artists.map(a => a.id));
+            }
+          } catch { /* continue */ }
+        }
+      }
+
+      // Fetch artist genres (batches of 50)
+      const uniqueArtists = [...new Set(artistIds)].slice(0, 100);
+      for (let i = 0; i < uniqueArtists.length; i += 50) {
+        const batch = uniqueArtists.slice(i, i + 50).join(',');
+        try {
+          const r = await axios.get(`https://api.spotify.com/v1/artists?ids=${batch}`, { headers: auth });
+          for (const artist of (r.data.artists || [])) {
+            if (artist?.genres) allGenres.push(...artist.genres);
+          }
+        } catch { /* continue with what we have */ }
+      }
+    }
+
+    // Tally vibes from genres
+    const vibeCounts = {};
+    for (const genre of allGenres) {
+      const gl = genre.toLowerCase();
+      for (const [vibe, keywords] of Object.entries(VIBE_MAP)) {
+        if (keywords.some(kw => gl.includes(kw))) {
+          vibeCounts[vibe] = (vibeCounts[vibe] || 0) + 1;
+        }
+      }
+    }
+
+    // Pick dominant vibe
+    const sorted = Object.entries(vibeCounts).sort((a, b) => b[1] - a[1]);
+    let name;
+    if (sorted.length && sorted[0][1] >= 2) {
+      const topVibe = sorted[0][0];
+      const pool = VIBE_NAMES[topVibe] || MIXED_NAMES;
+      name = pool[Math.floor(Math.random() * pool.length)];
+    } else {
+      name = MIXED_NAMES[Math.floor(Math.random() * MIXED_NAMES.length)];
+    }
+
+    res.json({ name });
+  } catch (err) {
+    console.error("❌ Playlist name generation error:", err.message);
+    res.json({ name: MIXED_NAMES[Math.floor(Math.random() * MIXED_NAMES.length)] });
+  }
+};

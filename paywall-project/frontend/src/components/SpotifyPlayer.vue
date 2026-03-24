@@ -392,6 +392,7 @@ const toggleLike = async () => {
       body: JSON.stringify({ trackIds: [currentTrackId.value] }),
     });
     if (res.ok) { liked.value = true; flashMsg('Saved to Liked Songs'); }
+    else if (res.status === 403) { flashMsg('Reconnect Spotify to save tracks'); sdk.needsReconnect.value = true; }
     else flashMsg('Failed to save');
   } catch { flashMsg('Failed to save'); }
   finally { likeLoading.value = false; }
