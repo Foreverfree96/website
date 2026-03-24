@@ -618,10 +618,10 @@ const previewLabel = computed(() => {
 .mp-hbtn--close:hover { background: #e11d48; color: #fff; }
 
 /* ── Spotify SDK wrapper ── */
-.mp-spotify-wrap { overflow: hidden; }
+.mp-spotify-wrap { overflow: hidden; overflow-y: auto; }
 .mp-spotify-wrap :deep(.sp-wrap)          { margin-top: 0; }
 .mp-spotify-wrap :deep(.sp-card)          { border: none; border-radius: 0; padding: 14px; gap: 12px; }
-.mp-spotify-wrap :deep(.sp-tracklist)     { max-height: 300px; }
+.mp-spotify-wrap :deep(.sp-tracklist)     { max-height: 400px; }
 .mp-spotify-wrap :deep(.sp-brand)         { display: none; }
 .mp-spotify-wrap :deep(.sp-vol-pct)       { display: none; }
 .mp-spotify-wrap :deep(.sp-art)           { width: 56px; height: 56px; }
@@ -779,6 +779,9 @@ const previewLabel = computed(() => {
     bottom: max(14px, env(safe-area-inset-bottom));
     left: 14px;
     z-index: 1001;
+    width: 54px;
+    height: 54px;
+    font-size: 1.2rem;
   }
 
   .mp-panel {
@@ -787,15 +790,16 @@ const previewLabel = computed(() => {
     left: 0;
     right: 0;
     width: 100%;
-    max-height: 48dvh;
-    min-height: 260px;
+    max-height: 55dvh;
+    min-height: 280px;
     border-radius: 0 0 16px 16px;
     border-top: none;
   }
 
   .mp-header { padding: 7px 10px; }
   .mp-embed { height: 260px; }
-  .mp-queue-list { max-height: 160px; }
+  .mp-queue-list { max-height: 200px; }
+  .mp-spotify-wrap :deep(.sp-tracklist) { max-height: calc(55dvh - 200px); min-height: 200px; }
   .mp-skip-btn { width: 42px; height: 42px; min-width: 42px; min-height: 42px; }
 }
 
@@ -804,19 +808,21 @@ const previewLabel = computed(() => {
   .mp-root { bottom: 0; left: 0; }
   .mp-panel {
     width: 100%;
-    height: 55dvh;
-    min-height: 280px;
-    max-height: 55dvh;
+    height: 60dvh;
+    min-height: 300px;
+    max-height: 60dvh;
     border-radius: 0 0 12px 12px;
   }
+  .mp-bubble { width: 54px; height: 54px; }
   .mp-preview-play { padding: 13px; font-size: 1rem; }
+  .mp-spotify-wrap :deep(.sp-tracklist) { max-height: calc(60dvh - 200px); min-height: 220px; }
 }
 
 /* ── Small mobile ── */
 @media (max-width: 480px) {
   .mp-panel {
-    height: 60dvh;
-    max-height: 60dvh;
+    height: 65dvh;
+    max-height: 65dvh;
     border-radius: 0;
     border: none;
     border-bottom: 1px solid #2a2a2a;
@@ -825,7 +831,8 @@ const previewLabel = computed(() => {
   .mp-label  { font-size: 0.78rem; }
   .mp-embed { height: 220px; }
   .mp-bubble { width: 48px; height: 48px; font-size: 1.1rem; }
-  .mp-queue-list { max-height: 140px; }
+  .mp-queue-list { max-height: 180px; }
+  .mp-spotify-wrap :deep(.sp-tracklist) { max-height: calc(65dvh - 180px); min-height: 200px; }
   .mp-skip-bar { gap: 12px; padding: 8px 10px; }
   .mp-skip-label { font-size: 0.72rem; min-width: 60px; }
 }
@@ -833,9 +840,10 @@ const previewLabel = computed(() => {
 /* ── Extra-small mobile ── */
 @media (max-width: 360px) {
   .mp-panel {
-    height: 65dvh;
-    max-height: 65dvh;
+    height: 70dvh;
+    max-height: 70dvh;
   }
+  .mp-spotify-wrap :deep(.sp-tracklist) { max-height: calc(70dvh - 180px); }
 }
 
 /* ── Foldable: respect viewport height on compact screens ── */
