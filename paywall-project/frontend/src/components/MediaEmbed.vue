@@ -106,6 +106,9 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useNowPlaying } from '../composables/useNowPlaying.js';
 import SpotifyPlayer from './SpotifyPlayer.vue';
 
+// ── Global YouTube singleton: only one iframe plays at a time ────────────────
+const _ytActiveSrc = { value: null }; // contentWindow of the currently playing iframe
+
 const props = defineProps({
   mediaUrl:  { type: String, default: '' },
   embedType: { type: String, default: '' },
@@ -218,6 +221,20 @@ const onMessage = (e) => {
       if (d.info.playlistIndex != null) ytIndex.value = d.info.playlistIndex;
       if (Array.isArray(d.info.playlist) && d.info.playlist.length > ytLength.value)
         ytLength.value = d.info.playlist.length;
+
+      // Singleton: when THIS player starts playing, pause any other active YT player
+      if (d.info.playerState === 1) {
+        const me = iframeEl.value.contentWindow;
+        if (_ytActiveSrc.value && _ytActiveSrc.value !== me) {
+          try {
+            _ytActiveSrc.value.postMessage(
+              JSON.stringify({ event: 'command', func: 'pauseVideo', args: [] }), '*'
+            );
+          } catch { /* stale ref */ }
+        }
+        _ytActiveSrc.value = me;
+      }
+
       // Shuffle: intercept video-ended and jump to random track
       if (d.info.playerState === 0 && ytShuffleOn.value && ytLength.value > 1) {
         let next;
@@ -294,6 +311,10 @@ onUnmounted(() => {
   if (_ytBeforeUnload) { window.removeEventListener('beforeunload', _ytBeforeUnload); _ytBeforeUnload = null; }
   // Save final position on unmount
   if (props.embedType === 'youtube') saveYtPosition();
+  // Clear singleton ref if this was the active player
+  if (iframeEl.value && _ytActiveSrc.value === iframeEl.value.contentWindow) {
+    _ytActiveSrc.value = null;
+  }
 });
 
 // When mini player closes/pops back in, restore position in post embed
