@@ -1745,9 +1745,30 @@ export const addToPlaylist = async (req, res) => {
 
     const auth = { Authorization: `Bearer ${result.accessToken}`, "Content-Type": "application/json" };
 
+    // Check for duplicates — fetch existing track URIs from the playlist
+    const existingUris = new Set();
+    let nextUrl = `https://api.spotify.com/v1/playlists/${playlistId}/tracks?fields=items(track(uri)),next&limit=100`;
+    try {
+      while (nextUrl) {
+        const r = await axios.get(nextUrl, { headers: { Authorization: `Bearer ${result.accessToken}` } });
+        for (const item of (r.data.items || [])) {
+          if (item.track?.uri) existingUris.add(item.track.uri);
+        }
+        nextUrl = r.data.next || null;
+      }
+    } catch {
+      // If fetching fails (403 Dev Mode, etc.), skip duplicate check and add anyway
+    }
+
+    // Filter out tracks that are already in the playlist
+    const newUris = existingUris.size ? trackUris.filter(uri => !existingUris.has(uri)) : trackUris;
+    if (!newUris.length) {
+      return res.status(409).json({ message: "Already in playlist", duplicate: true });
+    }
+
     // Add in batches of 100 — Dev Mode uses /items, legacy uses /tracks
-    for (let i = 0; i < trackUris.length; i += 100) {
-      const batch = trackUris.slice(i, i + 100);
+    for (let i = 0; i < newUris.length; i += 100) {
+      const batch = newUris.slice(i, i + 100);
       try {
         await axios.post(
           `https://api.spotify.com/v1/playlists/${playlistId}/items`,

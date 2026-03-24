@@ -426,6 +426,7 @@ const addToPlaylist = async (playlistId, name) => {
       body: JSON.stringify({ trackUris: [uri] }),
     });
     if (res.ok) flashMsg(`Added to ${name}`);
+    else if (res.status === 409) flashMsg('Already in playlist');
     else flashMsg('Failed to add');
   } catch { flashMsg('Failed to add'); }
 };
