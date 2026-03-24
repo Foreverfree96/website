@@ -63,8 +63,8 @@ const CONTENT_API_KEY = () => {
     const idx = (_ytContentKeyIndex + i) % _ytContentKeys.length;
     if (!_isExhausted(_ytContentKeys[idx])) return _ytContentKeys[idx];
   }
-  // Fallback to general pool
-  return API_KEY();
+  // No fallback — keep content key isolated
+  return null;
 };
 
 const _isQuotaError = (err) => {
