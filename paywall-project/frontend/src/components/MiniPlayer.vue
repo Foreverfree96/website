@@ -215,6 +215,14 @@ watch(nowPlaying, (np, old) => {
     playerReady.value = !!(np.resumeOnLoad && np.type !== 'spotify');
     ytPlaylistIndex.value = np.playlistIndex || 0;
   } else if (old.url !== np.url || old.type !== np.type) {
+    // Stop the OLD player before switching to the new one
+    if (old.type === 'youtube' && iframeEl.value?.contentWindow) {
+      iframeEl.value.contentWindow.postMessage(
+        JSON.stringify({ event: 'command', func: 'pauseVideo', args: [] }), '*'
+      );
+    }
+    if (old.type === 'spotify') spotifySDK.pause();
+
     // Save the OLD content's fresh position so its MediaEmbed can restore
     if (old.url) {
       const saved = { url: old.url, position: 0, playlistIndex: 0, trackUri: '', paused: false };
