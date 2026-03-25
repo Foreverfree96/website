@@ -186,7 +186,13 @@ const _restoreResults = () => {
 };
 
 // Restore on module load
-_restoreResults();
+try {
+  _restoreResults();
+  console.log('[PlaylistTools] Session restored successfully');
+} catch (e) {
+  console.error('[PlaylistTools] Failed to restore session:', e);
+  try { sessionStorage.removeItem(RESULTS_KEY); } catch { }
+}
 
 // ─── Available genres (categorized) ──────────────────────────────────────────
 const GENRE_CATEGORIES = {
