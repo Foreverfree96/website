@@ -14,6 +14,8 @@ const activeTab = ref('generate'); // 'generate' | 'convert'
 // Generate tab
 const seedTracks      = ref([]);
 const seedPlaylistUrls = ref([]); // array of URLs to reference
+const seedArtistUrls  = ref([]); // array of artist URLs
+const seedAlbumUrls   = ref([]); // array of album URLs
 const selectedGenres  = ref([]);
 const trackLimit      = ref(30);
 const generatedTracks = ref([]);
@@ -132,6 +134,8 @@ const _persistResults = () => {
       convertUrl: convertUrl.value,
       seedTracks: seedTracks.value,
       seedPlaylistUrls: seedPlaylistUrls.value,
+      seedArtistUrls: seedArtistUrls.value,
+      seedAlbumUrls: seedAlbumUrls.value,
       selectedGenres: selectedGenres.value,
       selectedLanguages: selectedLanguages.value,
       trackLimit: trackLimit.value,
@@ -167,7 +171,9 @@ const _restoreResults = () => {
     convertDirection.value = state.convertDirection || null;
     convertUrl.value = state.convertUrl || '';
     seedTracks.value = state.seedTracks || [];
-    seedPlaylistUrl.value = state.seedPlaylistUrl || '';
+    seedPlaylistUrls.value = state.seedPlaylistUrls || [];
+    seedArtistUrls.value = state.seedArtistUrls || [];
+    seedAlbumUrls.value = state.seedAlbumUrls || [];
     selectedGenres.value = state.selectedGenres || [];
     selectedLanguages.value = state.selectedLanguages || ['en'];
     trackLimit.value = state.trackLimit || 30;
@@ -243,6 +249,16 @@ const extractSpotifyPlaylistId = (url) => {
 
 const extractSpotifyTrackId = (url) => {
   const m = url.match(/(?:track\/|spotify:track:)([a-zA-Z0-9]+)/);
+  return m?.[1] || null;
+};
+
+const extractSpotifyArtistId = (url) => {
+  const m = url.match(/(?:artist\/|spotify:artist:)([a-zA-Z0-9]+)/);
+  return m?.[1] || null;
+};
+
+const extractSpotifyAlbumId = (url) => {
+  const m = url.match(/(?:album\/|spotify:album:)([a-zA-Z0-9]+)/);
   return m?.[1] || null;
 };
 
@@ -523,6 +539,32 @@ export function usePlaylistTools() {
     seedPlaylistUrls.value.splice(index, 1);
   };
 
+  // ── Reference artist URLs ─────────────────────────────────────────────
+  const addSeedArtistUrl = (url) => {
+    const trimmed = url.trim();
+    if (!trimmed || seedArtistUrls.value.includes(trimmed)) return;
+    const artistId = extractSpotifyArtistId(trimmed);
+    if (!artistId) { alert('Invalid Spotify artist URL'); return; }
+    seedArtistUrls.value.push(trimmed);
+  };
+
+  const removeSeedArtistUrl = (index) => {
+    seedArtistUrls.value.splice(index, 1);
+  };
+
+  // ── Reference album URLs ──────────────────────────────────────────────
+  const addSeedAlbumUrl = (url) => {
+    const trimmed = url.trim();
+    if (!trimmed || seedAlbumUrls.value.includes(trimmed)) return;
+    const albumId = extractSpotifyAlbumId(trimmed);
+    if (!albumId) { alert('Invalid Spotify album URL'); return; }
+    seedAlbumUrls.value.push(trimmed);
+  };
+
+  const removeSeedAlbumUrl = (index) => {
+    seedAlbumUrls.value.splice(index, 1);
+  };
+
   // ── Generate playlist ─────────────────────────────────────────────────
   const generate = async () => {
     if (convertLoading.value) {
@@ -550,6 +592,22 @@ export function usePlaylistTools() {
         languages: selectedLanguages.value,
         limit: trackLimit.value,
       };
+
+      // Extract artist IDs from artist URLs
+      const seedArtistIds = [];
+      for (const url of seedArtistUrls.value) {
+        const artistId = extractSpotifyArtistId(url);
+        if (artistId) seedArtistIds.push(artistId);
+      }
+      if (seedArtistIds.length) body.seedArtistIds = seedArtistIds;
+
+      // Extract album IDs from album URLs
+      const seedAlbumIds = [];
+      for (const url of seedAlbumUrls.value) {
+        const albumId = extractSpotifyAlbumId(url);
+        if (albumId) seedAlbumIds.push(albumId);
+      }
+      if (seedAlbumIds.length) body.seedAlbumIds = seedAlbumIds;
 
       // If user pasted URL(s) — process each one
       const seedPlaylistIds = [];
@@ -1473,7 +1531,7 @@ export function usePlaylistTools() {
   return {
     // State
     isOpen, activeTab, isMinimized, bgStatus, bgDone,
-    seedTracks, seedPlaylistUrls, selectedGenres, trackLimit,
+    seedTracks, seedPlaylistUrls, seedArtistUrls, seedAlbumUrls, selectedGenres, trackLimit,
     generatedTracks, generateLoading, generateTarget, generateProgress,
     generateSpotifyResults, generateYoutubeResults,
     convertUrl, convertDirection, sourceTracks, matchedTracks, convertLoading, convertProgress,
@@ -1491,6 +1549,8 @@ export function usePlaylistTools() {
     open, close, minimize, reset, setTab, setGenerateTarget,
     searchSeeds, addSeed, removeSeed, toggleGenre, addCustomGenre, toggleLanguage,
     addSeedPlaylistUrl, removeSeedPlaylistUrl,
+    addSeedArtistUrl, removeSeedArtistUrl,
+    addSeedAlbumUrl, removeSeedAlbumUrl,
     generate, cancelGenerate, startConvert, cancelConvert,
     swapMatch, autofillUnmatched, removeResult,
     likeTrack, fetchUserPlaylists, addToExistingPlaylist,

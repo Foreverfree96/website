@@ -818,13 +818,13 @@ export const searchTracks = async (req, res) => {
 // search queries from artist names + genres, collect and deduplicate results.
 export const generatePlaylist = async (req, res) => {
   try {
-    let { seedTrackIds = [], seedTrackMeta = [], seedPlaylistId, seedPlaylistIds = [], genres = [], languages = ['en'], limit = 30 } = req.body;
+    let { seedTrackIds = [], seedTrackMeta = [], seedPlaylistId, seedPlaylistIds = [], seedArtistIds = [], seedAlbumIds = [], genres = [], languages = ['en'], limit = 30 } = req.body;
     limit = Math.max(1, Math.min(Number(limit) || 30, 100));
     if (!Array.isArray(languages) || !languages.length) languages = ['en'];
 
     // Support both singular and plural for backward compatibility
     const playlistIds = seedPlaylistIds.length ? seedPlaylistIds : (seedPlaylistId ? [seedPlaylistId] : []);
-    console.log(`🎵 Generate request: ${seedTrackIds.length} trackIds, ${seedTrackMeta.length} meta, ${genres.length} genres, limit=${limit}, playlists=${playlistIds.length ? playlistIds.join(',') : 'none'}`);
+    console.log(`🎵 Generate request: ${seedTrackIds.length} trackIds, ${seedTrackMeta.length} meta, ${genres.length} genres, limit=${limit}, playlists=${playlistIds.length ? playlistIds.join(',') : 'none'}, artists=${seedArtistIds.length ? seedArtistIds.join(',') : 'none'}, albums=${seedAlbumIds.length ? seedAlbumIds.join(',') : 'none'}`);
     if (seedTrackMeta.length) console.log(`   Meta:`, seedTrackMeta.slice(0, 3).map(m => `${m.name} - ${m.artist}`));
 
     // Try user token first, then service account, then client creds
@@ -849,6 +849,8 @@ export const generatePlaylist = async (req, res) => {
     // Collect artist names from seed tracks
     const seedArtists = [];
     const seedTrackUris = new Set();
+    const genreFrequency = new Map(); // track genre frequency from playlist
+    const domainedGenres = []; // extracted dominant genres
 
     // Use frontend-provided metadata as initial artist source
     seedTrackMeta.forEach((m) => {
@@ -875,6 +877,33 @@ export const generatePlaylist = async (req, res) => {
           if (!items) items = [];
         }
         if (items?.length) {
+          // Collect artist IDs to fetch their genres (up to 50 per request)
+          const artistIds = new Set();
+          items.forEach((i) => {
+            i.track?.artists?.forEach((a) => {
+              if (a.id) artistIds.add(a.id);
+            });
+          });
+
+          // Fetch genres from artists in batches of 50
+          const artistIdsArray = [...artistIds];
+          for (let i = 0; i < artistIdsArray.length; i += 50) {
+            const batch = artistIdsArray.slice(i, i + 50);
+            try {
+              const genreRes = await axios.get(`https://api.spotify.com/v1/artists`, {
+                params: { ids: batch.join(",") },
+                headers: auth,
+              });
+              (genreRes.data.artists || []).forEach((artist) => {
+                (artist.genres || []).forEach((genre) => {
+                  genreFrequency.set(genre, (genreFrequency.get(genre) || 0) + 1);
+                });
+              });
+            } catch (e) {
+              console.warn(`   ⚠ Failed to fetch artist genres:`, e.response?.status || e.message);
+            }
+          }
+
           // Sample tracks — when using multiple playlists, sample less per playlist
           const sampleSize = isStandalone
             ? Math.min(items.length, Math.max(8, Math.floor(15 / playlistIds.length)))
@@ -894,6 +923,92 @@ export const generatePlaylist = async (req, res) => {
               }
             });
           }
+        }
+      }
+
+      // Identify top 3-4 dominant genres from playlist
+      if (genreFrequency.size > 0) {
+        const sorted = [...genreFrequency.entries()]
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 4);
+        sorted.forEach(([g]) => domainedGenres.push(g));
+        console.log(`   🎵 Playlist genres detected: [${sorted.map(s => `${s[0]} (${s[1]})`).join(", ")}]`);
+      }
+    }
+
+    // Process artist seeds — fetch top tracks and extract genres
+    if (seedArtistIds.length) {
+      for (const artistId of seedArtistIds) {
+        try {
+          // Fetch artist info for genres
+          const artistRes = await axios.get(`https://api.spotify.com/v1/artists/${artistId}`, { headers: auth });
+          const artist = artistRes.data;
+          if (artist.name && !seedArtists.includes(artist.name)) seedArtists.push(artist.name);
+          (artist.genres || []).forEach((genre) => {
+            genreFrequency.set(genre, (genreFrequency.get(genre) || 0) + 1);
+          });
+
+          // Fetch artist's top tracks
+          const topTracksRes = await axios.get(
+            `https://api.spotify.com/v1/artists/${artistId}/top-tracks`,
+            { params: { market: 'US' }, headers: auth }
+          );
+          const tracks = topTracksRes.data.tracks || [];
+          const sampleSize = Math.min(tracks.length, 5);
+          tracks.slice(0, sampleSize).forEach((t) => {
+            if (t.id && !seedTrackIds.includes(t.id)) seedTrackIds.push(t.id);
+          });
+          console.log(`   📎 Artist seed "${artist.name}": +${Math.min(5, tracks.length)} top tracks, genres: [${artist.genres.slice(0, 3).join(", ")}]`);
+        } catch (e) {
+          console.warn(`   ⚠ Failed to fetch artist ${artistId}:`, e.response?.status || e.message);
+        }
+      }
+    }
+
+    // Process album seeds — fetch tracks and extract genres from artists
+    if (seedAlbumIds.length) {
+      for (const albumId of seedAlbumIds) {
+        try {
+          // Fetch album info
+          const albumRes = await axios.get(`https://api.spotify.com/v1/albums/${albumId}`, { headers: auth });
+          const album = albumRes.data;
+
+          // Fetch album tracks
+          const tracksRes = await axios.get(`https://api.spotify.com/v1/albums/${albumId}/tracks`, { headers: auth });
+          const tracks = tracksRes.data.items || [];
+
+          // Collect artist IDs from album tracks to get genres
+          const albumArtistIds = new Set();
+          tracks.forEach((t) => {
+            t.artists?.forEach((a) => {
+              if (a.id) albumArtistIds.add(a.id);
+            });
+          });
+
+          // Fetch genres from album artists
+          const artistIdsArray = [...albumArtistIds];
+          for (let i = 0; i < artistIdsArray.length; i += 50) {
+            const batch = artistIdsArray.slice(i, i + 50);
+            const genreRes = await axios.get(`https://api.spotify.com/v1/artists`, {
+              params: { ids: batch.join(",") },
+              headers: auth,
+            });
+            (genreRes.data.artists || []).forEach((artist) => {
+              if (artist.name && !seedArtists.includes(artist.name)) seedArtists.push(artist.name);
+              (artist.genres || []).forEach((genre) => {
+                genreFrequency.set(genre, (genreFrequency.get(genre) || 0) + 1);
+              });
+            });
+          }
+
+          // Sample album tracks
+          const sampleSize = Math.min(tracks.length, 5);
+          tracks.slice(0, sampleSize).forEach((t) => {
+            if (t.id && !seedTrackIds.includes(t.id)) seedTrackIds.push(t.id);
+          });
+          console.log(`   💿 Album seed "${album.name}": +${sampleSize} tracks sampled`);
+        } catch (e) {
+          console.warn(`   ⚠ Failed to fetch album ${albumId}:`, e.response?.status || e.message);
         }
       }
     }
@@ -923,7 +1038,13 @@ export const generatePlaylist = async (req, res) => {
       });
     }
 
-    console.log(`   Seeds resolved: ${seedArtists.length} artists [${seedArtists.slice(0, 5).join(', ')}], ${uniqueIds.length} trackIds, ${genres.length} genres, ${playlistIds.length} playlists`);
+    // Use detected playlist genres if no user-selected genres
+    if (domainedGenres.length && !genres.length) {
+      genres.push(...domainedGenres.slice(0, 3));
+      console.log(`   📊 Using detected playlist genres: [${genres.join(", ")}]`);
+    }
+
+    console.log(`   Seeds resolved: ${seedArtists.length} artists [${seedArtists.slice(0, 5).join(', ')}], ${uniqueIds.length} trackIds, ${genres.length} genres, ${playlistIds.length} playlists, domainedGenres=[${domainedGenres.join(", ")}]`);
 
     // Allow generation if: (seed tracks OR genres) OR (playlist provided, even if fetch fails)
     const hasSeeds = seedArtists.length || genres.length || uniqueIds.length;
@@ -958,36 +1079,63 @@ export const generatePlaylist = async (req, res) => {
     const LOFI_DIVERSE = ['lofi hip hop', 'lofi beats', 'lofi chill', 'chillhop', 'study beats', 'lofi jazz'];
 
     // Build base queries from seeds and genres (language-neutral)
+    // When using playlists, heavily favor detected genres for stricter matching
     const baseQueries = [];
+    const hasPlaylistInput = playlistIds.length > 0;
 
-    seedArtists.forEach(artist => baseQueries.push(artist));
+    // Genre-heavy queries first (when we have playlist input)
+    if (hasPlaylistInput && genres.length) {
+      // Make genre the primary focus — build queries around genres first
+      genres.forEach(g => {
+        if (g === 'chill') {
+          const picks = CHILL_DIVERSE.sort(() => Math.random() - 0.5).slice(0, 2);
+          picks.forEach(q => baseQueries.push(q));
+        } else if (g === 'lofi') {
+          const picks = LOFI_DIVERSE.sort(() => Math.random() - 0.5).slice(0, 2);
+          picks.forEach(q => baseQueries.push(q));
+        } else {
+          baseQueries.push(g);
+          baseQueries.push(`best ${g}`);
+          baseQueries.push(`${g} hits`);
+        }
+      });
+      // Artists within the detected genre context
+      seedArtists.slice(0, 2).forEach(artist => {
+        genres.slice(0, 2).forEach(g => baseQueries.push(`${artist} ${g}`));
+      });
+      // Secondary: artist-only queries
+      seedArtists.slice(0, 3).forEach(artist => baseQueries.push(artist));
+    } else {
+      // Original behavior when no playlist or user selected genres manually
+      seedArtists.forEach(artist => baseQueries.push(artist));
 
-    seedTrackMeta.slice(0, 5).forEach(m => {
-      const name = (m.name || '').replace(/\s*[\(\[].*[\)\]]$/g, '').trim();
-      const artist = cleanArtist(m.artist);
-      if (name && artist) baseQueries.push(`${artist} ${name}`);
-      else if (name) baseQueries.push(name);
-    });
+      seedTrackMeta.slice(0, 5).forEach(m => {
+        const name = (m.name || '').replace(/\s*[\(\[].*[\)\]]$/g, '').trim();
+        const artist = cleanArtist(m.artist);
+        if (name && artist) baseQueries.push(`${artist} ${name}`);
+        else if (name) baseQueries.push(name);
+      });
 
-    seedArtists.slice(0, 3).forEach(artist => {
-      genres.slice(0, 2).forEach(g => baseQueries.push(`${artist} ${g}`));
-    });
+      seedArtists.slice(0, 3).forEach(artist => {
+        genres.slice(0, 2).forEach(g => baseQueries.push(`${artist} ${g}`));
+      });
 
-    genres.forEach(g => {
-      if (g === 'chill') {
-        const picks = CHILL_DIVERSE.sort(() => Math.random() - 0.5).slice(0, 3);
-        picks.forEach(q => baseQueries.push(q));
-      } else if (g === 'lofi') {
-        const picks = LOFI_DIVERSE.sort(() => Math.random() - 0.5).slice(0, 3);
-        picks.forEach(q => baseQueries.push(q));
-      } else {
-        baseQueries.push(g);
-        baseQueries.push(`${g} hits`);
-        baseQueries.push(`best ${g}`);
-      }
-    });
+      genres.forEach(g => {
+        if (g === 'chill') {
+          const picks = CHILL_DIVERSE.sort(() => Math.random() - 0.5).slice(0, 3);
+          picks.forEach(q => baseQueries.push(q));
+        } else if (g === 'lofi') {
+          const picks = LOFI_DIVERSE.sort(() => Math.random() - 0.5).slice(0, 3);
+          picks.forEach(q => baseQueries.push(q));
+        } else {
+          baseQueries.push(g);
+          baseQueries.push(`${g} hits`);
+          baseQueries.push(`best ${g}`);
+        }
+      });
 
-    if (seedArtists.length >= 2) baseQueries.push(`${seedArtists[0]} ${seedArtists[1]}`);
+      if (seedArtists.length >= 2) baseQueries.push(`${seedArtists[0]} ${seedArtists[1]}`);
+    }
 
     // Apply language enforcement — tag queries with language keywords
     // so Spotify returns results ONLY in the selected language(s)
@@ -1095,6 +1243,36 @@ export const generatePlaylist = async (req, res) => {
 
     emitProgress(10, 'Searching...');
 
+    // Genre validation — when we have detected genres, validate track artists match those genres
+    const validateTrackGenres = async (trackArtistIds) => {
+      if (!hasPlaylistInput || domainedGenres.length === 0) return true; // No validation if no playlist
+      if (!trackArtistIds || trackArtistIds.length === 0) return false;
+
+      try {
+        const batchSize = 50;
+        for (let i = 0; i < trackArtistIds.length; i += batchSize) {
+          const batch = trackArtistIds.slice(i, Math.min(i + batchSize, trackArtistIds.length));
+          const artistRes = await axios.get(`https://api.spotify.com/v1/artists`, {
+            params: { ids: batch.join(",") },
+            headers: auth,
+          });
+
+          // Check if any artist shares genres with domainedGenres
+          for (const artist of (artistRes.data.artists || [])) {
+            const artistGenres = (artist.genres || []).map(g => g.toLowerCase());
+            const match = domainedGenres.some(dg =>
+              artistGenres.some(ag => ag.includes(dg.toLowerCase()) || dg.toLowerCase().includes(ag))
+            );
+            if (match) return true; // At least one artist matches
+          }
+        }
+        return false; // No artist genres matched
+      } catch (e) {
+        console.warn(`   ⚠ Genre validation failed, accepting track:`, e.message);
+        return true; // On error, accept the track (be lenient)
+      }
+    };
+
     for (let qi = 0; qi < uniqueQueries.length; qi++) {
       if (collected.length >= limit) break;
       if (Date.now() - startTime > TIMEOUT_MS) {
@@ -1123,6 +1301,14 @@ export const generatePlaylist = async (req, res) => {
       for (const t of items) {
         if (collected.length >= limit) break;
         if (seenIds.has(t.id)) continue;
+
+        // Strict genre validation when using playlists
+        if (hasPlaylistInput && domainedGenres.length > 0) {
+          const artistIds = t.artists?.map(a => a.id).filter(Boolean) || [];
+          const isGenreMatch = await validateTrackGenres(artistIds);
+          if (!isGenreMatch) continue; // Skip this track, it doesn't match the genre vibe
+        }
+
         seenIds.add(t.id);
 
         const primaryArtist = (t.artists?.[0]?.name || '').toLowerCase();
@@ -1142,7 +1328,7 @@ export const generatePlaylist = async (req, res) => {
         collected.push(track);
         added++;
       }
-      if (qi < 3 || added === 0) console.log(`   Query ${qi}: "${uniqueQueries[qi]}" → ${items.length} results, +${added} new`);
+      if (qi < 3 || added === 0) console.log(`   Query ${qi}: "${uniqueQueries[qi]}" → ${items.length} results, +${added} new (${hasPlaylistInput && domainedGenres.length > 0 ? 'genre-filtered' : 'unfiltered'})`);
 
       // Emit progress
       const queryPct = 10 + ((qi + 1) / uniqueQueries.length) * 70;

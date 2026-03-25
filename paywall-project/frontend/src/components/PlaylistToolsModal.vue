@@ -124,6 +124,48 @@
                 </div>
               </div>
 
+              <!-- Artist seeds -->
+              <div class="pt-section">
+                <label class="pt-label">Seed Artists (optional)</label>
+                <div class="pt-seed-urls-row">
+                  <input
+                    class="pt-input pt-seed-url-input"
+                    v-model="refArtistInput"
+                    placeholder="Paste a Spotify artist link..."
+                    @keydown.enter="addRefArtist"
+                  />
+                  <button class="pt-btn pt-btn-sm pt-btn-primary" @click="addRefArtist" :disabled="!refArtistInput.trim()">Add</button>
+                </div>
+                <!-- Added artist URLs -->
+                <div v-if="pt.seedArtistUrls.value.length" class="pt-seed-urls-list">
+                  <div v-for="(url, idx) in pt.seedArtistUrls.value" :key="'artist-'+idx" class="pt-seed-url-chip pt-seed-artist-chip">
+                    <span class="pt-seed-url-text">🎤 {{ url.length > 45 ? url.substring(0, 42) + '...' : url }}</span>
+                    <button class="pt-seed-url-x" @click="pt.removeSeedArtistUrl(idx)" title="Remove">✕</button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Album seeds -->
+              <div class="pt-section">
+                <label class="pt-label">Seed Albums (optional)</label>
+                <div class="pt-seed-urls-row">
+                  <input
+                    class="pt-input pt-seed-url-input"
+                    v-model="refAlbumInput"
+                    placeholder="Paste a Spotify album link..."
+                    @keydown.enter="addRefAlbum"
+                  />
+                  <button class="pt-btn pt-btn-sm pt-btn-primary" @click="addRefAlbum" :disabled="!refAlbumInput.trim()">Add</button>
+                </div>
+                <!-- Added album URLs -->
+                <div v-if="pt.seedAlbumUrls.value.length" class="pt-seed-urls-list">
+                  <div v-for="(url, idx) in pt.seedAlbumUrls.value" :key="'album-'+idx" class="pt-seed-url-chip pt-seed-album-chip">
+                    <span class="pt-seed-url-text">💿 {{ url.length > 45 ? url.substring(0, 42) + '...' : url }}</span>
+                    <button class="pt-seed-url-x" @click="pt.removeSeedAlbumUrl(idx)" title="Remove">✕</button>
+                  </div>
+                </div>
+              </div>
+
               <!-- Genre/mood tags -->
               <div class="pt-section">
                 <label class="pt-label">Genres / Moods</label>
@@ -686,6 +728,8 @@ const youtubeReconnectUrl = computed(() => {
 const altOpen          = ref(null);
 const customGenreInput = ref('');
 const refUrlInput      = ref(''); // for adding reference playlist URLs
+const refArtistInput   = ref(''); // for adding reference artist URLs
+const refAlbumInput    = ref(''); // for adding reference album URLs
 const openCats         = ref(new Set(['Popular', 'Moods']));
 
 const addRefUrl = () => {
@@ -693,6 +737,20 @@ const addRefUrl = () => {
   if (!url) return;
   pt.addSeedPlaylistUrl(url);
   refUrlInput.value = '';
+};
+
+const addRefArtist = () => {
+  const url = refArtistInput.value.trim();
+  if (!url) return;
+  pt.addSeedArtistUrl(url);
+  refArtistInput.value = '';
+};
+
+const addRefAlbum = () => {
+  const url = refAlbumInput.value.trim();
+  if (!url) return;
+  pt.addSeedAlbumUrl(url);
+  refAlbumInput.value = '';
 };
 
 const toggleCat = (cat) => {
@@ -1255,6 +1313,8 @@ const handleAddToExistingYt = (playlistId) => {
   padding: 0; min-width: auto; transition: color 0.15s;
 }
 .pt-seed-url-x:hover { color: #f87171; }
+.pt-seed-artist-chip { border-color: #6366f1; background: rgba(99, 102, 241, 0.05); }
+.pt-seed-album-chip { border-color: #8b5cf6; background: rgba(139, 92, 246, 0.05); }
 
 /* ─── Genre search + categories ──────────────────────────────────────────── */
 .pt-genre-search-row { display: flex; gap: 8px; margin-bottom: 8px; }
