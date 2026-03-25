@@ -18,6 +18,7 @@ const seedArtistUrls  = ref([]); // array of artist URLs
 const seedAlbumUrls   = ref([]); // array of album URLs
 const selectedGenres  = ref([]);
 const trackLimit      = ref(30);
+console.log('[PlaylistTools] Module initializing', { seedArtistUrls: seedArtistUrls.value, seedAlbumUrls: seedAlbumUrls.value });
 const generatedTracks = ref([]);
 const generateLoading = ref(false);
 const generateTarget  = ref('spotify'); // 'spotify' | 'youtube' — post-generation view toggle
