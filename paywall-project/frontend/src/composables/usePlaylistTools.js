@@ -18,7 +18,6 @@ const seedArtistUrls  = ref([]); // array of artist URLs
 const seedAlbumUrls   = ref([]); // array of album URLs
 const selectedGenres  = ref([]);
 const trackLimit      = ref(30);
-console.log('[PlaylistTools] Module initializing', { seedArtistUrls: seedArtistUrls.value, seedAlbumUrls: seedAlbumUrls.value });
 const generatedTracks = ref([]);
 const generateLoading = ref(false);
 const generateTarget  = ref('spotify'); // 'spotify' | 'youtube' — post-generation view toggle
@@ -186,13 +185,7 @@ const _restoreResults = () => {
 };
 
 // Restore on module load
-try {
-  _restoreResults();
-  console.log('[PlaylistTools] Session restored successfully');
-} catch (e) {
-  console.error('[PlaylistTools] Failed to restore session:', e);
-  try { sessionStorage.removeItem(RESULTS_KEY); } catch { }
-}
+try { _restoreResults(); } catch { try { sessionStorage.removeItem(RESULTS_KEY); } catch {} }
 
 // ─── Available genres (categorized) ──────────────────────────────────────────
 const GENRE_CATEGORIES = {
