@@ -119,6 +119,8 @@ const CHANNEL_CACHE_TTL = 2 * 60 * 60 * 1000; // 2 hours
 // GET /api/youtube/playlist/:id/tracks
 export const getPlaylistTracks = async (req, res) => {
   const playlistId = req.params.id;
+  const isYoutubeMusicAlbum = playlistId.startsWith('OLAK5uy_');
+  if (isYoutubeMusicAlbum) console.log(`📻 Fetching YouTube Music album: ${playlistId}`);
   _loadKeys();
   if (!_ytKeys.length && !_ytContentKeys.length) return res.status(500).json({ message: "YouTube API key not configured" });
   // Clear stale exhausted keys

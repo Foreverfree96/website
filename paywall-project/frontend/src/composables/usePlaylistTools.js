@@ -222,12 +222,15 @@ const isYoutubePlatform = (p) => p === 'youtube' || p === 'youtube-music';
 
 const extractYoutubePlaylistId = (url) => {
   // Standard ?list= param (works for both youtube.com and music.youtube.com)
+  // Handles: list=PLxxxxxx, list=OLAK5uy_xxxxx (YouTube Music albums)
   const listMatch = url.match(/[?&]list=([^&]+)/);
   if (listMatch) return listMatch[1];
   // YouTube Music browse format: music.youtube.com/browse/VLPLxxxxxx
   const browseMatch = url.match(/browse\/VL([A-Za-z0-9_-]+)/);
   if (browseMatch) return browseMatch[1];
-  // YouTube Music playlist path: music.youtube.com/playlist?list= (already handled above)
+  // Fallback: extract OLAK5uy_ format directly from URL
+  const olakMatch = url.match(/(OLAK5uy_[A-Za-z0-9_-]+)/);
+  if (olakMatch) return olakMatch[1];
   return null;
 };
 
