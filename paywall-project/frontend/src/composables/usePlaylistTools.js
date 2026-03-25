@@ -195,7 +195,7 @@ const GENRE_CATEGORIES = {
   'Electronic':       ['electronic', 'house', 'techno', 'edm', 'dubstep', 'drum-and-bass', 'trance', 'ambient'],
   'Rock & Metal':     ['rock', 'alt-rock', 'indie', 'punk', 'metal', 'grunge', 'hardcore'],
   'Chill & Acoustic': ['chill', 'lofi', 'acoustic', 'folk', 'singer-songwriter', 'bossa-nova'],
-  'Classical & Jazz':  ['classical', 'jazz', 'blues', 'soul', 'gospel', 'opera'],
+  'Classical & Jazz':  ['classical', 'piano', 'jazz', 'blues', 'soul', 'gospel', 'opera'],
   'Moods':            ['sad', 'happy', 'emo', 'workout', 'focus', 'sleep', 'road-trip', 'romantic'],
 };
 
