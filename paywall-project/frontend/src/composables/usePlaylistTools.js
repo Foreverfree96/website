@@ -629,9 +629,12 @@ export function usePlaylistTools() {
                     if (t) {
                       if (!body.seedTrackIds.includes(trackId)) body.seedTrackIds.push(trackId);
                       body.seedTrackMeta.push({ name: t.name, artist: t.artist || t.artists?.[0]?.name || '' });
+                      console.log(`[Track] Added Spotify track: ${t.name} by ${t.artist}`);
                     }
+                  } else {
+                    console.warn(`[Track] Failed to fetch Spotify track (${tRes.status}):`, await tRes.json().catch(() => 'unknown error'));
                   }
-                } catch (e) { if (e.name === 'AbortError') throw e; }
+                } catch (e) { if (e.name === 'AbortError') throw e; console.warn('[Track] Error fetching Spotify track:', e.message); }
               }
             } else if (isYoutubePlatform(platform)) {
               const videoId = extractYoutubeVideoId(url);
@@ -651,9 +654,12 @@ export function usePlaylistTools() {
                       const dash = name.match(/^(.+?)\s*[-–—]\s+(.+)$/);
                       if (dash) { name = dash[2].replace(/\s*[\(\[].*[\)\]]$/g, '').trim(); if (!artist) artist = dash[1].trim(); }
                       body.seedTrackMeta.push({ name, artist });
+                      console.log(`[Video] Added YouTube video: ${name} by ${artist}`);
                     }
+                  } else {
+                    console.warn(`[Video] Failed to fetch YouTube video (${vRes.status}):`, await vRes.json().catch(() => 'unknown error'));
                   }
-                } catch (e) { if (e.name === 'AbortError') throw e; }
+                } catch (e) { if (e.name === 'AbortError') throw e; console.warn('[Video] Error fetching YouTube video:', e.message); }
               }
             }
           }
@@ -710,7 +716,17 @@ export function usePlaylistTools() {
       // Add seed playlist IDs if any were collected
       if (seedPlaylistIds.length) body.seedPlaylistIds = seedPlaylistIds;
 
-      console.log('[Generate] Sending request:', { seedTrackIds: body.seedTrackIds?.length, seedTrackMeta: body.seedTrackMeta?.length, genres: body.genres, limit: body.limit, playlists: body.seedPlaylistIds?.length || 'none' });
+      // Debug log before sending
+      console.log('[Generate] Sending request:', {
+        seedTrackIds: body.seedTrackIds?.length,
+        seedTrackMeta: body.seedTrackMeta?.length,
+        seedArtistIds: body.seedArtistIds?.length,
+        seedAlbumIds: body.seedAlbumIds?.length,
+        genres: body.genres,
+        limit: body.limit,
+        playlists: body.seedPlaylistIds?.length || 'none',
+        meta_details: body.seedTrackMeta?.slice(0, 3),
+      });
       const genTimeout = setTimeout(() => { if (!signal.aborted) _generateAbort?.abort(); }, 360000);
       const res = await fetch(`${API}/api/spotify/generate`, {
         method: 'POST',
