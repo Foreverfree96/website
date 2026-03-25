@@ -923,10 +923,14 @@ export const generatePlaylist = async (req, res) => {
       });
     }
 
-    console.log(`   Seeds resolved: ${seedArtists.length} artists [${seedArtists.slice(0, 5).join(', ')}], ${uniqueIds.length} trackIds, ${genres.length} genres`);
+    console.log(`   Seeds resolved: ${seedArtists.length} artists [${seedArtists.slice(0, 5).join(', ')}], ${uniqueIds.length} trackIds, ${genres.length} genres, ${playlistIds.length} playlists`);
 
-    if (!seedArtists.length && !genres.length && !uniqueIds.length) {
-      return res.status(400).json({ message: "Provide at least one seed track or genre" });
+    // Allow generation if: (seed tracks OR genres) OR (playlist provided, even if fetch fails)
+    const hasSeeds = seedArtists.length || genres.length || uniqueIds.length;
+    const hasPlaylist = playlistIds.length > 0;
+
+    if (!hasSeeds && !hasPlaylist) {
+      return res.status(400).json({ message: "Provide at least one seed track, genre, or reference playlist" });
     }
 
     const startTime = Date.now();
