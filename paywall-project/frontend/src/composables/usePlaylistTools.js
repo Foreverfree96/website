@@ -684,29 +684,30 @@ export function usePlaylistTools() {
                     let artist = (t.channelTitle || '')
                       .replace(/\s*-\s*topic$/i, '')
                       .replace(/\s*VEVO$/i, '')
-                    .replace(/\s*Official$/i, '')
-                    .replace(/\s*Music$/i, '')
-                    .replace(/\s*Records$/i, '')
-                    .trim();
-                  let name = t.title || '';
-                  // Try to extract artist from "Artist - Song" title pattern
-                  const dash = name.match(/^(.+?)\s*[-–—]\s+(.+)$/);
-                  if (dash) {
-                    name = dash[2].replace(/\s*[\(\[].*[\)\]]$/g, '').trim();
-                    if (!artist) artist = dash[1].trim();
-                  }
-                  return { name, artist };
-                });
-                body.seedTrackMeta = [...body.seedTrackMeta, ...ytSeeds];
-                bgStatus.value = `Generating from ${ytSeeds.length} seed tracks...`;
-              } else {
-                throw new Error('Could not fetch playlist tracks — check the URL');
-              }
-            } catch (e) {
-              if (e.name === 'AbortError') throw e;
-              // If playlist is the only input and it failed, show error instead of proceeding empty
-              if (!body.seedTrackIds.length && !body.genres.length && !body.seedTrackMeta.length) {
-                throw e;
+                      .replace(/\s*Official$/i, '')
+                      .replace(/\s*Music$/i, '')
+                      .replace(/\s*Records$/i, '')
+                      .trim();
+                    let name = t.title || '';
+                    // Try to extract artist from "Artist - Song" title pattern
+                    const dash = name.match(/^(.+?)\s*[-–—]\s+(.+)$/);
+                    if (dash) {
+                      name = dash[2].replace(/\s*[\(\[].*[\)\]]$/g, '').trim();
+                      if (!artist) artist = dash[1].trim();
+                    }
+                    return { name, artist };
+                  });
+                  body.seedTrackMeta = [...body.seedTrackMeta, ...ytSeeds];
+                  bgStatus.value = `Generating from ${ytSeeds.length} seed tracks...`;
+                } else {
+                  throw new Error('Could not fetch playlist tracks — check the URL');
+                }
+              } catch (e) {
+                if (e.name === 'AbortError') throw e;
+                // If playlist is the only input and it failed, show error instead of proceeding empty
+                if (!body.seedTrackIds.length && !body.genres.length && !body.seedTrackMeta.length) {
+                  throw e;
+                }
               }
             }
           }
