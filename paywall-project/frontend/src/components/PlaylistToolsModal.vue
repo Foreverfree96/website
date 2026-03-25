@@ -124,48 +124,6 @@
                 </div>
               </div>
 
-              <!-- Artist seeds -->
-              <div class="pt-section">
-                <label class="pt-label">Seed Artists (optional)</label>
-                <div class="pt-seed-urls-row">
-                  <input
-                    class="pt-input pt-seed-url-input"
-                    v-model="refArtistInput"
-                    placeholder="Paste a Spotify artist link..."
-                    @keydown.enter="addRefArtist"
-                  />
-                  <button class="pt-btn pt-btn-sm pt-btn-primary" @click="addRefArtist" :disabled="!refArtistInput.trim()">Add</button>
-                </div>
-                <!-- Added artist URLs -->
-                <div v-if="pt.seedArtistUrls.value.length" class="pt-seed-urls-list">
-                  <div v-for="(url, idx) in pt.seedArtistUrls.value" :key="'artist-'+idx" class="pt-seed-url-chip pt-seed-artist-chip">
-                    <span class="pt-seed-url-text">🎤 {{ url.length > 45 ? url.substring(0, 42) + '...' : url }}</span>
-                    <button class="pt-seed-url-x" @click="pt.removeSeedArtistUrl(idx)" title="Remove">✕</button>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Album seeds -->
-              <div class="pt-section">
-                <label class="pt-label">Seed Albums (optional)</label>
-                <div class="pt-seed-urls-row">
-                  <input
-                    class="pt-input pt-seed-url-input"
-                    v-model="refAlbumInput"
-                    placeholder="Paste a Spotify album link..."
-                    @keydown.enter="addRefAlbum"
-                  />
-                  <button class="pt-btn pt-btn-sm pt-btn-primary" @click="addRefAlbum" :disabled="!refAlbumInput.trim()">Add</button>
-                </div>
-                <!-- Added album URLs -->
-                <div v-if="pt.seedAlbumUrls.value.length" class="pt-seed-urls-list">
-                  <div v-for="(url, idx) in pt.seedAlbumUrls.value" :key="'album-'+idx" class="pt-seed-url-chip pt-seed-album-chip">
-                    <span class="pt-seed-url-text">💿 {{ url.length > 45 ? url.substring(0, 42) + '...' : url }}</span>
-                    <button class="pt-seed-url-x" @click="pt.removeSeedAlbumUrl(idx)" title="Remove">✕</button>
-                  </div>
-                </div>
-              </div>
-
               <!-- Genre/mood tags -->
               <div class="pt-section">
                 <label class="pt-label">Genres / Moods</label>
