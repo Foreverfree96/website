@@ -69,8 +69,8 @@ const CONTENT_API_KEY = () => {
       return _ytContentKeys[idx];
     }
   }
-  // No fallback — keep content key isolated
-  return null;
+  // Fallback to general pool if all content keys are exhausted
+  return API_KEY();
 };
 
 const _isQuotaError = (err) => {
@@ -506,7 +506,8 @@ export const matchYoutubeTracks = async (req, res) => {
     for (const [key, until] of _exhaustedUntil) {
       if (Date.now() > until) _exhaustedUntil.delete(key);
     }
-    const available = _ytKeys.length - _exhaustedUntil.size;
+    const exhaustedGeneralCount = _ytKeys.filter(k => _isExhausted(k)).length;
+    const available = _ytKeys.length - exhaustedGeneralCount;
     console.log(`   Keys available: ${available}/${_ytKeys.length}`);
 
     // If ALL keys are already exhausted, return 429 immediately — don't waste time looping
@@ -533,7 +534,7 @@ export const matchYoutubeTracks = async (req, res) => {
         if (!usedKey) { _quotaExhausted = true; break; }
         try {
           const r = await axios.get(`${BASE}/search`, {
-            params: { part: "snippet", type: "video", q: query, maxResults: 15, key: usedKey },
+            params: { part: "snippet", type: "video", videoCategoryId: "10", q: query, maxResults: 5, key: usedKey },
           });
           return r.data.items || [];
         } catch (e) {
@@ -599,7 +600,7 @@ export const matchYoutubeTracks = async (req, res) => {
         queries.push(`${artist} ${shortTitle}`);
       }
 
-      const maxQ = tracks.length > 500 ? 1 : tracks.length > 200 ? 2 : tracks.length > 50 ? 3 : 4;
+      const maxQ = tracks.length > 200 ? 1 : tracks.length > 100 ? 2 : tracks.length > 50 ? 2 : 3;
       const uniqueQueries = [...new Set(queries)].slice(0, maxQ);
 
       let allItems = [];
