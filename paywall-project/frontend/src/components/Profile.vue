@@ -118,6 +118,23 @@
                            class="btn-black spotify-btn">Reconnect</a>
                         <button v-if="spotifyStatus.connected" class="btn-black spotify-disconnect-btn" @click="handleSpotifyDisconnect">Disconnect</button>
                     </div>
+
+                    <!-- Spotify Access Request Form (shown when not connected) -->
+                    <div v-if="!spotifyStatus.connected && !spotifyRequestSent" class="spotify-request-form">
+                        <p class="section-hint">To use Spotify features, we need to add your account. Submit your details below:</p>
+                        <div class="spotify-request-fields">
+                            <input v-model="spotifyReq.firstName" class="spotify-req-input" placeholder="First name" />
+                            <input v-model="spotifyReq.lastName" class="spotify-req-input" placeholder="Last name" />
+                            <input v-model="spotifyReq.email" type="email" class="spotify-req-input" placeholder="Spotify email" />
+                        </div>
+                        <button
+                            class="btn-black spotify-btn"
+                            :disabled="spotifyReqLoading || !spotifyReq.firstName || !spotifyReq.email"
+                            @click="submitSpotifyRequest"
+                        >{{ spotifyReqLoading ? 'Submitting…' : 'Request Access' }}</button>
+                        <span v-if="spotifyReqError" class="spotify-req-error">{{ spotifyReqError }}</span>
+                    </div>
+                    <p v-if="spotifyRequestSent" class="spotify-req-success">Access requested — you'll be added shortly.</p>
                 </div>
 
                 <!-- YouTube Connection -->
@@ -258,6 +275,25 @@ const {
 
 // ─── SPOTIFY CONNECTION STATE ─────────────────────────────────────────────────
 const spotifyStatus = ref({ connected: false, displayName: null, isPremium: false });
+const spotifyReq = ref({ firstName: '', lastName: '', email: '' });
+const spotifyReqLoading = ref(false);
+const spotifyReqError = ref('');
+const spotifyRequestSent = ref(false);
+
+const submitSpotifyRequest = async () => {
+    spotifyReqLoading.value = true;
+    spotifyReqError.value = '';
+    try {
+        await axios.post(`${API_BASE}/api/spotify/request-access`, spotifyReq.value, {
+            headers: { Authorization: `Bearer ${getToken()}` },
+        });
+        spotifyRequestSent.value = true;
+    } catch (err) {
+        spotifyReqError.value = err.response?.data?.error || 'Failed to submit request';
+    } finally {
+        spotifyReqLoading.value = false;
+    }
+};
 
 const fetchSpotifyStatus = async () => {
     try {
@@ -1139,5 +1175,33 @@ const doDeleteAccount = async () => {
 }
 .spotify-disconnect-btn {
     border-color: #7f1d1d !important;
+}
+.spotify-request-form {
+    margin-top: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.spotify-request-fields {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.spotify-req-input {
+    padding: 8px 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    flex: 1;
+    min-width: 140px;
+}
+.spotify-req-error {
+    color: #dc2626;
+    font-size: 0.8rem;
+}
+.spotify-req-success {
+    color: #16a34a;
+    font-size: 0.85rem;
+    margin-top: 6px;
 }
 </style>

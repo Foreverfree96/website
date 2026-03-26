@@ -164,6 +164,31 @@ const appendSpotifyParams = (baseUrl, params) => {
 };
 
 // ─── SPOTIFY LOGIN ────────────────────────────────────────────────────────────
+// ─── SPOTIFY ACCESS REQUEST ──────────────────────────────────────────────────
+// Users submit their name + Spotify email so admin can add them to Dev Mode allowlist
+export const requestSpotifyAccess = async (req, res) => {
+  try {
+    const { firstName, lastName, email } = req.body;
+    if (!firstName || !email) return res.status(400).json({ error: 'First name and email are required' });
+
+    const user = await User.findById(req.user._id).select('username');
+    siteLog({
+      userId: req.user._id,
+      username: user?.username || 'unknown',
+      action: 'Spotify Access Request',
+      detail: `Name: ${firstName} ${lastName || ''} | Spotify Email: ${email}`,
+      sourceType: 'user',
+      sourceId: req.user._id,
+      sourceUrl: `/creator/${user?.username || ''}`,
+    });
+
+    res.json({ message: 'Access request submitted' });
+  } catch (err) {
+    console.error('❌ Spotify access request error:', err.message);
+    res.status(500).json({ error: 'Failed to submit request' });
+  }
+};
+
 export const spotifyLogin = async (req, res) => {
   const { token, returnTo, force } = req.query;
   if (!token) return res.status(401).json({ message: "Not authenticated" });
