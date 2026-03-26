@@ -1,6 +1,7 @@
 import axios from "axios";
 import jwt from "jsonwebtoken";
 import User from "../models/userModel.js";
+import { siteLog } from "../utils/siteLog.js";
 
 // ── Retry wrapper for Spotify 429 ────────────────────────────────────────────
 const spotifyRetry = async (fn, maxRetries = 2) => {
@@ -253,7 +254,7 @@ export const spotifyCallback = async (req, res) => {
       headers: { Authorization: `Bearer ${access_token}` },
     });
 
-    const { id: spotifyId, product, display_name } = profileRes.data;
+    const { id: spotifyId, product, display_name, email: spotifyEmail } = profileRes.data;
     const isPremium = product === "premium";
 
     const update = {
@@ -266,7 +267,18 @@ export const spotifyCallback = async (req, res) => {
     // Only overwrite refresh token if Spotify returned a new one
     if (refresh_token) update.spotifyRefreshToken = refresh_token;
 
-    await User.findByIdAndUpdate(userId, update);
+    const user = await User.findByIdAndUpdate(userId, update, { new: true });
+
+    // Log to admin mod logs so admin can add the Spotify email to Dev Mode allowlist
+    siteLog({
+      userId,
+      username: user?.username || 'unknown',
+      action: 'Spotify Connected',
+      detail: `Spotify email: ${spotifyEmail || spotifyId} | Display: ${display_name || 'N/A'} | Premium: ${isPremium}`,
+      sourceType: 'user',
+      sourceId: userId,
+      sourceUrl: `/creator/${user?.username || ''}`,
+    });
 
     const dest = returnTo || fallback;
     res.redirect(appendSpotifyParams(dest, { spotify: 'connected', premium: String(isPremium) }));
