@@ -106,6 +106,15 @@ const _rotateKey = (failedKey) => {
       return true;
     }
   }
+  // Content pool exhausted — check if general pool can still serve as fallback
+  if (isContent) {
+    for (let i = 0; i < _ytKeys.length; i++) {
+      if (!_isExhausted(_ytKeys[i])) {
+        console.log(`🔄 YouTube content keys exhausted, falling back to general pool`);
+        return true;
+      }
+    }
+  }
   return false;
 };
 
@@ -254,19 +263,28 @@ export const searchYoutubeTracks = async (req, res) => {
 
     // Single video lookup by ID — used when generating from a pasted video URL
     if (videoId) {
-      const usedKey = API_KEY();
-      if (!usedKey) return res.status(429).json({ message: "YouTube API quota exhausted" });
-      try {
-        const vr = await axios.get(`${BASE}/videos`, {
-          params: { part: "snippet", id: videoId, key: usedKey },
-        });
-        const item = vr.data.items?.[0];
-        if (!item) return res.status(404).json({ message: "Video not found" });
-        return res.json({ item: { title: item.snippet.title, channelTitle: item.snippet.channelTitle || "", videoId: item.id, thumbnail: item.snippet.thumbnails?.medium?.url || "" } });
-      } catch (e) {
-        if (_isQuotaError(e)) _rotateKey(usedKey);
-        return res.status(e.response?.status || 500).json({ message: "Video lookup failed" });
+      let vr;
+      for (let attempt = 0; attempt < _ytKeys.length + 1; attempt++) {
+        const usedKey = API_KEY();
+        if (!usedKey) return res.status(429).json({ message: "YouTube API quota exhausted" });
+        try {
+          vr = await axios.get(`${BASE}/videos`, {
+            params: { part: "snippet", id: videoId, key: usedKey },
+          });
+          break;
+        } catch (e) {
+          if (_isQuotaError(e) && _rotateKey(usedKey)) continue;
+          if (_isRateLimitError(e)) {
+            await new Promise(r => setTimeout(r, 2000));
+            continue;
+          }
+          return res.status(e.response?.status || 500).json({ message: "Video lookup failed" });
+        }
       }
+      if (!vr) return res.status(429).json({ message: "YouTube API quota exhausted" });
+      const item = vr.data.items?.[0];
+      if (!item) return res.status(404).json({ message: "Video not found" });
+      return res.json({ item: { title: item.snippet.title, channelTitle: item.snippet.channelTitle || "", videoId: item.id, thumbnail: item.snippet.thumbnails?.medium?.url || "" } });
     }
 
     if (!q) return res.status(400).json({ message: "Missing query parameter q" });
