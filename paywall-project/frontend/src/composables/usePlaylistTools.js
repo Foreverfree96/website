@@ -373,7 +373,8 @@ export function usePlaylistTools() {
   };
 
   // ── Seed track search (dual-source: Spotify + YouTube) ──────────────────
-  let _searchRateLimitUntil = 0;
+  let _spRateLimitUntil = 0;
+  let _ytRateLimitUntil = 0;
 
   const searchSeeds = (query) => {
     searchQuery.value = query;
@@ -385,8 +386,8 @@ export function usePlaylistTools() {
     _searchDebounce = setTimeout(async () => {
       if (!searchQuery.value.trim()) { searchLoading.value = false; return; }
 
-      // Check rate limit right before fetching (not when keystroke fires)
-      if (Date.now() < _searchRateLimitUntil) {
+      // Only block if BOTH sources are rate limited
+      if (Date.now() < _spRateLimitUntil && Date.now() < _ytRateLimitUntil) {
         searchError.value = 'Rate limited — wait a moment';
         searchLoading.value = false;
         return;
@@ -406,6 +407,7 @@ export function usePlaylistTools() {
       // Search Spotify and YouTube in parallel with separate timeouts
       // so a slow Spotify cold-start doesn't kill YouTube results
       const spPromise = (async () => {
+        if (Date.now() < _spRateLimitUntil) return [];
         try {
           const ctrl = new AbortController();
           const t = setTimeout(() => ctrl.abort(), 20000);
@@ -413,7 +415,7 @@ export function usePlaylistTools() {
           clearTimeout(t);
           if (r.status === 429) {
             const d = await r.json().catch(() => ({}));
-            _searchRateLimitUntil = Date.now() + (d.retryAfter || 5) * 1000;
+            _spRateLimitUntil = Date.now() + (d.retryAfter || 5) * 1000;
             return [];
           }
           if (r.status === 401) {
@@ -427,11 +429,17 @@ export function usePlaylistTools() {
       })();
 
       const ytPromise = (async () => {
+        if (Date.now() < _ytRateLimitUntil) return [];
         try {
           const ctrl = new AbortController();
           const t = setTimeout(() => ctrl.abort(), 15000);
           const r = await fetch(`${API}/api/youtube/search?q=${q}&limit=15`, { headers: hdrs, signal: ctrl.signal });
           clearTimeout(t);
+          if (r.status === 429) {
+            const d = await r.json().catch(() => ({}));
+            _ytRateLimitUntil = Date.now() + (d.retryAfter || 5) * 1000;
+            return [];
+          }
           if (!r.ok) return [];
           const d = await r.json();
           return (d.items || []).map(t => ({
