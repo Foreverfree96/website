@@ -1082,63 +1082,42 @@ export const generatePlaylist = async (req, res) => {
     const LOFI_DIVERSE = ['lofi hip hop', 'lofi beats', 'lofi chill', 'chillhop', 'study beats', 'lofi jazz'];
 
     // Build base queries from seeds and genres (language-neutral)
-    // When using playlists, heavily favor detected genres for stricter matching
     const baseQueries = [];
     const hasPlaylistInput = playlistIds.length > 0;
 
-    // Genre-heavy queries first (when we have playlist input)
-    if (hasPlaylistInput && genres.length) {
-      // Make genre the primary focus — build queries around genres first
-      genres.forEach(g => {
-        if (g === 'chill') {
-          const picks = CHILL_DIVERSE.sort(() => Math.random() - 0.5).slice(0, 2);
-          picks.forEach(q => baseQueries.push(q));
-        } else if (g === 'lofi') {
-          const picks = LOFI_DIVERSE.sort(() => Math.random() - 0.5).slice(0, 2);
-          picks.forEach(q => baseQueries.push(q));
-        } else {
-          baseQueries.push(g);
-          baseQueries.push(`best ${g}`);
-          baseQueries.push(`${g} hits`);
-        }
-      });
-      // Artists within the detected genre context
-      seedArtists.slice(0, 2).forEach(artist => {
-        genres.slice(0, 2).forEach(g => baseQueries.push(`${artist} ${g}`));
-      });
-      // Secondary: artist-only queries
-      seedArtists.slice(0, 3).forEach(artist => baseQueries.push(artist));
-    } else {
-      // Original behavior when no playlist or user selected genres manually
-      seedArtists.forEach(artist => baseQueries.push(artist));
+    // Always add artist-based queries first (works for any input type)
+    seedArtists.forEach(artist => baseQueries.push(artist));
 
-      seedTrackMeta.slice(0, 5).forEach(m => {
-        const name = (m.name || '').replace(/\s*[\(\[].*[\)\]]$/g, '').trim();
-        const artist = cleanArtist(m.artist);
-        if (name && artist) baseQueries.push(`${artist} ${name}`);
-        else if (name) baseQueries.push(name);
-      });
+    // Add track metadata queries (name + artist combos)
+    seedTrackMeta.slice(0, 5).forEach(m => {
+      const name = (m.name || '').replace(/\s*[\(\[].*[\)\]]$/g, '').trim();
+      const artist = cleanArtist(m.artist);
+      if (name && artist) baseQueries.push(`${artist} ${name}`);
+      else if (name) baseQueries.push(name);
+    });
 
-      seedArtists.slice(0, 3).forEach(artist => {
-        genres.slice(0, 2).forEach(g => baseQueries.push(`${artist} ${g}`));
-      });
+    // Add genre-based queries
+    genres.forEach(g => {
+      if (g === 'chill') {
+        const picks = CHILL_DIVERSE.sort(() => Math.random() - 0.5).slice(0, 3);
+        picks.forEach(q => baseQueries.push(q));
+      } else if (g === 'lofi') {
+        const picks = LOFI_DIVERSE.sort(() => Math.random() - 0.5).slice(0, 3);
+        picks.forEach(q => baseQueries.push(q));
+      } else {
+        baseQueries.push(g);
+        baseQueries.push(`best ${g}`);
+        baseQueries.push(`${g} hits`);
+      }
+    });
 
-      genres.forEach(g => {
-        if (g === 'chill') {
-          const picks = CHILL_DIVERSE.sort(() => Math.random() - 0.5).slice(0, 3);
-          picks.forEach(q => baseQueries.push(q));
-        } else if (g === 'lofi') {
-          const picks = LOFI_DIVERSE.sort(() => Math.random() - 0.5).slice(0, 3);
-          picks.forEach(q => baseQueries.push(q));
-        } else {
-          baseQueries.push(g);
-          baseQueries.push(`${g} hits`);
-          baseQueries.push(`best ${g}`);
-        }
-      });
+    // Cross-pollinate: artist × genre combos
+    seedArtists.slice(0, 3).forEach(artist => {
+      genres.slice(0, 2).forEach(g => baseQueries.push(`${artist} ${g}`));
+    });
 
-      if (seedArtists.length >= 2) baseQueries.push(`${seedArtists[0]} ${seedArtists[1]}`);
-    }
+    // Artist pair combo
+    if (seedArtists.length >= 2) baseQueries.push(`${seedArtists[0]} ${seedArtists[1]}`);
 
     // Apply language enforcement — tag queries with language keywords
     // so Spotify returns results ONLY in the selected language(s)
@@ -1309,13 +1288,6 @@ export const generatePlaylist = async (req, res) => {
         if (collected.length >= limit) break;
         if (seenIds.has(t.id)) continue;
 
-        // Strict genre validation when using playlists
-        if (hasPlaylistInput && domainedGenres.length > 0) {
-          const artistIds = t.artists?.map(a => a.id).filter(Boolean) || [];
-          const isGenreMatch = await validateTrackGenres(artistIds);
-          if (!isGenreMatch) continue; // Skip this track, it doesn't match the genre vibe
-        }
-
         seenIds.add(t.id);
 
         const primaryArtist = (t.artists?.[0]?.name || '').toLowerCase();
@@ -1335,7 +1307,7 @@ export const generatePlaylist = async (req, res) => {
         collected.push(track);
         added++;
       }
-      if (qi < 3 || added === 0) console.log(`   Query ${qi}: "${uniqueQueries[qi]}" → ${items.length} results, +${added} new (${hasPlaylistInput && domainedGenres.length > 0 ? 'genre-filtered' : 'unfiltered'})`);
+      if (qi < 3 || added === 0) console.log(`   Query ${qi}: "${uniqueQueries[qi]}" → ${items.length} results, +${added} new`);
 
       // Emit progress
       const queryPct = 10 + ((qi + 1) / uniqueQueries.length) * 70;
