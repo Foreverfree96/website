@@ -1183,54 +1183,58 @@ export const generatePlaylist = async (req, res) => {
     console.log(`   Queries (${uniqueQueries.length}): ${uniqueQueries.slice(0, 6).join(' | ')}${uniqueQueries.length > 6 ? ' ...' : ''}`);
     console.log(`   perQuery=${perQuery}, rateLimited=${Date.now() < _rateLimitedUntil ? 'YES until ' + new Date(_rateLimitedUntil).toISOString() : 'no'}`);
 
-    // Resilient search — uses client creds token (separate rate limit bucket from match)
-    // Falls back to user token if client creds fail
+    // Resilient search — uses user/service token (Dev Mode strips client-creds results)
+    // Falls back to client creds only if user/service tokens are unavailable
     const doSearch = async (query) => {
       const offset = Math.floor(Math.random() * 5);
       const searchLimit = Math.min(perQuery + 5, 50);
-      for (let attempt = 0; attempt < 4; attempt++) {
-        try {
-          // Use client creds for generate searches — keeps rate limit separate from match (user token)
-          const ccToken = await getClientCredToken();
-          const r = await axios.get("https://api.spotify.com/v1/search", {
-            params: { q: query, type: "track", limit: searchLimit, offset, market: primaryMarket },
-            headers: { Authorization: `Bearer ${ccToken}` },
-          });
-          return r.data.tracks?.items || [];
-        } catch (e) {
-          const status = e.response?.status;
+      const searchParams = { q: query, type: "track", limit: searchLimit, offset, market: primaryMarket };
 
-          if (status === 400) {
-            const clean = query.replace(/[^\w\s'-]/g, '').trim();
-            if (clean && clean !== query) {
-              try {
-                const ccToken = await getClientCredToken();
-                const r2 = await axios.get("https://api.spotify.com/v1/search", {
-                  params: { q: clean, type: "track", limit: searchLimit, offset: 0 },
-                  headers: { Authorization: `Bearer ${ccToken}` },
-                });
-                return r2.data.tracks?.items || [];
-              } catch { return []; }
+      // Token priority: user/service token first (Dev Mode compatible), client creds as last resort
+      const tokenOrder = [fallbackToken];
+      try { const cc = await getClientCredToken(); if (cc && cc !== fallbackToken) tokenOrder.push(cc); } catch { /* skip */ }
+
+      for (const searchToken of tokenOrder) {
+        if (!searchToken) continue;
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            const r = await axios.get("https://api.spotify.com/v1/search", {
+              params: searchParams,
+              headers: { Authorization: `Bearer ${searchToken}` },
+            });
+            const items = r.data.tracks?.items || [];
+            // Dev Mode strips track data — if results are empty/stripped, try next token
+            if (items.length === 0 && searchToken !== fallbackToken) break;
+            return items;
+          } catch (e) {
+            const status = e.response?.status;
+
+            if (status === 400) {
+              const clean = query.replace(/[^\w\s'-]/g, '').trim();
+              if (clean && clean !== query) {
+                try {
+                  const r2 = await axios.get("https://api.spotify.com/v1/search", {
+                    params: { ...searchParams, q: clean, offset: 0 },
+                    headers: { Authorization: `Bearer ${searchToken}` },
+                  });
+                  return r2.data.tracks?.items || [];
+                } catch { break; }
+              }
+              break; // try next token
             }
-            return [];
-          }
 
-          if (status === 401 || status === 403) {
-            _clientCredCache = null; // force refresh
-            if (attempt < 2) continue;
-            return [];
-          }
+            if (status === 401 || status === 403) break; // try next token
 
-          // 429: wait for cooldown
-          if (status === 429 && attempt < 3) {
-            const secs = Math.min(parseInt(e.response.headers?.['retry-after'] || '3', 10), 15);
-            console.log(`   ⏳ Generate search rate-limited, waiting ${secs}s...`);
-            await new Promise(r => setTimeout(r, secs * 1000 + 500));
-            continue;
-          }
+            if (status === 429 && attempt < 2) {
+              const secs = Math.min(parseInt(e.response.headers?.['retry-after'] || '3', 10), 15);
+              console.log(`   ⏳ Generate search rate-limited, waiting ${secs}s...`);
+              await new Promise(r => setTimeout(r, secs * 1000 + 500));
+              continue;
+            }
 
-          if (attempt < 2) console.error(`   ⚠ Search "${query}" attempt ${attempt}: ${status || e.message}`);
-          return [];
+            if (attempt < 1) console.error(`   ⚠ Search "${query}" attempt ${attempt}: ${status || e.message}`);
+            break; // try next token
+          }
         }
       }
       return [];
