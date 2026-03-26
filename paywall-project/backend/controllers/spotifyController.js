@@ -256,14 +256,17 @@ export const spotifyCallback = async (req, res) => {
     const { id: spotifyId, product, display_name } = profileRes.data;
     const isPremium = product === "premium";
 
-    await User.findByIdAndUpdate(userId, {
+    const update = {
       spotifyId,
       spotifyDisplayName:  display_name || null,
       spotifyIsPremium:    isPremium,
       spotifyAccessToken:  access_token,
-      spotifyRefreshToken: refresh_token,
       spotifyTokenExpiry:  new Date(Date.now() + expires_in * 1000),
-    });
+    };
+    // Only overwrite refresh token if Spotify returned a new one
+    if (refresh_token) update.spotifyRefreshToken = refresh_token;
+
+    await User.findByIdAndUpdate(userId, update);
 
     const dest = returnTo || fallback;
     res.redirect(appendSpotifyParams(dest, { spotify: 'connected', premium: String(isPremium) }));

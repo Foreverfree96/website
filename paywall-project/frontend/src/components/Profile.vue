@@ -444,6 +444,7 @@ onMounted(async () => {
         if (route.query.spotify === 'connected') {
             localStorage.setItem('sp_oauth_done', '1');
             if (spotifyStatus.value.isPremium) localStorage.setItem('sp_premium', '1');
+            else localStorage.removeItem('sp_premium');
             // Invalidate cached SDK token so it fetches the new one with fresh scopes
             if (window._sp) {
                 window._sp.tokenCache = null;
