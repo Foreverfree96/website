@@ -46,22 +46,28 @@ const _isExhausted = (key) => {
 };
 
 // Pick a key from the general pool (for search/match)
+// Advances the index after each pick to round-robin across keys
 const API_KEY = () => {
   _loadKeys();
   for (let i = 0; i < _ytKeys.length; i++) {
     const idx = (_ytKeyIndex + i) % _ytKeys.length;
-    if (!_isExhausted(_ytKeys[idx])) return _ytKeys[idx];
+    if (!_isExhausted(_ytKeys[idx])) {
+      _ytKeyIndex = (idx + 1) % _ytKeys.length; // advance for next call
+      return _ytKeys[idx];
+    }
   }
   return null;
 };
 
 // Pick a key from the content-only pool (for loading posts, playlists, channels)
-// Falls back to general pool if content keys are all exhausted
 const CONTENT_API_KEY = () => {
   _loadKeys();
   for (let i = 0; i < _ytContentKeys.length; i++) {
     const idx = (_ytContentKeyIndex + i) % _ytContentKeys.length;
-    if (!_isExhausted(_ytContentKeys[idx])) return _ytContentKeys[idx];
+    if (!_isExhausted(_ytContentKeys[idx])) {
+      _ytContentKeyIndex = (idx + 1) % _ytContentKeys.length;
+      return _ytContentKeys[idx];
+    }
   }
   // No fallback — keep content key isolated
   return null;
