@@ -593,12 +593,18 @@ export function usePlaylistTools() {
     try {
       if (!API) throw new Error('API URL not configured');
 
+      // Request extra Spotify tracks when targeting YouTube to compensate for match failures
+      const requestedLimit = trackLimit.value;
+      const spotifyLimit = generateTarget.value === 'youtube'
+        ? Math.min(Math.ceil(requestedLimit * 1.35), 100)
+        : requestedLimit;
+
       const body = {
         seedTrackIds: seedTracks.value.filter(t => !t.id.startsWith('yt_')).map(t => t.id),
         seedTrackMeta: seedTracks.value.map((t) => ({ name: t.name, artist: t.artist })),
         genres: selectedGenres.value,
         languages: selectedLanguages.value,
-        limit: trackLimit.value,
+        limit: spotifyLimit,
       };
 
       // Extract artist IDs from artist URLs
@@ -752,8 +758,8 @@ export function usePlaylistTools() {
         throw new Error(msg);
       }
       const data = await res.json();
-      const spTracks = data.tracks || [];
-      console.log('[Generate] Got', spTracks.length, 'tracks from backend');
+      const spTracks = (data.tracks || []).slice(0, requestedLimit);
+      console.log('[Generate] Got', data.tracks?.length, 'tracks from backend, using', spTracks.length);
 
       // Store Spotify results
       generateSpotifyResults.value = spTracks;
@@ -782,7 +788,8 @@ export function usePlaylistTools() {
                 url:     m.bestMatch.url,
                 videoId: m.bestMatch.videoId,
                 _source: 'youtube',
-              }));
+              }))
+              .slice(0, requestedLimit); // trim to originally requested count
           }
         } catch (e) {
           if (e.name === 'AbortError') throw e;
