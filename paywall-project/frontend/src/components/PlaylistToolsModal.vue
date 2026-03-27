@@ -253,9 +253,9 @@
                       @click="pt.setGenerateTarget('spotify')"
                     >Spotify ({{ pt.generateSpotifyResults.value.length }})</button>
                     <button
-                      :class="['pt-target-btn', { active: pt.generateTarget.value === 'youtube' }]"
+                      :class="['pt-target-btn', { active: pt.generateTarget.value === 'youtube', 'pt-yt-loading': pt.generateLoading.value && !pt.generateYoutubeResults.value.length }]"
                       @click="pt.setGenerateTarget('youtube')"
-                    >YouTube ({{ pt.generateYoutubeResults.value.length }})</button>
+                    >YouTube ({{ pt.generateLoading.value && !pt.generateYoutubeResults.value.length ? '...' : pt.generateYoutubeResults.value.length }})</button>
                   </div>
                 </div>
 
@@ -1440,6 +1440,14 @@ const handleAddToExistingYt = (playlistId) => {
   background: #c00;
 }
 .pt-target-btn:hover:not(.active) { background: #1a1a1a; color: #ccc; }
+.pt-target-btn.pt-yt-loading {
+  animation: ytLoadGlow 1.5s ease-in-out infinite;
+  color: #f87171;
+}
+@keyframes ytLoadGlow {
+  0%, 100% { box-shadow: inset 0 0 4px rgba(204, 0, 0, 0.2); background: #111; }
+  50% { box-shadow: inset 0 0 12px rgba(204, 0, 0, 0.4), 0 0 8px rgba(204, 0, 0, 0.3); background: #1a0000; }
+}
 
 /* Progress pill */
 .pt-progress-wrap {
