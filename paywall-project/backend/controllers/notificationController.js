@@ -16,6 +16,7 @@
  */
 
 import Notification from "../models/notificationModel.js";
+import { siteLog } from "../utils/siteLog.js";
 
 // ─── GET NOTIFICATIONS ────────────────────────────────────────────────────────
 
@@ -106,6 +107,7 @@ export const markAllRead = async (req, res) => {
       { $set: { read: true } }
     );
     res.json({ message: "All notifications marked as read" });
+    siteLog({ userId: req.user._id, username: req.user.username, action: "Marked All Notifications Read" });
   } catch (err) {
     console.error("❌ Mark All Read Error:", err);
     res.status(500).json({ message: "Server error" });
@@ -179,6 +181,7 @@ export const deleteAll = async (req, res) => {
   try {
     await Notification.deleteMany({ recipient: req.user.id });
     res.json({ message: "All notifications cleared" });
+    siteLog({ userId: req.user._id, username: req.user.username, action: "Deleted All Notifications" });
   } catch (err) {
     console.error("❌ Clear Notifications Error:", err);
     res.status(500).json({ message: "Server error" });

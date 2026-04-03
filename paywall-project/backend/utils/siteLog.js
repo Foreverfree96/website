@@ -11,7 +11,7 @@
 
 import AdminLog from "../models/adminLogModel.js";
 
-const MAX_LOGS = 100;
+const MAX_LOGS = 10000;
 
 /**
  * siteLog

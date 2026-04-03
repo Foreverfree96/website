@@ -217,6 +217,7 @@ export const resendVerification = async (req, res) => {
 
     // Respond first, then send email
     res.json({ message: "If that email is registered and unverified, a new link has been sent." });
+    siteLog({ userId: user._id, username: user.username, action: "Resent Verification Email", sourceType: "user" });
 
     sendEmail({
       to: user.email,
@@ -270,6 +271,7 @@ export const verifyEmail = async (req, res) => {
     await user.save();
 
     res.json({ message: "Email verified! You can now log in." });
+    siteLog({ userId: user._id, username: user.username, action: "Email Verified", sourceType: "user" });
   } catch (err) {
     console.error("❌ Verify Email Error:", err);
     res.status(500).json({ message: "Server error" });
@@ -421,6 +423,7 @@ export const upgradeToSubscriber = async (req, res) => {
     user.isSubscriber = true;
     await user.save();
     res.json({ message: "Subscription upgraded", isSubscriber: true });
+    siteLog({ userId: req.user._id, username: user.username, action: "Upgraded to Subscriber", sourceType: "user", sourceUrl: `/creator/${user.username}` });
   } catch (err) {
     console.error("❌ Upgrade Error:", err);
     res.status(500).json({ message: "Server error" });
@@ -457,9 +460,11 @@ export const deleteUserAccount = async (req, res) => {
       { $or: [{ followers: userId }, { following: userId }] },
       { $pull: { followers: userId, following: userId } }
     );
+    const deletedUsername = user.username;
     await user.deleteOne();
 
     res.json({ message: "Account deleted successfully" });
+    siteLog({ userId, username: deletedUsername, action: "Account Deleted (self)", sourceType: "user" });
   } catch (err) {
     console.error("❌ Delete Account Error:", err);
     res.status(500).json({ message: "Server error" });
@@ -523,7 +528,9 @@ export const updateUsername = async (req, res) => {
     if (!user) return res.status(404).json({ message: "User not found" });
     user.username = username.trim();
     await user.save();
+    const oldUsername = req.user.username;
     res.json({ message: "Username updated successfully", username: user.username });
+    siteLog({ userId: req.user._id, username: user.username, action: "Username Changed", detail: `was: ${oldUsername}`, sourceType: "user" });
   } catch (err) {
     console.error("❌ Update Username Error:", err);
     res.status(500).json({ message: "Server error" });
@@ -565,6 +572,7 @@ export const changePassword = async (req, res) => {
     user.password = await bcrypt.hash(newPassword, 10);
     await user.save();
     res.json({ message: "Password changed successfully" });
+    siteLog({ userId: req.user._id, username: user.username, action: "Password Changed", sourceType: "user" });
   } catch (err) {
     console.error("❌ Change Password Error:", err);
     res.status(500).json({ message: "Server error" });
@@ -611,6 +619,7 @@ export const forgotPassword = async (req, res) => {
 
     // Respond immediately, then fire the email asynchronously
     res.json({ message: "If that email is registered, a reset link has been sent." });
+    siteLog({ userId: user._id, username: user.username, action: "Forgot Password Requested", sourceType: "user" });
 
     sendEmail({
       to: user.email,
@@ -674,6 +683,7 @@ export const resetPassword = async (req, res) => {
     await user.save();
 
     res.json({ message: "Password reset successfully. You can now log in." });
+    siteLog({ userId: user._id, username: user.username, action: "Password Reset", sourceType: "user" });
   } catch (err) {
     console.error("❌ Reset Password Error:", err);
     res.status(500).json({ message: "Server error" });
@@ -729,6 +739,7 @@ export const changeEmail = async (req, res) => {
     const confirmUrl = `${process.env.FRONTEND_URL}/confirm-email-change/${rawToken}`;
 
     res.json({ message: "Check your new email to confirm the change." });
+    siteLog({ userId: req.user._id, username: user.username, action: "Email Change Requested", sourceType: "user" });
 
     sendEmail({
       to: newEmail.trim().toLowerCase(),
@@ -784,6 +795,7 @@ export const confirmEmailChange = async (req, res) => {
     await user.save();
 
     res.json({ message: "Email updated successfully." });
+    siteLog({ userId: user._id, username: user.username, action: "Email Changed", sourceType: "user" });
   } catch (err) {
     console.error("❌ Confirm Email Change Error:", err);
     res.status(500).json({ message: "Server error" });
@@ -1022,6 +1034,7 @@ export const togglePrivateAccount = async (req, res) => {
     user.isPrivateAccount = !user.isPrivateAccount;
     await user.save();
     res.json({ isPrivateAccount: user.isPrivateAccount });
+    siteLog({ userId: req.user._id, username: user.username, action: user.isPrivateAccount ? "Account Set Private" : "Account Set Public", sourceType: "user" });
   } catch (err) {
     console.error("❌ Toggle Private Account Error:", err);
     res.status(500).json({ message: "Server error" });
@@ -1056,7 +1069,9 @@ export const blockUser = async (req, res) => {
     await User.findByIdAndUpdate(req.user.id, { $pull: { followers: userId, following: userId } });
     await User.findByIdAndUpdate(userId, { $pull: { followers: req.user.id, following: req.user.id } });
 
+    const blocked = await User.findById(userId).select("username").lean();
     res.json({ ok: true });
+    siteLog({ userId: req.user._id, username: req.user.username, action: "Blocked User", targetId: userId, targetUsername: blocked?.username || "", sourceType: "user" });
   } catch (err) {
     console.error("❌ blockUser:", err);
     res.status(500).json({ message: "Server error" });
@@ -1080,8 +1095,10 @@ export const blockUser = async (req, res) => {
 export const unblockUser = async (req, res) => {
   try {
     const { userId } = req.params;
+    const unblocked = await User.findById(userId).select("username").lean();
     await User.findByIdAndUpdate(req.user.id, { $pull: { blockedUsers: userId } });
     res.json({ ok: true });
+    siteLog({ userId: req.user._id, username: req.user.username, action: "Unblocked User", targetId: userId, targetUsername: unblocked?.username || "", sourceType: "user" });
   } catch (err) {
     res.status(500).json({ message: "Server error" });
   }
@@ -1203,6 +1220,7 @@ export const updateCreatorProfile = async (req, res) => {
 
     await user.save();
     res.json({ message: "Profile updated", bio: user.bio, categories: user.categories, socialLinks: user.socialLinks });
+    siteLog({ userId: req.user._id, username: user.username, action: "Creator Profile Updated", sourceType: "user", sourceUrl: `/creator/${user.username}` });
   } catch (err) {
     console.error("❌ Update Creator Profile Error:", err);
     res.status(500).json({ message: "Server error" });
@@ -1317,6 +1335,7 @@ export const submitAppeal = async (req, res) => {
     });
 
     res.json({ message: "Your appeal has been submitted. We will review it shortly." });
+    siteLog({ userId: user?._id || null, username: user?.username || identifier.trim(), action: "Appeal Submitted", detail: `${type}: ${appealText.trim().slice(0, 80)}`, sourceType: "user" });
   } catch (err) {
     console.error("❌ submitAppeal Error:", err);
     res.status(500).json({ message: "Server error" });
@@ -1348,6 +1367,7 @@ export const withdrawAppeal = async (req, res) => {
 
     await appeal.deleteOne();
     res.json({ message: "Appeal withdrawn." });
+    siteLog({ userId: user._id, username: user.username, action: "Appeal Withdrawn", detail: type, sourceType: "user" });
   } catch (err) {
     console.error("❌ withdrawAppeal Error:", err);
     res.status(500).json({ message: "Server error" });

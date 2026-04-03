@@ -20,4 +20,6 @@ const adminLogSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+adminLogSchema.index({ createdAt: 1 }, { expireAfterSeconds: 90 * 24 * 60 * 60 });
+
 export default mongoose.model("AdminLog", adminLogSchema);

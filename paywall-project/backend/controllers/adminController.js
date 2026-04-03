@@ -43,10 +43,10 @@ const log = (req, action, target, detail = "", extras = {}) => {
     sourceUrl:     extras.sourceUrl  || "",
   })
     .then(() => {
-      // Auto-trim: keep last 100 entries
+      // Auto-trim: keep last 10000 entries
       AdminLog.countDocuments().then((n) => {
-        if (n > 100) {
-          AdminLog.find({}).sort({ createdAt: -1 }).skip(100).select("_id").lean()
+        if (n > 10000) {
+          AdminLog.find({}).sort({ createdAt: -1 }).skip(10000).select("_id").lean()
             .then((old) => { if (old.length) AdminLog.deleteMany({ _id: { $in: old.map(o => o._id) } }).catch(() => {}); })
             .catch(() => {});
         }

@@ -536,6 +536,7 @@ export const toggleLike = async (req, res) => {
     if (!post) return res.status(404).json({ message: "Post not found" });
 
     res.json({ likes: post.likes.length, liked: !already });
+    siteLog({ userId: req.user._id, username: req.user.username, action: already ? "Unliked Post" : "Liked Post", sourceType: "post", sourceId: post._id, sourceUrl: `/post/${req.params.id}` });
   } catch (err) {
     console.error("❌ Toggle Like Error:", err);
     res.status(500).json({ message: "Server error" });
@@ -813,6 +814,7 @@ export const reportComment = async (req, res) => {
     await post.save();
 
     res.json({ message: "Comment reported. Thank you for helping keep the community safe." });
+    siteLog({ userId: req.user._id, username: req.user.username, action: "Comment Reported", detail: reason.trim().slice(0, 80), sourceType: "post", sourceId: post._id, sourceUrl: `/post/${post._id}` });
 
     // Notify admins in real-time
     const { getIo } = await import("../utils/socketEmitter.js");

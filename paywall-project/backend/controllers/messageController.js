@@ -139,6 +139,7 @@ export const getOrCreateConversation = async (req, res) => {
 
     const other = convo.participants.find(p => p._id.toString() !== req.user.id);
     res.json({ _id: convo._id, other, lastMessage: convo.lastMessage, lastMessageAt: convo.lastMessageAt, unread: convo.unread?.[req.user.id] || 0 });
+    siteLog({ userId: req.user._id, username: req.user.username, action: "Opened Conversation", targetUsername: other?.username || "", sourceType: "dm" });
   } catch (err) {
     console.error("❌ getOrCreateConversation:", err);
     res.status(500).json({ message: "Server error" });
@@ -252,6 +253,7 @@ export const sendMessage = async (req, res) => {
     await convo.save();
 
     res.status(201).json(msg);
+    siteLog({ userId: req.user._id, username: req.user.username, action: "Sent DM", targetUsername: (await User.findById(recipientId).select("username").lean())?.username || "", sourceType: "dm" });
 
     // ── Real-time delivery via Socket.io ─────────────────────────────────────
     // Emit after the response so the sender's request is not delayed
@@ -383,6 +385,7 @@ export const clearConversation = async (req, res) => {
     await convo.save();
 
     res.json({ ok: true });
+    siteLog({ userId: req.user._id, username: req.user.username, action: "Cleared Conversation", sourceType: "dm" });
 
     // ── Notify the other participant in real-time ────────────────────────────
     try {
@@ -445,6 +448,7 @@ export const unsendMessage = async (req, res) => {
 
     await msg.deleteOne();
     res.json({ ok: true });
+    siteLog({ userId: req.user._id, username: req.user.username, action: "Unsent DM", detail: snap.body.slice(0, 80), sourceType: "dm" });
   } catch (err) {
     console.error("❌ unsendMessage:", err);
     res.status(500).json({ message: "Server error" });

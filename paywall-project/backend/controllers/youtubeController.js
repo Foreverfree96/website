@@ -1,6 +1,7 @@
 import axios from "axios";
 import jwt from "jsonwebtoken";
 import User from "../models/userModel.js";
+import { siteLog } from "../utils/siteLog.js";
 
 // YouTube API key rotation — each key has its own 10k units/day quota.
 // When one key is exhausted, we rotate to the next.
@@ -964,6 +965,7 @@ export const youtubeCallback = async (req, res) => {
     await User.findByIdAndUpdate(userId, update);
 
     console.log(`✅ YouTube connected for user ${userId}: channel=${channelId} (${displayName})`);
+    siteLog({ userId, username: displayName || "unknown", action: "YouTube Connected", detail: channelId, sourceType: "user" });
 
     const u = new URL(dest);
     u.searchParams.set('youtube', 'connected');
@@ -1067,6 +1069,7 @@ export const youtubeDisconnect = async (req, res) => {
       },
     });
     res.json({ message: "YouTube disconnected" });
+    siteLog({ userId: req.user._id, username: req.user.username, action: "YouTube Disconnected", sourceType: "user" });
   } catch {
     res.status(500).json({ message: "Server error" });
   }
@@ -1166,6 +1169,7 @@ export const createYouTubePlaylist = async (req, res) => {
       failed: failed.length,
       partial: added < videoIds.length - skipped,
     });
+    siteLog({ userId: req.user._id, username: req.user.username, action: "YouTube Playlist Created", detail: `${name} (${added} videos)` });
   } catch (err) {
     console.error("❌ YouTube create playlist error:", err.response?.data || err.message);
     if (err.response?.status === 403) {
@@ -1225,6 +1229,7 @@ export const addToYouTubePlaylist = async (req, res) => {
     }
 
     res.json({ added, total: videoIds.length, skipped, partial: added < videoIds.length - skipped });
+    siteLog({ userId: req.user._id, username: req.user.username, action: "YouTube Added to Playlist", detail: `${added} video(s)` });
   } catch (err) {
     console.error("❌ YouTube add to playlist error:", err.response?.data || err.message);
     res.status(err.response?.status || 500).json({ message: "Failed to add videos" });

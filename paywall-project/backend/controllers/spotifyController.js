@@ -745,6 +745,7 @@ export const spotifyDisconnect = async (req, res) => {
       $set: { spotifyIsPremium: false },
     });
     res.json({ message: "Spotify disconnected" });
+    siteLog({ userId: req.user._id, username: req.user.username, action: "Spotify Disconnected", sourceType: "user" });
   } catch {
     res.status(500).json({ message: "Server error" });
   }
@@ -1414,6 +1415,7 @@ export const generatePlaylist = async (req, res) => {
     emitProgress(100, `Done! ${collected.length} tracks`);
     console.log(`✅ Generate: ${collected.length} tracks (requested ${limit}) [user-token]`);
     res.json({ tracks: collected });
+    siteLog({ userId: req.user._id, username: req.user.username, action: "Spotify Playlist Generated", detail: `${collected.length} tracks` });
   } catch (err) {
     console.error("❌ Spotify generate error:", err.response?.data || err.message);
     res.status(err.response?.status || 500).json({ message: "Generation failed" });
@@ -1514,6 +1516,7 @@ export const createPlaylist = async (req, res) => {
       playlistUrl: `https://open.spotify.com/playlist/${playlistId}`,
       name,
     });
+    siteLog({ userId: req.user._id, username: req.user.username, action: "Spotify Playlist Created", detail: name });
   } catch (err) {
     console.error("❌ Spotify create playlist error:", err.response?.data || err.message);
     res.status(err.response?.status || 500).json({ message: "Failed to create playlist" });
@@ -1921,6 +1924,7 @@ export const saveTrack = async (req, res) => {
     );
 
     res.json({ saved: true });
+    siteLog({ userId: req.user._id, username: req.user.username, action: "Spotify Track Saved", detail: `${trackIds.length} track(s)` });
   } catch (err) {
     if (err.response?.status === 403) {
       return res.status(403).json({ error: "scope_missing", message: "Reconnect Spotify to save tracks" });
@@ -1948,6 +1952,7 @@ export const savePlaylist = async (req, res) => {
     );
 
     res.json({ saved: true });
+    siteLog({ userId: req.user._id, username: req.user.username, action: "Spotify Playlist Saved", detail: playlistId });
   } catch (err) {
     if (err.response?.status === 403) {
       return res.status(403).json({ error: "scope_missing", message: "Reconnect Spotify to save playlists" });
@@ -2050,6 +2055,7 @@ export const addToPlaylist = async (req, res) => {
     }
 
     res.json({ added: true });
+    siteLog({ userId: req.user._id, username: req.user.username, action: "Spotify Added to Playlist", detail: `${newUris.length} track(s)` });
   } catch (err) {
     if (err.response?.status === 403) {
       return res.status(403).json({ error: "scope_missing", message: "Reconnect Spotify to modify playlists" });
@@ -2204,6 +2210,7 @@ export const renamePlaylist = async (req, res) => {
     );
 
     res.json({ renamed: true, name: name.trim() });
+    siteLog({ userId: req.user._id, username: req.user.username, action: "Spotify Playlist Renamed", detail: name.trim() });
   } catch (err) {
     if (err.response?.status === 403) {
       return res.status(403).json({ error: "scope_missing", message: "Reconnect Spotify to rename playlists" });
