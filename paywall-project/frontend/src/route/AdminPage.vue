@@ -80,17 +80,17 @@
         <div v-for="u in filteredUsers" :key="u._id" class="user-card">
           <div class="user-card__header">
             <div class="user-card__left">
+              <span class="user-card__username" @click="router.push(`/creator/${u.username}`)">@{{ u.username }}</span>
               <span :class="['user-badge', u.isOnline ? 'online-badge' : 'offline-badge']">
                 {{ u.isOnline ? '🟢 Online' : '⚫ Offline' }}
               </span>
-              <span class="user-card__username" @click="router.push(`/creator/${u.username}`)">@{{ u.username }}</span>
-              <span v-if="u.isTestAccount" class="user-badge test-badge">🧪 Test</span>
               <span v-if="u.isAdmin" class="user-badge admin-badge">🛡️ Mod</span>
               <span v-if="u.isSubscriber" class="user-badge sub-badge">⭐ Sub</span>
               <span v-if="u.isBanned" class="user-badge ban-badge">🚫 Banned</span>
               <span v-else-if="u.restrictedUntil && new Date(u.restrictedUntil) > new Date()" class="user-badge restrict-badge">
                 ⏳ Restricted until {{ formatDate(u.restrictedUntil) }}
               </span>
+              <span v-if="u.isTestAccount" class="user-badge test-badge">🧪 Test</span>
             </div>
             <div class="user-card__info">
               <span class="user-card__email">{{ u.email }}</span>
