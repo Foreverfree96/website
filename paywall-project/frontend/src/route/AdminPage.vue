@@ -94,7 +94,9 @@
             </div>
             <div class="user-card__info">
               <span class="user-card__email">{{ u.email }}</span>
+              <span class="user-card__sep">·</span>
               <span class="user-card__stats">{{ u.followerCount }} followers · {{ u.followingCount }} following</span>
+              <span class="user-card__sep">·</span>
               <span class="user-card__date">Joined {{ formatDate(u.createdAt) }}</span>
             </div>
           </div>
@@ -1603,9 +1605,15 @@ const formatDate = (d) => new Date(d).toLocaleDateString();
 .user-card__info {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 6px;
   flex-wrap: wrap;
   justify-content: flex-end;
+  margin-left: auto;
+}
+
+.user-card__sep {
+  color: #999;
+  font-size: 0.78rem;
 }
 
 .user-card__email {
