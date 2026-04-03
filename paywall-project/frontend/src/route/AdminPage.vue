@@ -78,23 +78,27 @@
       <p v-else-if="!filteredUsers.length" class="feed-status">No users found.</p>
       <div v-else class="user-list">
         <div v-for="u in filteredUsers" :key="u._id" class="user-card">
-          <div class="user-card__left">
-            <span class="user-card__username" @click="router.push(`/creator/${u.username}`)">@{{ u.username }}</span>
-            <span v-if="u.isAdmin" class="user-badge admin-badge">🛡️ Mod</span>
-            <span v-if="u.isTestAccount" class="user-badge test-badge">🧪 Test</span>
-            <span v-if="u.isSubscriber" class="user-badge sub-badge">⭐ Sub</span>
-            <span :class="['user-badge', u.isOnline ? 'online-badge' : 'offline-badge']">
-              {{ u.isOnline ? '🟢 Online' : '⚫ Offline' }}
-            </span>
+          <div class="user-card__header">
+            <div class="user-card__left">
+              <span :class="['user-badge', u.isOnline ? 'online-badge' : 'offline-badge']">
+                {{ u.isOnline ? '🟢 Online' : '⚫ Offline' }}
+              </span>
+              <span class="user-card__username" @click="router.push(`/creator/${u.username}`)">@{{ u.username }}</span>
+              <span v-if="u.isTestAccount" class="user-badge test-badge">🧪 Test</span>
+              <span v-if="u.isAdmin" class="user-badge admin-badge">🛡️ Mod</span>
+              <span v-if="u.isSubscriber" class="user-badge sub-badge">⭐ Sub</span>
+              <span v-if="u.isBanned" class="user-badge ban-badge">🚫 Banned</span>
+              <span v-else-if="u.restrictedUntil && new Date(u.restrictedUntil) > new Date()" class="user-badge restrict-badge">
+                ⏳ Restricted until {{ formatDate(u.restrictedUntil) }}
+              </span>
+            </div>
+            <div class="user-card__info">
+              <span class="user-card__email">{{ u.email }}</span>
+              <span class="user-card__stats">{{ u.followerCount }} followers · {{ u.followingCount }} following</span>
+              <span class="user-card__date">Joined {{ formatDate(u.createdAt) }}</span>
+            </div>
           </div>
-          <div class="user-card__meta">
-            <span class="user-card__email">{{ u.email }}</span>
-            <span class="user-card__stats">{{ u.followerCount }} followers · {{ u.followingCount }} following</span>
-            <span class="user-card__date">Joined {{ formatDate(u.createdAt) }}</span>
-            <span v-if="u.isBanned" class="user-badge ban-badge">🚫 Banned</span>
-            <span v-else-if="u.restrictedUntil && new Date(u.restrictedUntil) > new Date()" class="user-badge restrict-badge">
-              ⏳ Restricted until {{ formatDate(u.restrictedUntil) }}
-            </span>
+          <div class="user-card__bottom">
             <button
               v-if="u._pendingAppealId && (u.isBanned || (u.restrictedUntil && new Date(u.restrictedUntil) > new Date()))"
               class="appeal-indicator-btn"
@@ -1552,8 +1556,14 @@ const formatDate = (d) => new Date(d).toLocaleDateString();
   border-radius: 12px;
   padding: 14px 16px;
   display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.user-card__header {
+  display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
   gap: 12px;
   flex-wrap: wrap;
 }
@@ -1562,6 +1572,7 @@ const formatDate = (d) => new Date(d).toLocaleDateString();
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
   flex-shrink: 0;
 }
 
@@ -1579,6 +1590,7 @@ const formatDate = (d) => new Date(d).toLocaleDateString();
   font-weight: 700;
   padding: 2px 8px;
   border-radius: 20px;
+  white-space: nowrap;
 }
 .admin-badge    { background: #92400e; color: #fff; }
 .test-badge     { background: #4a1d96; color: #fff; }
@@ -1588,12 +1600,12 @@ const formatDate = (d) => new Date(d).toLocaleDateString();
 .ban-badge      { background: #7f1d1d; color: #fff; }
 .restrict-badge { background: #78350f; color: #fff; }
 
-.user-card__meta {
+.user-card__info {
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 3px;
-  text-align: right;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .user-card__email {
@@ -1613,6 +1625,14 @@ const formatDate = (d) => new Date(d).toLocaleDateString();
   color: #777;
 }
 
+.user-card__bottom {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .btn-delete-user {
   background: #7f1d1d;
   color: #fff;
@@ -1622,7 +1642,6 @@ const formatDate = (d) => new Date(d).toLocaleDateString();
   font-size: 0.78rem;
   font-weight: 700;
   cursor: pointer;
-  margin-top: 4px;
   transition: background 0.15s, transform 0.15s;
 }
 .btn-delete-user:hover { background: #991b1b; transform: translateY(-1px); }
@@ -1631,8 +1650,8 @@ const formatDate = (d) => new Date(d).toLocaleDateString();
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+  align-items: center;
   justify-content: flex-end;
-  margin-top: 4px;
 }
 .restrict-select {
   font-size: 0.78rem;
@@ -2084,8 +2103,9 @@ const formatDate = (d) => new Date(d).toLocaleDateString();
 
 /* Large phone */
 @media (max-width: 600px) {
-  .user-card { flex-direction: column; gap: 8px; }
-  .user-card__meta { align-items: flex-start; text-align: left; }
+  .user-card__header { flex-direction: column; align-items: flex-start; }
+  .user-card__info { justify-content: flex-start; }
+  .user-card__bottom { justify-content: flex-start; }
   .user-card__actions { justify-content: flex-start; }
   .restrict-select { flex: 1; min-width: 0; }
   .btn-restrict, .btn-verify, .btn-ban, .btn-unban, .btn-delete-user { flex: 1; min-width: 0; text-align: center; }
