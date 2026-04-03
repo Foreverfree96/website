@@ -56,6 +56,9 @@ const userSchema = new mongoose.Schema(
     /** Whether the user bypasses all rate limits entirely. */
     isUnlimited: { type: Boolean, default: false },
 
+    /** Whether this account was created via the admin "Create Test Account" flow. */
+    isTestAccount: { type: Boolean, default: false },
+
     /** Cumulative dollar amount this user has donated to creators. */
     donationsTotal: { type: Number, default: 0, min: 0 },
 

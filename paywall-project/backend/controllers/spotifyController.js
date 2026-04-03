@@ -182,6 +182,25 @@ export const requestSpotifyAccess = async (req, res) => {
       sourceUrl: `/creator/${user?.username || ''}`,
     });
 
+    // Notify admin via email
+    axios.post("https://api.sendgrid.com/v3/mail/send", {
+      personalizations: [{ to: [{ email: process.env.ADMIN_EMAIL }] }],
+      from: { email: process.env.GMAIL_USER, name: "Austin's Site" },
+      subject: `Spotify Access Request from @${user?.username || 'unknown'}`,
+      content: [{
+        type: "text/html",
+        value: `<p>New Spotify access request:</p>
+                <ul>
+                  <li><strong>User:</strong> @${user?.username || 'unknown'}</li>
+                  <li><strong>Name:</strong> ${firstName} ${lastName || ''}</li>
+                  <li><strong>Spotify Email:</strong> ${email}</li>
+                </ul>
+                <p>Add this email to your Spotify Developer Dashboard allowlist.</p>`,
+      }],
+    }, {
+      headers: { Authorization: `Bearer ${process.env.SENDGRID_API_KEY}`, "Content-Type": "application/json" },
+    }).catch(err => console.error("❌ Spotify request admin email failed:", err.response?.data || err.message));
+
     res.json({ message: 'Access request submitted' });
   } catch (err) {
     console.error('❌ Spotify access request error:', err.message);

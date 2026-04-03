@@ -81,6 +81,7 @@
           <div class="user-card__left">
             <span class="user-card__username" @click="router.push(`/creator/${u.username}`)">@{{ u.username }}</span>
             <span v-if="u.isAdmin" class="user-badge admin-badge">🛡️ Mod</span>
+            <span v-if="u.isTestAccount" class="user-badge test-badge">🧪 Test</span>
             <span v-if="u.isSubscriber" class="user-badge sub-badge">⭐ Sub</span>
             <span :class="['user-badge', u.isOnline ? 'online-badge' : 'offline-badge']">
               {{ u.isOnline ? '🟢 Online' : '⚫ Offline' }}
@@ -287,6 +288,7 @@
           <div class="user-card__left">
             <span class="user-card__username" @click="router.push(`/creator/${u.username}`)">@{{ u.username }}</span>
             <span v-if="u.isAdmin" class="user-badge admin-badge">🛡️ Mod</span>
+            <span v-if="u.isTestAccount" class="user-badge test-badge">🧪 Test</span>
             <span v-if="u.isSubscriber" class="user-badge sub-badge">⭐ Sub</span>
             <span class="user-badge online-badge">🟢 Online</span>
           </div>
@@ -1579,6 +1581,7 @@ const formatDate = (d) => new Date(d).toLocaleDateString();
   border-radius: 20px;
 }
 .admin-badge    { background: #92400e; color: #fff; }
+.test-badge     { background: #4a1d96; color: #fff; }
 .sub-badge      { background: #14532d; color: #fff; }
 .online-badge   { background: #14532d; color: #fff; }
 .offline-badge  { background: #374151; color: #d1d5db; }

@@ -369,7 +369,7 @@ export const clearReports = async (req, res) => {
 export const getUsers = async (req, res) => {
   try {
     const users = await User.find({})
-      .select("username email createdAt isAdmin isSubscriber followers following isVerified restrictedUntil isBanned")
+      .select("username email createdAt isAdmin isSubscriber followers following isVerified restrictedUntil isBanned isTestAccount")
       .sort({ createdAt: -1 })
       .lean();
 
@@ -386,6 +386,7 @@ export const getUsers = async (req, res) => {
       restrictedUntil: u.restrictedUntil || null,
       isBanned: u.isBanned || false,
       isVerified: u.isVerified || false,
+      isTestAccount: u.isTestAccount || false,
     }));
 
     res.json(result);
@@ -848,6 +849,7 @@ export const createTestUser = async (req, res) => {
       email: uniqueEmail,
       password: hashedPassword,
       isVerified: true,
+      isTestAccount: true,
     });
 
     // Send the same signup confirmation email regular users receive so the
