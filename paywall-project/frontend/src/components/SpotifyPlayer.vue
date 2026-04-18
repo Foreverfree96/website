@@ -402,20 +402,43 @@ const toggleLike = async () => {
   if (!currentTrackId.value || likeLoading.value) return;
   likeLoading.value = true;
   try {
-    const res = await fetch(`${API}/api/spotify/save-track`, {
-      method: 'PUT',
-      headers: { ...authHeader(), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ trackIds: [currentTrackId.value] }),
-    });
-    if (res.ok) { liked.value = true; flashMsg('Saved to Liked Songs'); }
-    else if (res.status === 403) { flashMsg('Reconnect Spotify to save tracks'); sdk.needsReconnect.value = true; }
-    else flashMsg('Failed to save');
-  } catch { flashMsg('Failed to save'); }
+    if (liked.value) {
+      // Unsave
+      const res = await fetch(`${API}/api/spotify/save-track`, {
+        method: 'DELETE',
+        headers: { ...authHeader(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ trackIds: [currentTrackId.value] }),
+      });
+      if (res.ok) { liked.value = false; flashMsg('Removed from Liked Songs'); }
+      else if (res.status === 403) { flashMsg('Reconnect Spotify'); sdk.needsReconnect.value = true; }
+      else flashMsg('Failed to remove');
+    } else {
+      // Save
+      const res = await fetch(`${API}/api/spotify/save-track`, {
+        method: 'PUT',
+        headers: { ...authHeader(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ trackIds: [currentTrackId.value] }),
+      });
+      if (res.ok) { liked.value = true; flashMsg('Saved to Liked Songs'); }
+      else if (res.status === 403) { flashMsg('Reconnect Spotify to save tracks'); sdk.needsReconnect.value = true; }
+      else flashMsg('Failed to save');
+    }
+  } catch { flashMsg('Failed'); }
   finally { likeLoading.value = false; }
 };
 
-// Reset liked state when track changes
-watch(currentTrackId, () => { liked.value = false; });
+// Check saved state when track changes
+watch(currentTrackId, async (id) => {
+  liked.value = false;
+  if (!id) return;
+  try {
+    const res = await fetch(`${API}/api/spotify/check-saved?ids=${id}`, { headers: authHeader() });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.results?.[0]) liked.value = true;
+    }
+  } catch { /* silent */ }
+});
 
 const togglePlaylistDropdown = async () => {
   showPlaylistDropdown.value = !showPlaylistDropdown.value;

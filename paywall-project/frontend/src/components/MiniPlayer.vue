@@ -26,15 +26,7 @@
             :startPosition="nowPlaying.position || 0"
             :startTrackUri="nowPlaying.trackUri || ''"
           />
-          <!-- Spotify skip controls -->
-          <div class="mp-skip-bar">
-            <button class="mp-skip-btn" @click="spotifySDK.prev()" title="Previous">⏮</button>
-            <button class="mp-skip-btn mp-skip-btn--play" @click="spotifySDK.togglePlay()" :title="spotifySDK.paused.value ? 'Play' : 'Pause'">
-              {{ spotifySDK.paused.value ? '▶' : '⏸' }}
-            </button>
-            <button class="mp-skip-btn" @click="spotifySDK.next()" title="Next">⏭</button>
           </div>
-        </div>
 
         <!-- ── All other platforms: preview → iframe ─────────────────────── -->
         <template v-else>
@@ -137,10 +129,8 @@ const { signalPlay: mpSignalPlay } = useAudioCoordinator({
         JSON.stringify({ event: 'command', func: 'pauseVideo', args: [] }), '*'
       );
     }
-    // Pause Spotify SDK
-    if (nowPlaying.value?.type === 'spotify') {
-      spotifySDK.pause();
-    }
+    // Spotify pausing is handled by SpotifyPlayer's own audio coordinator —
+    // doing it here would conflict (MiniPlayer's coordinator pauses its own child)
   },
 });
 const playlistTools = usePlaylistTools();

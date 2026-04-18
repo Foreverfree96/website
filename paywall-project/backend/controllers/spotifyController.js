@@ -1906,6 +1906,31 @@ export const matchTracks = async (req, res) => {
   }
 };
 
+// ─── SPOTIFY CHECK SAVED TRACKS ─────────────────────────────────────────────
+// GET /api/spotify/check-saved?ids=id1,id2
+export const checkSavedTracks = async (req, res) => {
+  try {
+    const ids = (req.query.ids || "").split(",").filter(Boolean).slice(0, 50);
+    if (!ids.length) return res.status(400).json({ message: "No track IDs provided" });
+
+    const result = await getValidToken(req.user.id, false);
+    if (result.error) return res.status(result.error).json({ message: result.message });
+
+    const { data } = await axios.get(
+      `https://api.spotify.com/v1/me/tracks/contains?ids=${ids.join(",")}`,
+      { headers: { Authorization: `Bearer ${result.accessToken}` } }
+    );
+
+    res.json({ results: data });
+  } catch (err) {
+    if (err.response?.status === 403) {
+      return res.status(403).json({ error: "scope_missing", message: "Reconnect Spotify" });
+    }
+    console.error("❌ Spotify check saved error:", err.response?.data || err.message);
+    res.status(err.response?.status || 500).json({ message: "Failed to check saved tracks" });
+  }
+};
+
 // ─── SPOTIFY SAVE TRACK (Like) ──────────────────────────────────────────────
 // PUT /api/spotify/save-track
 // Body: { trackIds: ["id1", "id2"] }
@@ -1931,6 +1956,33 @@ export const saveTrack = async (req, res) => {
     }
     console.error("❌ Spotify save track error:", err.response?.data || err.message);
     res.status(err.response?.status || 500).json({ message: "Failed to save track" });
+  }
+};
+
+// ─── SPOTIFY UNSAVE TRACK (Unlike) ─────────────────────────────────────────
+// DELETE /api/spotify/save-track
+// Body: { trackIds: ["id1", "id2"] }
+export const unsaveTrack = async (req, res) => {
+  try {
+    const { trackIds = [] } = req.body;
+    if (!trackIds.length) return res.status(400).json({ message: "No track IDs provided" });
+
+    const result = await getValidToken(req.user.id, false);
+    if (result.error) return res.status(result.error).json({ message: result.message });
+
+    await axios.delete("https://api.spotify.com/v1/me/tracks", {
+      headers: { Authorization: `Bearer ${result.accessToken}`, "Content-Type": "application/json" },
+      data: { ids: trackIds.slice(0, 50) },
+    });
+
+    res.json({ removed: true });
+    siteLog({ userId: req.user._id, username: req.user.username, action: "Spotify Track Unsaved", detail: `${trackIds.length} track(s)` });
+  } catch (err) {
+    if (err.response?.status === 403) {
+      return res.status(403).json({ error: "scope_missing", message: "Reconnect Spotify to manage tracks" });
+    }
+    console.error("❌ Spotify unsave track error:", err.response?.data || err.message);
+    res.status(err.response?.status || 500).json({ message: "Failed to remove track" });
   }
 };
 
