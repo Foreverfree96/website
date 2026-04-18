@@ -122,10 +122,27 @@ import { ref, computed, watch, onMounted, onUnmounted, watchEffect } from 'vue';
 import { useNowPlaying } from '../composables/useNowPlaying.js';
 import { useSpotifySDK } from '../composables/useSpotifySDK.js';
 import { usePlaylistTools } from '../composables/usePlaylistTools.js';
+import { useAudioCoordinator } from '../composables/useAudioCoordinator.js';
 import SpotifyPlayer from './SpotifyPlayer.vue';
 
 const { nowPlaying, close, popInRequested, lastPosition } = useNowPlaying();
 const spotifySDK = useSpotifySDK();
+
+// ── Audio coordinator: pause MiniPlayer when an in-post embed starts playing ─
+const { signalPlay: mpSignalPlay } = useAudioCoordinator({
+  onShouldPause: () => {
+    // Pause YouTube iframe in MiniPlayer
+    if (nowPlaying.value?.type === 'youtube' && iframeEl.value?.contentWindow) {
+      iframeEl.value.contentWindow.postMessage(
+        JSON.stringify({ event: 'command', func: 'pauseVideo', args: [] }), '*'
+      );
+    }
+    // Pause Spotify SDK
+    if (nowPlaying.value?.type === 'spotify') {
+      spotifySDK.pause();
+    }
+  },
+});
 const playlistTools = usePlaylistTools();
 const openPlaylistTools = () => playlistTools.open();
 
@@ -380,6 +397,8 @@ const onMessage = (e) => {
   try {
     const d = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
     if (d.event === 'infoDelivery' && d.info) {
+      // Signal all other players to pause when MiniPlayer YouTube starts playing
+      if (d.info.playerState === 1) mpSignalPlay();
       if (d.info.currentTime   != null) ytTime.value          = d.info.currentTime;
       if (d.info.playlistIndex != null) ytPlaylistIndex.value = d.info.playlistIndex;
       if (d.info.videoData?.title) {

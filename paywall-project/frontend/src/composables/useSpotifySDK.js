@@ -651,6 +651,13 @@ const play = async (mediaUrl, opts = {}) => {
   const prevUrl = currentMediaUrl.value;
   currentMediaUrl.value = mediaUrl;
 
+  // Clear stale tracks immediately when switching URLs so onStateChanged
+  // can't merge old track_window data into the wrong playlist
+  if (mediaUrl !== prevUrl) {
+    playlistTracks.value = [];
+    fullTracksFetched = false;
+  }
+
   // Case 1: No player yet — full init
   if (!player) {
     sdkState.value = 'connecting';
@@ -708,11 +715,8 @@ const play = async (mediaUrl, opts = {}) => {
     return;
   }
 
-  // Reset state for new playlist
-  fullTracksFetched = false;
-  playlistTracks.value = [];
+  // Reset state for new playlist (tracks already cleared above on URL change)
   position.value = startPosition;
-  _isPlaylist = isPlaylist;
 
   if (isPlaylist) {
     // Clear forbidden cache for this playlist so a fresh attempt is made

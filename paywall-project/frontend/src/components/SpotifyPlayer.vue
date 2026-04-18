@@ -178,6 +178,7 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
 import { useSpotifySDK } from '../composables/useSpotifySDK.js';
+import { useAudioCoordinator } from '../composables/useAudioCoordinator.js';
 
 const props = defineProps({
   mediaUrl:        { type: String,  default: '' },
@@ -191,6 +192,16 @@ const props = defineProps({
 
 const emit = defineEmits(['will-connect']);
 const sdk = useSpotifySDK();
+
+// ── Audio coordinator: signal when Spotify starts, pause when others start ───
+const { signalPlay: spSignalPlay } = useAudioCoordinator({
+  onShouldPause: () => {
+    // Another player started — pause Spotify SDK
+    if (isActive.value && !sdk.paused.value) {
+      sdk.pause();
+    }
+  },
+});
 
 const progressBar = ref(null);
 const volTrack    = ref(null);
@@ -286,6 +297,11 @@ watch(() => sdk.currentTrackUri.value, async () => {
   await nextTick();
   const active = tracklistEl.value.querySelector('.sp-track-row--active');
   if (active) active.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+});
+
+// Signal other players to pause whenever Spotify resumes/starts playing
+watch(() => sdk.paused.value, (paused) => {
+  if (!paused && isActive.value) spSignalPlay();
 });
 
 // ── Connect and play ─────────────────────────────────────────────────────────

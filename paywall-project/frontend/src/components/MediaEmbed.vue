@@ -104,6 +104,7 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useNowPlaying } from '../composables/useNowPlaying.js';
+import { useAudioCoordinator } from '../composables/useAudioCoordinator.js';
 import SpotifyPlayer from './SpotifyPlayer.vue';
 
 // ── Global YouTube singleton: only one iframe plays at a time ────────────────
@@ -137,6 +138,20 @@ const autoplayOnPopIn   = ref(false); // resume playback when popping back in fr
 const spotifyPlayerRef  = ref(null);  // ref to SpotifyPlayer in the post
 const spStartPosition   = ref(0);     // ms — resume position when popping back in
 const spStartTrackUri   = ref('');    // track URI — resume track when popping back in
+
+// ── Audio coordinator: pause this embed when another player starts ───────────
+const { signalPlay } = useAudioCoordinator({
+  onShouldPause: () => {
+    // Pause YouTube iframe if playing
+    if (props.embedType === 'youtube' && iframeEl.value?.contentWindow) {
+      iframeEl.value.contentWindow.postMessage(
+        JSON.stringify({ event: 'command', func: 'pauseVideo', args: [] }), '*'
+      );
+    }
+    // Spotify is a singleton SDK — it pauses itself when another Spotify URL
+    // plays, and the coordinator in SpotifyPlayer handles cross-type pausing.
+  },
+});
 
 const isPoppedOut = computed(() => nowPlaying.value?.url === props.mediaUrl);
 
@@ -233,6 +248,8 @@ const onMessage = (e) => {
           } catch { /* stale ref */ }
         }
         _ytActiveSrc.value = me;
+        // Signal all other players (Spotify, MiniPlayer, other embeds) to pause
+        signalPlay();
       }
 
       // Shuffle: intercept video-ended and jump to random track
