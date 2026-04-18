@@ -199,15 +199,15 @@ const isYtPlaylist = computed(() =>
 
 // ── Force-stop helpers — ensure the other player actually stops ─────────────
 const forceStopYoutube = () => {
-  // Pause via postMessage
+  // Pause via postMessage first (while iframe still exists)
   if (iframeEl.value?.contentWindow) {
     iframeEl.value.contentWindow.postMessage(
       JSON.stringify({ event: 'command', func: 'pauseVideo', args: [] }), '*'
     );
   }
-  // Nuke the iframe entirely so audio can't leak
-  frozenEmbedUrl.value = '';
+  // Order matters: hide iframe BEFORE incrementing key to prevent two iframes
   playerReady.value = false;
+  frozenEmbedUrl.value = '';
   iframeKey.value++;
 };
 
@@ -218,6 +218,10 @@ const forceStopSpotify = () => {
   // without a state change, so we double-tap pause after a short delay
   setTimeout(() => spotifySDK.pause(), 200);
 };
+
+// Track which URL the YouTube iframe is actually playing — used to prevent
+// stale postMessage handlers from writing to the wrong nowPlaying entry
+let _activeYtUrl = null;
 
 // Reset when media changes or clears
 watch(nowPlaying, (np, old) => {
@@ -235,19 +239,20 @@ watch(nowPlaying, (np, old) => {
     ytVideoIds.value       = [];
     ytTitles.value         = {};
     _ytResumedIndex        = false;
+    _activeYtUrl           = null;
   } else if (!old) {
     // First pop-out (null → value) — auto-expand and auto-play
     expanded.value    = true;
-    playerReady.value = !!(np.resumeOnLoad && np.type !== 'spotify');
     ytPlaylistIndex.value = np.playlistIndex || 0;
-    // If starting YouTube, make sure Spotify is paused
-    if (np.type !== 'spotify') forceStopSpotify();
-    // If starting Spotify, make sure YouTube is stopped
-    if (np.type === 'spotify') forceStopYoutube();
+    // Always stop both players to prevent any audio leak from either source
+    forceStopYoutube();
+    forceStopSpotify();
+    _activeYtUrl = np.type === 'youtube' ? np.url : null;
+    playerReady.value = !!(np.resumeOnLoad && np.type !== 'spotify');
   } else if (old.url !== np.url || old.type !== np.type) {
-    // Stop the OLD player before switching to the new one
-    if (old.type === 'youtube') forceStopYoutube();
-    if (old.type === 'spotify') forceStopSpotify();
+    // Always stop BOTH players when switching — prevents cross-type audio leaks
+    forceStopYoutube();
+    forceStopSpotify();
 
     // Save the OLD content's fresh position so its MediaEmbed can restore
     if (old.url) {
@@ -273,6 +278,7 @@ watch(nowPlaying, (np, old) => {
     ytQueueOpen.value      = false;
     ytVideoIds.value       = [];
     ytTitles.value         = {};
+    _activeYtUrl           = np.type === 'youtube' ? np.url : null;
   }
 });
 
@@ -369,6 +375,8 @@ const fetchYtTitles = async (videoIds) => {
 
 const onMessage = (e) => {
   if (!iframeEl.value || e.source !== iframeEl.value.contentWindow) return;
+  // Ignore stale messages from a previous YouTube iframe after switching media
+  if (nowPlaying.value?.type !== 'youtube') return;
   try {
     const d = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
     if (d.event === 'infoDelivery' && d.info) {
@@ -430,11 +438,12 @@ let positionSaver = null;
 watchEffect(() => {
   clearInterval(positionSaver);
   if (nowPlaying.value?.type === 'spotify') {
+    const savedUrl = nowPlaying.value.url;
     positionSaver = setInterval(() => {
       const pos    = spotifySDK.position.value;
       const uri    = spotifySDK.currentTrackUri.value;
       const isPaused = spotifySDK.paused.value;
-      if (nowPlaying.value) {
+      if (nowPlaying.value && nowPlaying.value.url === savedUrl) {
         nowPlaying.value = {
           ...nowPlaying.value,
           ...(pos > 0 ? { position: pos } : {}),
@@ -453,8 +462,11 @@ let ytPositionSaver = null;
 watchEffect(() => {
   clearInterval(ytPositionSaver);
   if (nowPlaying.value?.type === 'youtube' && playerReady.value) {
+    // Capture the URL at interval creation to prevent writing position data
+    // to a different media entry if nowPlaying changes between ticks
+    const savedUrl = nowPlaying.value.url;
     ytPositionSaver = setInterval(() => {
-      if (ytTime.value > 0 && nowPlaying.value) {
+      if (ytTime.value > 0 && nowPlaying.value && nowPlaying.value.url === savedUrl) {
         nowPlaying.value = {
           ...nowPlaying.value,
           position:      Math.floor(ytTime.value * 1000),

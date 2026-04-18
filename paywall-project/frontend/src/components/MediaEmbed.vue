@@ -382,14 +382,27 @@ const iframeClass = computed(() => {
 });
 
 // ── Activate (non-Spotify embeds) ─────────────────────────────────────────────
-const activate = () => { active.value = true; };
+const activate = () => {
+  // If MiniPlayer is playing something, close it to prevent dual audio
+  if (nowPlaying.value && nowPlaying.value.url !== props.mediaUrl) {
+    closeMiniPlayer();
+  }
+  active.value = true;
+};
 
 // ── Spotify conflict guard ─────────────────────────────────────────────────────
 // Fired by SpotifyPlayer just before it connects the SDK.
-// If MiniPlayer is running a different Spotify URL, close it so the UI updates.
-// The singleton SDK player stays alive — no handoff needed.
+// Close MiniPlayer if it's playing anything (YouTube OR a different Spotify URL)
+// so both audio sources don't play simultaneously.
 const onSpotifyWillConnect = () => {
-  if (nowPlaying.value?.type === 'spotify' && nowPlaying.value?.url !== props.mediaUrl) {
+  if (!nowPlaying.value) return;
+  // Always close if MiniPlayer is playing YouTube (cross-type conflict)
+  if (nowPlaying.value.type !== 'spotify') {
+    closeMiniPlayer();
+    return;
+  }
+  // Close if MiniPlayer is playing a different Spotify URL
+  if (nowPlaying.value.url !== props.mediaUrl) {
     closeMiniPlayer();
   }
 };
