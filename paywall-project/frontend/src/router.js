@@ -114,10 +114,9 @@ const router = createRouter({
 // redirect immediately. If auth is still loading (id === null on page refresh),
 // the watch inside AdminPage.vue handles the redirect once the profile resolves.
 const protectedRoutes = ["/feed", "/create-post", "/notifications", "/messages", "/dashboard", "/profile"];
+const { user } = useAuth();
 
 router.beforeEach((to) => {
-  const { user } = useAuth();
-
   // Redirect unauthenticated users away from protected routes
   if (protectedRoutes.some(r => to.path.startsWith(r))) {
     const token = localStorage.getItem("jwtToken");

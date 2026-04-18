@@ -48,6 +48,7 @@
 // =============================================================================
 
 import { ref } from "vue";
+import { useRouter } from "vue-router";
 import { useAuth } from "../composables/useAuth.js";
 
 // ── Props ──────────────────────────────────────────────────────────────────────
@@ -57,6 +58,8 @@ const props = defineProps({
 });
 
 // ── Composable ─────────────────────────────────────────────────────────────────
+
+const router = useRouter();
 
 // Destructure only what this component needs from the auth composable
 const { signup, login, error } = useAuth();
@@ -83,7 +86,7 @@ const handleSubmit = async () => {
             await login(email.value, password.value);
         }
         // Redirect to profile page after success
-        window.location.href = "/profile";
+        router.push("/profile");
     } catch (err) {
         console.error(err);
     }

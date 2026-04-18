@@ -52,7 +52,7 @@ export const protect = async (req, res, next) => {
       token = req.headers.authorization.split(" ")[1];
 
       // Decode token — throws if the token is expired or the signature is invalid.
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ["HS256"] });
 
       // Fetch the user identified by the token payload's `id` claim.
       // Select only the fields needed by downstream middleware/controllers;
@@ -97,7 +97,7 @@ export const optionalAuth = async (req, res, next) => {
   if (auth && auth.startsWith("Bearer")) {
     try {
       const token = auth.split(" ")[1];
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ["HS256"] });
       const u = await User.findById(decoded.id).select("username email isSubscriber isAdmin isVerified blockedUsers isBanned restrictedUntil");
       // Don't attach banned users — treat them as unauthenticated
       if (!u?.isBanned) req.user = u;

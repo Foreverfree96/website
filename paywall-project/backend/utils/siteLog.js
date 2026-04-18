@@ -28,7 +28,7 @@ const MAX_LOGS = 10000;
  * @param {*}      [opts.sourceId]    - ObjectId of the source document
  * @param {string} [opts.sourceUrl]   - Frontend URL to navigate to (e.g. /post/:id)
  */
-export const siteLog = ({
+export const siteLog = async ({
   userId = null,
   username = "system",
   action,
@@ -39,36 +39,32 @@ export const siteLog = ({
   sourceId = null,
   sourceUrl = "",
 } = {}) => {
-  AdminLog.create({
-    admin: userId,
-    adminUsername: username,
-    action,
-    targetId,
-    targetUsername,
-    detail,
-    sourceType,
-    sourceId,
-    sourceUrl,
-  })
-    .then(() => {
-      // Async trim — keep only the most recent MAX_LOGS entries
-      AdminLog.countDocuments()
-        .then((count) => {
-          if (count > MAX_LOGS) {
-            AdminLog.find({})
-              .sort({ createdAt: -1 })
-              .skip(MAX_LOGS)
-              .select("_id")
-              .lean()
-              .then((old) => {
-                if (old.length) {
-                  AdminLog.deleteMany({ _id: { $in: old.map((o) => o._id) } }).catch(() => {});
-                }
-              })
-              .catch(() => {});
-          }
-        })
-        .catch(() => {});
-    })
-    .catch(() => {});
+  try {
+    await AdminLog.create({
+      admin: userId,
+      adminUsername: username,
+      action,
+      targetId,
+      targetUsername,
+      detail,
+      sourceType,
+      sourceId,
+      sourceUrl,
+    });
+
+    // Trim — keep only the most recent MAX_LOGS entries
+    const count = await AdminLog.countDocuments();
+    if (count > MAX_LOGS) {
+      const old = await AdminLog.find({})
+        .sort({ createdAt: -1 })
+        .skip(MAX_LOGS)
+        .select("_id")
+        .lean();
+      if (old.length) {
+        await AdminLog.deleteMany({ _id: { $in: old.map((o) => o._id) } });
+      }
+    }
+  } catch (err) {
+    console.error("siteLog error:", err.message);
+  }
 };

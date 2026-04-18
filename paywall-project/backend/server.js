@@ -49,7 +49,7 @@ await connectDatabase();
 // One-time: ensure owner account has unlimited status
 try {
   await User.updateOne({ email: "itsmeabc411@gmail.com" }, { $set: { isUnlimited: true, isAdmin: true } });
-} catch { /* silent */ }
+} catch (err) { console.error("Owner account setup failed:", err.message); }
 
 const app = express();
 
@@ -116,7 +116,7 @@ io.use((socket, next) => {
   const token = socket.handshake.auth?.token;
   if (!token) return next(new Error("Authentication error"));
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ["HS256"] });
     socket.userId = decoded.id;
     next();
   } catch {
@@ -207,7 +207,7 @@ const isUnlimitedUser = async (req) => {
   try {
     const auth = req.headers.authorization;
     if (!auth?.startsWith('Bearer ')) return false;
-    const decoded = jwt.verify(auth.split(' ')[1], process.env.JWT_SECRET);
+    const decoded = jwt.verify(auth.split(' ')[1], process.env.JWT_SECRET, { algorithms: ["HS256"] });
     const user = await User.findById(decoded.id).select('isUnlimited').lean();
     return !!user?.isUnlimited;
   } catch { return false; }
@@ -363,7 +363,7 @@ app.post("/api/paypal/capture-order/:orderID", paypalLimiter, async (req, res) =
     if (authHeader && authHeader.startsWith("Bearer ")) {
       try {
         const token = authHeader.split(" ")[1];
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ["HS256"] });
 
         // Drill into the PayPal response structure to find the captured amount
         const capturedAmount = data?.purchase_units?.[0]?.payments?.captures?.[0]?.amount?.value;

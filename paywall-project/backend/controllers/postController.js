@@ -26,6 +26,9 @@ import { siteLog } from "../utils/siteLog.js";
 // Single shared profanity filter instance
 const textFilter = new Filter();
 
+// Escape special regex characters in user input to prevent ReDoS
+const escapeRegex = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
 /**
@@ -154,12 +157,13 @@ export const getPosts = async (req, res) => {
 
     // Full-text search: match title, body, category (regex), or author username
     if (q && q.trim()) {
-      const matchingAuthors = await User.find({ username: { $regex: q.trim(), $options: "i" } })
+      const escaped = escapeRegex(q.trim());
+      const matchingAuthors = await User.find({ username: { $regex: escaped, $options: "i" } })
         .select("_id").lean();
       const orClauses = [
-        { title:    { $regex: q.trim(), $options: "i" } },
-        { body:     { $regex: q.trim(), $options: "i" } },
-        { category: { $regex: q.trim(), $options: "i" } },
+        { title:    { $regex: escaped, $options: "i" } },
+        { body:     { $regex: escaped, $options: "i" } },
+        { category: { $regex: escaped, $options: "i" } },
       ];
       if (matchingAuthors.length) orClauses.push({ author: { $in: matchingAuthors.map(u => u._id) } });
       filter.$or = orClauses;
@@ -359,7 +363,7 @@ export const createPost = async (req, res) => {
       } catch (e) {
         console.warn("Create post mention notification failed:", e.message);
       }
-    })();
+    })().catch((e) => console.warn("Create post mention IIFE error:", e.message));
   } catch (err) {
     console.error("❌ Create Post Error:", err);
     res.status(500).json({ message: "Server error" });
@@ -642,7 +646,7 @@ export const addComment = async (req, res) => {
       } catch (e) {
         console.warn("Notification emit failed:", e.message);
       }
-    })();
+    })().catch((e) => console.warn("Comment notification IIFE error:", e.message));
   } catch (err) {
     console.error("❌ Add Comment Error:", err);
     res.status(500).json({ message: "Server error" });

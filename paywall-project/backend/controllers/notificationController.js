@@ -43,11 +43,13 @@ import { siteLog } from "../utils/siteLog.js";
 export const getNotifications = async (req, res) => {
   try {
     const { page = 1, limit = 20 } = req.query;
+    const lim = Math.max(1, Math.min(parseInt(limit) || 20, 100));
+    const pg = parseInt(page) || 1;
 
     const notifications = await Notification.find({ recipient: req.user.id })
       .sort({ createdAt: -1 })
-      .skip((page - 1) * parseInt(limit)) // pagination offset
-      .limit(parseInt(limit))
+      .skip((pg - 1) * lim)
+      .limit(lim)
       .populate("sender", "username")     // who triggered the notification
       .populate("post", "title")          // the related post title (if any)
       .lean();

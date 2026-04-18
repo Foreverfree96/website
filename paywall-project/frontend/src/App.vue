@@ -299,7 +299,6 @@ watch(
  * that the reactive user state has been hydrated before the first render.
  */
 onMounted(async () => {
-  console.log("[App.vue] mounted:", unref(user));
 
   // Verify Spotify connection on app startup so we remember auth state
   if (isLoggedIn.value) {
