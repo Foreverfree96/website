@@ -255,6 +255,8 @@ const fetchPlaylistTracks = async (mediaUrl) => {
 
   const applyTracks = (tracks) => {
     if (!tracks?.length) return false;
+    // Don't apply if we've switched to a different URL since the fetch started
+    if (currentMediaUrl.value !== url) return false;
     playlistTracks.value = tracks;
     fullTracksFetched = true;
     saveCachedTracks(url, tracks, true);
@@ -385,6 +387,7 @@ const fetchPlaylistTracks = async (mediaUrl) => {
     // Retry once after 3s only for non-403 failures
     setTimeout(async () => {
       if (fullTracksFetched) return;
+      if (currentMediaUrl.value !== url) return;
       const retry = await doFetch();
       if (applyTracks(retry)) return;
       if (got403) { _w._forbidden.add(cacheKey); if (!_reconnectDismissed) needsReconnect.value = true; return; }
