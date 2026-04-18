@@ -381,7 +381,7 @@ const fetchPlaylistTracks = async (mediaUrl) => {
     // If 403, mark as forbidden — don't retry
     if (got403) {
       _w._forbidden.add(cacheKey);
-      if (!_reconnectDismissed) needsReconnect.value = true;
+      if (!_reconnectDismissed && !_w.reconnectAttempted) needsReconnect.value = true;
       return;
     }
     // Retry once after 3s only for non-403 failures
@@ -390,12 +390,12 @@ const fetchPlaylistTracks = async (mediaUrl) => {
       if (currentMediaUrl.value !== url) return;
       const retry = await doFetch();
       if (applyTracks(retry)) return;
-      if (got403) { _w._forbidden.add(cacheKey); if (!_reconnectDismissed) needsReconnect.value = true; return; }
+      if (got403) { _w._forbidden.add(cacheKey); if (!_reconnectDismissed && !_w.reconnectAttempted) needsReconnect.value = true; return; }
       if (!_reconnectDismissed && !_w.reconnectAttempted && !localStorage.getItem('sp_playlist_ok')) needsReconnect.value = true;
     }, 3000);
   } catch {
     _w.fetchingPlaylists.delete(cacheKey);
-    if (got403) { _w._forbidden.add(cacheKey); if (!_reconnectDismissed) needsReconnect.value = true; return; }
+    if (got403) { _w._forbidden.add(cacheKey); if (!_reconnectDismissed && !_w.reconnectAttempted) needsReconnect.value = true; return; }
     if (!_reconnectDismissed && !_w.reconnectAttempted && !localStorage.getItem('sp_playlist_ok')) needsReconnect.value = true;
   }
 };
