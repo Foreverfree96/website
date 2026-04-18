@@ -64,6 +64,34 @@
           <button type="submit">Deduct</button>
         </form>
       </div>
+
+      <div class="card balance-card split-card">
+        <h3>Savings Split</h3>
+        <p class="mode-tag" :class="isFlipped ? 'flipped' : 'normal'">
+          {{ isFlipped ? 'Flipped mode' : 'Normal mode' }}
+        </p>
+        <form class="card-form" @submit.prevent>
+          <input v-model="splitAmt" type="number" step="0.01" min="0.01" placeholder="Enter amount" />
+        </form>
+        <div v-if="splitAmt > 0" class="split-results">
+          <div class="split-row spend-split">
+            <span class="split-label">Spend Savings</span>
+            <span class="split-fraction">{{ isFlipped ? '1/3' : '2/3' }}</span>
+            <span class="split-value">${{ fmt(splitToSpend) }}</span>
+          </div>
+          <div class="split-row save-split">
+            <span class="split-label">Savings Savings</span>
+            <span class="split-fraction">{{ isFlipped ? '2/3' : '1/3' }}</span>
+            <span class="split-value">${{ fmt(splitToSave) }}</span>
+          </div>
+          <div class="split-divider"></div>
+          <div class="split-row total-split">
+            <span class="split-label">Total</span>
+            <span class="split-value">${{ fmt(parseFloat(splitAmt)) }}</span>
+          </div>
+        </div>
+        <div v-else class="split-empty">Enter an amount to see the split</div>
+      </div>
     </div>
 
     <!-- Record Purchase -->
@@ -279,6 +307,7 @@
         </template>
       </div>
     </div>
+
   </div>
 </template>
 
@@ -298,6 +327,7 @@ const existSpend = ref('');
 const existSave = ref('');
 const existChecking = ref('');
 const poolDeduct = ref('');
+const splitAmt = ref('');
 const showClearBudget = ref(false);
 const showClearStatements = ref(false);
 const openMonths = reactive({});
@@ -315,6 +345,15 @@ const totalAll = computed(() =>
 );
 
 const isFlipped = computed(() => (budget.value?.spendSavings ?? 0) >= 1000);
+
+const splitToSpend = computed(() => {
+  const amt = parseFloat(splitAmt.value) || 0;
+  return isFlipped.value ? amt / 3 : (amt * 2) / 3;
+});
+const splitToSave = computed(() => {
+  const amt = parseFloat(splitAmt.value) || 0;
+  return isFlipped.value ? (amt * 2) / 3 : amt / 3;
+});
 const spendPct = computed(() => Math.min(((budget.value?.spendSavings ?? 0) / 1000) * 100, 100));
 const poolPct = computed(() => ((budget.value?.everydayPool ?? 0) / 200) * 100);
 const poolColor = computed(() => {
@@ -484,6 +523,56 @@ onMounted(getBudget);
 <style scoped lang="scss">
 .dashboard {
   h1 { margin-bottom: 20px; font-size: 1.6rem; }
+}
+
+.split-card {
+  .split-results {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 12px;
+  }
+
+  .split-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: #111;
+
+    .split-label { font-size: 0.85rem; color: #ccc; }
+    .split-fraction { font-size: 0.75rem; color: #666; }
+    .split-value { font-size: 1.1rem; font-weight: 700; }
+  }
+
+  .spend-split {
+    border-left: 3px solid #4fc3f7;
+    .split-value { color: #4fc3f7; }
+  }
+
+  .save-split {
+    border-left: 3px solid #66bb6a;
+    .split-value { color: #66bb6a; }
+  }
+
+  .split-divider {
+    border-top: 1px solid #2a2a2a;
+    margin: 2px 0;
+  }
+
+  .total-split {
+    background: #1a1a1a;
+    .split-label { font-weight: 600; }
+    .split-value { color: #e0e0e0; }
+  }
+
+  .split-empty {
+    color: #555;
+    font-size: 0.85rem;
+    text-align: center;
+    padding: 16px 0;
+  }
 }
 
 .balances {
