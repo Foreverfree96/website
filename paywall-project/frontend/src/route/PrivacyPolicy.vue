@@ -162,16 +162,25 @@
   max-width: 800px;
   margin: 0 auto;
   padding: 2rem 1.5rem;
+  color: #000;
+}
+
+.privacy-container {
+  background: #fff;
+  border: 1px solid #000;
+  border-radius: 8px;
+  padding: 2.5rem 2rem;
 }
 
 .privacy-container h1 {
-  font-size: 1.8rem;
+  font-size: 1.82rem;
   margin-bottom: 0.25rem;
+  color: #000;
 }
 
 .last-updated {
-  color: #888;
-  font-size: 0.9rem;
+  color: #555;
+  font-size: 0.92rem;
   margin-bottom: 2rem;
 }
 
@@ -180,19 +189,22 @@ section {
 }
 
 section h2 {
-  font-size: 1.15rem;
+  font-size: 1.17rem;
   margin-bottom: 0.5rem;
+  color: #000;
 }
 
 section h3 {
-  font-size: 1rem;
+  font-size: 1.02rem;
   margin: 0.75rem 0 0.35rem;
+  color: #000;
 }
 
 section p,
 section ul {
   line-height: 1.7;
-  font-size: 0.95rem;
+  font-size: 0.97rem;
+  color: #000;
 }
 
 section ul {
@@ -204,7 +216,12 @@ section li {
 }
 
 a {
-  color: pink;
+  color: #000;
+  text-decoration: none;
+  font-weight: 700;
+}
+
+a:hover {
   text-decoration: underline;
 }
 </style>
