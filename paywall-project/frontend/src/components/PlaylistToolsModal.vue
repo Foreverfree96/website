@@ -1139,7 +1139,7 @@ const handleAddToExistingYt = (playlistId) => {
 /* ─── Minimized floating pill ────────────────────────────────────────────── */
 .pt-mini-pill {
   position: fixed;
-  bottom: 24px;
+  bottom: 21px;
   right: 86px; /* next to ChatWidget (54px toggle + 20px right + 12px gap) */
   z-index: 9001;
   background: #181820;

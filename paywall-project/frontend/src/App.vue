@@ -577,7 +577,7 @@ nav {
   z-index: 40;
   text-align: center;
   padding: 1.5rem 1rem;
-  font-size: 0.8rem;
+  font-size: 0.99rem;
   background: pink;
   border-top: 5px solid #000;
   min-height: 70px;

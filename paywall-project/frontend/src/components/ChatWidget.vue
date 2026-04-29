@@ -1064,8 +1064,8 @@ const formatTime = (d) => {
 /* ── Wrapper ── */
 .cw {
     position: fixed;
-    bottom: 20px;
-    bottom: max(20px, env(safe-area-inset-bottom));
+    bottom: 17px;
+    bottom: max(17px, env(safe-area-inset-bottom));
     right: 20px;
     z-index: 9000;
     display: flex;
