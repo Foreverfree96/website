@@ -571,12 +571,15 @@ nav {
   font-size: 0.8rem;
 }
 .site-footer a {
-  color: #fff;
+  color: pink;
   text-decoration: none;
   font-weight: 700;
-  text-shadow: 0 0 3px #000, 0 0 6px #000;
+  background: #000;
+  padding: 0.25rem 0.6rem;
+  border-radius: 4px;
 }
 .site-footer a:hover {
+  color: rgb(125,190,157);
   cursor: pointer;
 }
 .footer-sep {
