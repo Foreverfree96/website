@@ -102,6 +102,13 @@
 
     <!-- Playlist tools modal (generate + convert) -->
     <PlaylistToolsModal v-if="isLoggedIn" />
+
+    <!-- Site-wide footer with legal links -->
+    <footer class="site-footer">
+      <router-link to="/terms">Terms of Use</router-link>
+      <span class="footer-sep">|</span>
+      <router-link to="/privacy">Privacy Policy</router-link>
+    </footer>
   </div>
 </template>
 
@@ -554,5 +561,26 @@ nav {
 @media (max-height: 500px) and (orientation: landscape) {
   .nav-menu { max-height: 80vh; overflow-y: auto; }
   .nav-link { padding: 0.5rem 0.875rem !important; }
+}
+
+/* ── Site footer ── */
+.site-footer {
+  text-align: center;
+  padding: 1.25rem 1rem;
+  margin-top: 2rem;
+  font-size: 0.85rem;
+  border-top: 1px solid #2a2a2a;
+}
+.site-footer a {
+  color: #aaa;
+  text-decoration: none;
+}
+.site-footer a:hover {
+  color: pink;
+  text-decoration: underline;
+}
+.footer-sep {
+  margin: 0 0.5rem;
+  color: #555;
 }
 </style>

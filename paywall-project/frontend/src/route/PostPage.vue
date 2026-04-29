@@ -33,7 +33,7 @@
             {{ liked ? '❤️' : '🤍' }}
           </button>
           <button class="action-btn like-count" @click="openLikesModal" :disabled="likeCount === 0">
-            {{ likeCount }}
+            {{ likeCount }} Likes
           </button>
         </div>
 

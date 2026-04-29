@@ -40,6 +40,8 @@ import NotificationsPage from "./route/NotificationsPage.vue";
 import AdminPage from "./route/AdminPage.vue";
 import MessagesPage from "./route/MessagesPage.vue";
 import CreatorsPage from "./route/CreatorsPage.vue";
+import TermsOfUse from "./route/TermsOfUse.vue";
+import PrivacyPolicy from "./route/PrivacyPolicy.vue";
 
 // ── Route definitions ─────────────────────────────────────────────────────────
 
@@ -95,6 +97,8 @@ const routes = [
   { path: "/donations", component: DonationsPage },
   { path: "/portfolio", component: PortfolioPage },
   { path: "/admin", component: AdminPage },
+  { path: "/terms", component: TermsOfUse },
+  { path: "/privacy", component: PrivacyPolicy },
 
   // Catch-all: any route that doesn't match above redirects to the home page
   // The /:catchAll(.*) syntax is Vue Router 4's way of matching everything

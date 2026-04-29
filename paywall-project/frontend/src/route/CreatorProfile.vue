@@ -64,13 +64,13 @@
               class="like-count"
               :class="{ 'like-count--clickable': p.likes.length > 0 }"
               @click.stop="p.likes.length && showLikers(p._id)"
-            ><span class="like-num">{{ p.likes.length }}</span></span>
+            ><span class="like-num">{{ p.likes.length }} Likes</span></span>
           </span>
           <span
             class="comment-count"
             :class="{ 'comment-count--clickable': p.comments.length > 0 }"
             @click.stop="p.comments.length && showComments(p)"
-          >💬 {{ p.comments.length }}</span>
+          >💬 {{ p.comments.length }} Comments</span>
           <span class="post-card__date">{{ formatDate(p.createdAt) }}</span>
         </div>
       </div>
