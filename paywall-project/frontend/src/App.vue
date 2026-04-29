@@ -364,7 +364,7 @@ const handleLogout = async () => {
 <style scoped>
 /* ── App shell ── */
 .app-shell {
-  padding-bottom: 50px;
+  padding-bottom: 80px;
 }
 
 /* ── Core nav layout ── */
@@ -574,12 +574,17 @@ nav {
   bottom: 0;
   left: 0;
   right: 0;
-  z-index: 49;
+  z-index: 40;
   text-align: center;
-  padding: 1rem 1rem;
+  padding: 1.5rem 1rem;
   font-size: 0.8rem;
   background: pink;
   border-top: 5px solid #000;
+  min-height: 70px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
 }
 .site-footer a {
   color: pink;
