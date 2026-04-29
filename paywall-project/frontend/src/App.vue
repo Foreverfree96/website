@@ -362,17 +362,9 @@ const handleLogout = async () => {
 </script>
 
 <style scoped>
-/* ── App shell — push footer to bottom ── */
+/* ── App shell ── */
 .app-shell {
-  display: flex;
-  flex-direction: column;
-  min-height: 100vh;
-}
-.app-shell :deep(nav) ~ * {
-  flex-shrink: 0;
-}
-.site-footer {
-  margin-top: auto !important;
+  padding-bottom: 50px;
 }
 
 /* ── Core nav layout ── */
@@ -578,9 +570,13 @@ nav {
 
 /* ── Site footer ── */
 .site-footer {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 49;
   text-align: center;
   padding: 1rem 1rem;
-  margin-top: 0.5rem;
   font-size: 0.8rem;
   background: pink;
   border-top: 5px solid #000;
