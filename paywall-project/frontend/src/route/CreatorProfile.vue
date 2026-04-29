@@ -663,12 +663,13 @@ const showLikers = async (postId) => {
   border-radius: 14px;
   padding: 18px;
   cursor: pointer;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
 }
 
 .post-card:hover {
   transform: translateY(-3px);
   box-shadow: 0 6px 14px rgba(0,0,0,0.3);
+  border-color: rgb(125,190,157);
 }
 
 .post-card__title {
@@ -720,19 +721,20 @@ const showLikers = async (postId) => {
 .like-btn--liked { color: #e11d48; }
 .like-icon { display: inline-block; transition: transform 0.15s; }
 .like-btn:hover .like-icon { transform: scale(1.25); }
-.like-count { font-weight: 700; font-size: 0.95rem; padding: 6px 16px 6px 8px; line-height: 1; background: #000; color: #fff; align-self: stretch; display: flex; align-items: center; }
+.like-count { font-weight: 700; font-size: 0.85rem; padding: 6px 12px 6px 8px; line-height: 1; background: #000; color: #fff; align-self: stretch; display: flex; align-items: center; white-space: nowrap; }
 .like-count--clickable { cursor: pointer; }
 .like-num { display: inline-block; transition: transform 0.15s; }
 .like-count--clickable:hover .like-num { transform: scale(1.2); }
 
 .comment-count {
   font-weight: 700;
-  font-size: 1.05rem;
+  font-size: 0.85rem;
   background: #f3f4f6;
   border: 2px solid #e5e7eb;
   border-radius: 999px;
-  padding: 6px 18px;
+  padding: 6px 14px;
   line-height: 1;
+  white-space: nowrap;
 }
 .comment-count--clickable { cursor: pointer; }
 .comment-count--clickable:hover { background: #e5e7eb; border-color: #000; color: #000; }
