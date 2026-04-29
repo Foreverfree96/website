@@ -1,5 +1,5 @@
 <template>
-  <div>
+  <div class="app-shell">
     <!-- Navigation Bar -->
     <nav>
       <!-- Top bar: brand (mobile) + hamburger toggle -->
@@ -362,6 +362,19 @@ const handleLogout = async () => {
 </script>
 
 <style scoped>
+/* ── App shell — push footer to bottom ── */
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+.app-shell :deep(nav) ~ * {
+  flex-shrink: 0;
+}
+.site-footer {
+  margin-top: auto !important;
+}
+
 /* ── Core nav layout ── */
 nav {
   position: sticky;
