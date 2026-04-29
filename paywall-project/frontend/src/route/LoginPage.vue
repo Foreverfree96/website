@@ -91,8 +91,11 @@
 
 <script setup>
 import { ref, computed } from "vue";
+import { useRouter } from "vue-router";
 import { useAuth } from "../composables/useAuth.js";
 import axios from "axios";
+
+const router = useRouter();
 
 const API = import.meta.env.VITE_API_URL + "/api/users";
 
@@ -138,7 +141,7 @@ const handleLogin = async () => {
     withdrawMsg.value           = "";
     try {
         await login(username.value, password.value);
-        window.location.href = "/portfolio";
+        router.push("/portfolio");
     } catch (err) {
         const data = err.response?.data;
         if (data?.type === "banned")     isBanned.value     = true;

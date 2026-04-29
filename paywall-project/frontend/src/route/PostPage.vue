@@ -477,9 +477,11 @@ const renderComment = (body) => {
   const escaped = body
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   // Step 2: wrap @username tokens in styled spans with a data attribute.
-  return escaped.replace(/@([a-zA-Z0-9_]+)/g, (_, uname) =>
-    `<span class="mention-link" data-username="${uname}">@${uname}</span>`
-  );
+  // Escape the username for safe insertion into the HTML attribute.
+  return escaped.replace(/@([a-zA-Z0-9_]+)/g, (_, uname) => {
+    const safe = uname.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    return `<span class="mention-link" data-username="${safe}">@${safe}</span>`;
+  });
 };
 
 /**

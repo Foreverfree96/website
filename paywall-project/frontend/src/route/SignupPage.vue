@@ -77,7 +77,7 @@
 // a utility library to avoid adding a dependency for two simple timers.
 // =============================================================================
 
-import { ref } from 'vue';
+import { ref, onBeforeUnmount } from 'vue';
 import { useAuth } from '../composables/useAuth.js';
 import axios from 'axios';
 
@@ -121,6 +121,11 @@ const emailAvailable = ref(true); // Drives the submit button disabled state and
 // when the user types another character before 500 ms has elapsed
 let usernameTimer = null;
 let emailTimer    = null;
+
+onBeforeUnmount(() => {
+  clearTimeout(usernameTimer);
+  clearTimeout(emailTimer);
+});
 
 // ── Availability checks ────────────────────────────────────────────────────────
 

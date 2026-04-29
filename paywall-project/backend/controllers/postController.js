@@ -750,7 +750,7 @@ export const reportPost = async (req, res) => {
     if (!post) return res.status(404).json({ message: "Post not found" });
 
     // Prevent duplicate reports from the same user
-    if (post.reportedBy.includes(req.user.id))
+    if (post.reportedBy.some(id => id.toString() === req.user.id))
       return res.status(400).json({ message: "You have already reported this post." });
 
     // Track who reported and store their reason for admin review
@@ -810,7 +810,7 @@ export const reportComment = async (req, res) => {
       return res.status(400).json({ message: "You cannot report your own comment." });
 
     // Prevent duplicate reports from the same user
-    if (comment.reportedBy.includes(req.user.id))
+    if (comment.reportedBy.some(id => id.toString() === req.user.id))
       return res.status(400).json({ message: "You have already reported this comment." });
 
     comment.reportedBy.push(req.user.id);

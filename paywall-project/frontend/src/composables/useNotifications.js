@@ -36,6 +36,7 @@ const setAudioMuted = (val) => {
 
 // ── Persistent AudioContext for mobile compatibility ─────────────────────────
 let _audioCtx = null;
+let _keepaliveInterval = null;
 
 const getAudioCtx = () => {
   if (!_audioCtx) {
@@ -68,11 +69,13 @@ if (typeof window !== 'undefined') {
   // Periodic keepalive: browsers throttle timers when hidden but still fire
   // them every ~1 s–1 min. This ensures AudioContext gets resumed even if the
   // visibilitychange event alone wasn't enough.
-  setInterval(() => {
-    if (_audioCtx && _audioCtx.state === 'suspended') {
-      _audioCtx.resume().catch(() => {});
-    }
-  }, 10_000);
+  if (!_keepaliveInterval) {
+    _keepaliveInterval = setInterval(() => {
+      if (_audioCtx && _audioCtx.state === 'suspended') {
+        _audioCtx.resume().catch(() => {});
+      }
+    }, 10_000);
+  }
 }
 
 // ── Notification ping (high, bright) ──────────────────────────────────────────
@@ -343,6 +346,7 @@ export function useNotifications() {
   const disconnectSocket = () => {
     if (socket) { socket.disconnect(); socket = null; }
     if (pollInterval) { clearInterval(pollInterval); pollInterval = null; }
+    if (_keepaliveInterval) { clearInterval(_keepaliveInterval); _keepaliveInterval = null; }
     unreadCount.value = 0;
     notifications.value = [];
     dmUnreadCount.value = 0;

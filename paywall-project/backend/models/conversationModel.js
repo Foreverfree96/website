@@ -66,7 +66,7 @@ const conversationSchema = new mongoose.Schema(
      *
      * The `of: Number` option constrains all Map values to numbers.
      */
-    unread: { type: Map, of: Number, default: {} },
+    unread: { type: Map, of: Number, default: () => new Map() },
 
     // ------------------------------------------------------------------
     // Cleared snapshot — safety net for abuse reporting

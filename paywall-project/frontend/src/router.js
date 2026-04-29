@@ -112,6 +112,10 @@ const router = createRouter({
   // fallback (e.g. Vite dev server handles this automatically)
   history: createWebHistory(),
   routes,
+  scrollBehavior(to, from, savedPosition) {
+    if (savedPosition) return savedPosition;
+    return { top: 0 };
+  },
 });
 
 // Guard the /admin route — if user is already loaded and is not an admin,

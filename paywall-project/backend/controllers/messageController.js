@@ -241,16 +241,11 @@ export const sendMessage = async (req, res) => {
     // ── Update conversation metadata ─────────────────────────────────────────
     const recipientId = participantIds.find(id => id !== req.user.id);
 
-    // Handle both Map and plain-object representations of the unread field
-    const currentUnread = convo.unread?.get ? (convo.unread.get(recipientId) || 0) : (convo.unread?.[recipientId] || 0);
-
-    // Preview text truncated to 80 chars to keep the conversation list compact
-    convo.lastMessage = body.trim().slice(0, 80);
-    convo.lastMessageAt = msg.createdAt;
-
-    // Increment unread count for the recipient only
-    convo.unread = { ...Object.fromEntries(convo.unread || []), [recipientId]: currentUnread + 1 };
-    await convo.save();
+    // Atomic update: $inc prevents race conditions when two messages arrive simultaneously
+    await Conversation.findByIdAndUpdate(convo._id, {
+      $set: { lastMessage: body.trim().slice(0, 80), lastMessageAt: msg.createdAt },
+      $inc: { [`unread.${recipientId}`]: 1 },
+    });
 
     res.status(201).json(msg);
     siteLog({ userId: req.user._id, username: req.user.username, action: "Sent DM", targetUsername: (await User.findById(recipientId).select("username").lean())?.username || "", sourceType: "dm" });

@@ -31,28 +31,29 @@ const escapeRegex = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /** Helper — fire-and-forget admin log entry with optional source link */
 const log = (req, action, target, detail = "", extras = {}) => {
-  AdminLog.create({
-    admin:         req.user._id,
-    adminUsername: req.user.username,
-    action,
-    targetId:      target?._id || null,
-    targetUsername:target?.username || "",
-    detail,
-    sourceType:    extras.sourceType || "",
-    sourceId:      extras.sourceId   || null,
-    sourceUrl:     extras.sourceUrl  || "",
-  })
-    .then(() => {
+  (async () => {
+    try {
+      await AdminLog.create({
+        admin:         req.user._id,
+        adminUsername: req.user.username,
+        action,
+        targetId:      target?._id || null,
+        targetUsername: target?.username || "",
+        detail,
+        sourceType:    extras.sourceType || "",
+        sourceId:      extras.sourceId   || null,
+        sourceUrl:     extras.sourceUrl  || "",
+      });
       // Auto-trim: keep last 10000 entries
-      AdminLog.countDocuments().then((n) => {
-        if (n > 10000) {
-          AdminLog.find({}).sort({ createdAt: -1 }).skip(10000).select("_id").lean()
-            .then((old) => { if (old.length) AdminLog.deleteMany({ _id: { $in: old.map(o => o._id) } }).catch(() => {}); })
-            .catch(() => {});
-        }
-      }).catch(() => {});
-    })
-    .catch(() => {});
+      const n = await AdminLog.countDocuments();
+      if (n > 10000) {
+        const old = await AdminLog.find({}).sort({ createdAt: -1 }).skip(10000).select("_id").lean();
+        if (old.length) await AdminLog.deleteMany({ _id: { $in: old.map(o => o._id) } });
+      }
+    } catch (err) {
+      console.warn("Admin log failed:", err.message);
+    }
+  })();
 };
 import Notification from "../models/notificationModel.js";
 import Conversation from "../models/conversationModel.js";
@@ -931,7 +932,7 @@ export const updateAppealStatus = async (req, res) => {
         .lean();
       if (oldest.length > 0) {
         trimmedIds = oldest.map((o) => o._id.toString());
-        Appeal.deleteMany({ _id: { $in: oldest.map((o) => o._id) } }).catch(() => {});
+        await Appeal.deleteMany({ _id: { $in: oldest.map((o) => o._id) } });
       }
     }
 
