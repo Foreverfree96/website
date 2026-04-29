@@ -669,7 +669,6 @@ const showLikers = async (postId) => {
 .post-card:hover {
   transform: translateY(-3px);
   box-shadow: 0 6px 14px rgba(0,0,0,0.3);
-  border-color: rgb(125,190,157);
 }
 
 .post-card__title {
@@ -735,7 +734,9 @@ const showLikers = async (postId) => {
   padding: 6px 14px;
   line-height: 1;
   white-space: nowrap;
+  transition: border-color 0.2s ease;
 }
+.comment-count:hover { border-color: #000; }
 .comment-count--clickable { cursor: pointer; }
 .comment-count--clickable:hover { background: #e5e7eb; border-color: #000; color: #000; }
 
