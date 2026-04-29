@@ -566,9 +566,11 @@ nav {
 /* ── Site footer ── */
 .site-footer {
   text-align: center;
-  padding: 0.5rem 1rem;
+  padding: 1rem 1rem;
   margin-top: 0.5rem;
   font-size: 0.8rem;
+  background: pink;
+  border-top: 5px solid #000;
 }
 .site-footer a {
   color: pink;
@@ -583,7 +585,7 @@ nav {
   cursor: pointer;
 }
 .footer-sep {
-  margin: 0 0.5rem;
+  margin: 0 0.75rem;
   color: #555;
 }
 </style>
