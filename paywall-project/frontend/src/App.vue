@@ -566,18 +566,18 @@ nav {
 /* ── Site footer ── */
 .site-footer {
   text-align: center;
-  padding: 1.25rem 1rem;
-  margin-top: 2rem;
-  font-size: 0.85rem;
-  border-top: 1px solid #2a2a2a;
+  padding: 0.5rem 1rem;
+  margin-top: 0.5rem;
+  font-size: 0.8rem;
 }
 .site-footer a {
-  color: #aaa;
+  color: #fff;
   text-decoration: none;
+  font-weight: 700;
+  text-shadow: 0 0 3px #000, 0 0 6px #000;
 }
 .site-footer a:hover {
-  color: pink;
-  text-decoration: underline;
+  cursor: pointer;
 }
 .footer-sep {
   margin: 0 0.5rem;
