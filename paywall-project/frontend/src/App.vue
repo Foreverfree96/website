@@ -654,6 +654,17 @@ nav {
 
 /* ── Footer responsive ── */
 
+/* OnePlus Open / large tablet (≤900px) */
+@media (max-width: 900px) {
+  .site-footer {
+    padding: 1.25rem 0.75rem;
+    min-height: 60px;
+    font-size: 0.92rem;
+  }
+  .footer-toggle-btn { width: 26px; height: 26px; font-size: 0.65rem; }
+  .footer-show-btn { width: 28px; height: 28px; font-size: 0.7rem; }
+}
+
 /* Tablet */
 @media (max-width: 768px) {
   .site-footer {
@@ -667,6 +678,8 @@ nav {
   .footer-sep {
     margin: 0 0.5rem;
   }
+  .footer-toggle-btn { width: 26px; height: 26px; font-size: 0.65rem; }
+  .footer-show-btn { width: 28px; height: 28px; font-size: 0.7rem; }
 }
 
 /* Phone */
@@ -683,6 +696,8 @@ nav {
   .footer-sep {
     margin: 0 0.4rem;
   }
+  .footer-toggle-btn { width: 24px; height: 24px; font-size: 0.6rem; margin-left: 0.5rem; }
+  .footer-show-btn { width: 26px; height: 26px; font-size: 0.65rem; }
 }
 
 /* Small phone */
@@ -699,6 +714,8 @@ nav {
   .footer-sep {
     margin: 0 0.3rem;
   }
+  .footer-toggle-btn { width: 22px; height: 22px; font-size: 0.55rem; margin-left: 0.4rem; }
+  .footer-show-btn { width: 24px; height: 24px; font-size: 0.6rem; }
 }
 
 /* Very small phone / Galaxy Fold */
@@ -715,6 +732,8 @@ nav {
   .footer-sep {
     margin: 0 0.2rem;
   }
+  .footer-toggle-btn { width: 20px; height: 20px; font-size: 0.5rem; margin-left: 0.3rem; }
+  .footer-show-btn { width: 22px; height: 22px; font-size: 0.55rem; }
 }
 
 /* Landscape phone */
@@ -723,5 +742,7 @@ nav {
     padding: 0.5rem 0.5rem;
     min-height: 40px;
   }
+  .footer-toggle-btn { width: 22px; height: 22px; font-size: 0.55rem; }
+  .footer-show-btn { width: 24px; height: 24px; font-size: 0.6rem; }
 }
 </style>
