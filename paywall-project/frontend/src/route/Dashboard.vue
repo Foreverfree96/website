@@ -619,15 +619,22 @@ const formatDate = (d) => new Date(d).toLocaleDateString();
   .dash-page { max-width: 700px; }
 }
 
-/* Tablet portrait */
+/* Tablet portrait / OnePlus Open unfolded (~700px) */
 @media (max-width: 768px) {
   .dash-page { max-width: 100%; padding: 0 14px 46px; margin: 16px auto; }
   .dash-title { font-size: 1.4rem; }
   .dash-stats { gap: 8px; }
   .stat-num { font-size: 1.35rem; }
+  .dash-header { flex-direction: column; align-items: stretch; gap: 10px; }
+  .dash-actions { justify-content: center; flex-wrap: wrap; }
+  .dash-title { text-align: center; }
+  .dash-filter-row { flex-direction: column; align-items: stretch; }
+  .dash-search-input { min-width: 0; width: 100%; }
+  .dash-filter-tabs { justify-content: center; }
+  .dash-sort-toggle { justify-content: center; }
 }
 
-/* Large phone */
+/* Large phone / OnePlus Open folded (~600px) */
 @media (max-width: 600px) {
   .dash-page { padding: 0 10px 40px; margin: 12px auto; }
   .dash-title { font-size: 1.25rem; }
@@ -639,6 +646,9 @@ const formatDate = (d) => new Date(d).toLocaleDateString();
   .group-title { font-size: 0.95rem; }
   .posts-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
   .card-thumb { height: 100px; }
+  .card-title { font-size: 0.82rem; }
+  .card-preview { font-size: 0.74rem; }
+  .card-footer { gap: 6px; font-size: 0.72rem; }
 }
 
 /* Phone */
@@ -648,18 +658,22 @@ const formatDate = (d) => new Date(d).toLocaleDateString();
   .dash-stats { gap: 5px; }
   .stat-card { padding: 7px 6px; border-radius: 8px; }
   .stat-num { font-size: 1.1rem; }
-  /* Single-column cards on small phones */
   .posts-grid { grid-template-columns: 1fr; }
   .card-thumb { height: 160px; }
+  .dash-actions { flex-direction: column; }
+  .dash-btn { width: 100% !important; text-align: center; }
+  .dash-tab { font-size: 0.72rem; padding: 4px 9px; }
+  .card-body { padding: 8px 10px; }
 }
 
-/* Small phone (360px) */
+/* Small phone / Galaxy Fold (360px) */
 @media (max-width: 360px) {
   .dash-title { font-size: 1.05rem; }
   .dash-stats { gap: 4px; }
   .stat-num { font-size: 1rem; }
   .stat-label { font-size: 0.66rem; }
-  .dash-header { flex-direction: column; align-items: flex-start; gap: 8px; }
+  .dash-tab { font-size: 0.68rem; padding: 3px 7px; }
+  .sort-btn { font-size: 0.72rem; padding: 5px 10px; }
 }
 
 /* Very small phone (320px) */
