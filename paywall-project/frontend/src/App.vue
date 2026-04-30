@@ -104,11 +104,13 @@
     <PlaylistToolsModal v-if="isLoggedIn" />
 
     <!-- Site-wide footer with legal links -->
-    <footer class="site-footer">
+    <footer v-show="footerVisible" class="site-footer">
       <router-link to="/terms">Terms of Use</router-link>
       <span class="footer-sep">|</span>
       <router-link to="/privacy">Privacy Policy</router-link>
+      <button class="footer-hide-btn" @click="footerVisible = false" title="Hide footer">▼</button>
     </footer>
+    <button v-show="!footerVisible" class="footer-show-btn" @click="footerVisible = true" title="Show footer">▲</button>
   </div>
 </template>
 
@@ -224,6 +226,15 @@ const fetchDmUnread = async () => {
  * It is toggled by the hamburger button and auto-closed on any nav-menu click.
  */
 const menuOpen = ref(false);
+
+// ─── FOOTER VISIBILITY ──────────────────────────────────────────────────────
+
+const footerVisible = ref(true);
+
+// Auto-hide footer after 25 seconds
+onMounted(() => {
+  setTimeout(() => { footerVisible.value = false; }, 25000);
+});
 
 // ─── USER IDENTITY HELPERS ───────────────────────────────────────────────────
 
@@ -596,6 +607,40 @@ nav {
   margin: 0 0.75rem;
   color: #555;
 }
+.footer-hide-btn {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: #000;
+  color: pink;
+  border: none;
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 0.75rem;
+  cursor: pointer;
+  font-weight: 700;
+}
+.footer-hide-btn:hover { color: rgb(125,190,157); }
+.footer-show-btn {
+  position: fixed;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 39;
+  background: pink;
+  color: #000;
+  border: none;
+  border-top: 3px solid #000;
+  border-left: 3px solid #000;
+  border-right: 3px solid #000;
+  border-radius: 8px 8px 0 0;
+  padding: 4px 16px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.footer-show-btn:hover { color: rgb(125,190,157); }
 
 /* ── Footer responsive ── */
 
