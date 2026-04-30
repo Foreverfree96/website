@@ -614,24 +614,26 @@ const formatDate = (d) => new Date(d).toLocaleDateString();
 
 /* ── Responsive ── */
 
-/* Large tablet landscape */
+/* OnePlus Open unfolded / large tablet (~900-1024px) */
 @media (max-width: 1024px) {
-  .dash-page { max-width: 700px; }
-}
-
-/* Tablet portrait / OnePlus Open unfolded (~700px) */
-@media (max-width: 768px) {
-  .dash-page { max-width: 100%; padding: 0 14px 46px; margin: 16px auto; }
-  .dash-title { font-size: 1.4rem; }
-  .dash-stats { gap: 8px; }
-  .stat-num { font-size: 1.35rem; }
+  .dash-page { max-width: 100%; padding: 0 20px 50px; }
   .dash-header { flex-direction: column; align-items: stretch; gap: 10px; }
+  .dash-title { text-align: center; font-size: 1.45rem; }
   .dash-actions { justify-content: center; flex-wrap: wrap; }
-  .dash-title { text-align: center; }
   .dash-filter-row { flex-direction: column; align-items: stretch; }
   .dash-search-input { min-width: 0; width: 100%; }
   .dash-filter-tabs { justify-content: center; }
   .dash-sort-toggle { justify-content: center; }
+}
+
+/* Tablet portrait (~768px) */
+@media (max-width: 768px) {
+  .dash-page { padding: 0 14px 46px; margin: 16px auto; }
+  .dash-title { font-size: 1.35rem; }
+  .dash-stats { gap: 8px; }
+  .stat-num { font-size: 1.3rem; }
+  .posts-grid { gap: 10px; }
+  .card-body { padding: 10px; }
 }
 
 /* Large phone / OnePlus Open folded (~600px) */
