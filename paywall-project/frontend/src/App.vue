@@ -602,4 +602,77 @@ nav {
   margin: 0 0.75rem;
   color: #555;
 }
+
+/* ── Footer responsive ── */
+
+/* Tablet */
+@media (max-width: 768px) {
+  .site-footer {
+    padding: 1.25rem 0.75rem;
+    min-height: 60px;
+    font-size: 0.9rem;
+  }
+  .site-footer a {
+    padding: 0.2rem 0.5rem;
+  }
+  .footer-sep {
+    margin: 0 0.5rem;
+  }
+}
+
+/* Phone */
+@media (max-width: 600px) {
+  .site-footer {
+    padding: 1rem 0.5rem;
+    min-height: 55px;
+    font-size: 0.82rem;
+  }
+  .site-footer a {
+    padding: 0.18rem 0.45rem;
+    font-size: 0.82rem;
+  }
+  .footer-sep {
+    margin: 0 0.4rem;
+  }
+}
+
+/* Small phone */
+@media (max-width: 480px) {
+  .site-footer {
+    padding: 0.75rem 0.4rem;
+    min-height: 50px;
+    font-size: 0.75rem;
+  }
+  .site-footer a {
+    padding: 0.15rem 0.4rem;
+    font-size: 0.75rem;
+  }
+  .footer-sep {
+    margin: 0 0.3rem;
+  }
+}
+
+/* Very small phone / Galaxy Fold */
+@media (max-width: 360px) {
+  .site-footer {
+    padding: 0.6rem 0.3rem;
+    min-height: 44px;
+    font-size: 0.7rem;
+  }
+  .site-footer a {
+    padding: 0.12rem 0.35rem;
+    font-size: 0.7rem;
+  }
+  .footer-sep {
+    margin: 0 0.2rem;
+  }
+}
+
+/* Landscape phone */
+@media (max-height: 500px) and (orientation: landscape) {
+  .site-footer {
+    padding: 0.5rem 0.5rem;
+    min-height: 40px;
+  }
+}
 </style>
