@@ -613,7 +613,7 @@ nav {
   color: #555;
 }
 .site-footer--hidden {
-  transform: translateY(100%);
+  transform: translateY(calc(100% - 5px));
 }
 .footer-toggle-btn {
   background: #000;
