@@ -234,7 +234,7 @@ let footerTimer = null;
 
 function startFooterTimer() {
   clearTimeout(footerTimer);
-  footerTimer = setTimeout(() => { footerVisible.value = false; }, 15000);
+  footerTimer = setTimeout(() => { footerVisible.value = false; }, 10000);
 }
 
 // Auto-hide footer after 15 seconds
