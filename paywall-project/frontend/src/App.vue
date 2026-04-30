@@ -104,13 +104,13 @@
     <PlaylistToolsModal v-if="isLoggedIn" />
 
     <!-- Site-wide footer with legal links -->
-    <footer class="site-footer" :class="{ 'site-footer--hidden': !footerVisible }">
+    <footer v-if="isLoggedIn" class="site-footer" :class="{ 'site-footer--hidden': !footerVisible }">
       <router-link to="/terms">Terms of Use</router-link>
       <span class="footer-sep">|</span>
       <router-link to="/privacy">Privacy Policy</router-link>
       <button class="footer-toggle-btn" @click="footerVisible = !footerVisible">▼</button>
     </footer>
-    <button v-if="!footerVisible" class="footer-show-btn" @click="footerVisible = true; startFooterTimer()">▲</button>
+    <button v-if="isLoggedIn && !footerVisible" class="footer-show-btn" @click="footerVisible = true; startFooterTimer()">▲</button>
   </div>
 </template>
 
