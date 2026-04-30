@@ -487,14 +487,8 @@ nav {
   .nav-link { padding: 0.5rem 0.9rem !important; font-size: 0.93rem; }
 }
 
-/* Tablet: slightly tighter */
+/* Tablet + OnePlus Open: hamburger takes over, links stack vertically */
 @media (max-width: 900px) {
-  .nav-link { padding: 0.45rem 0.75rem !important; font-size: 0.88rem; }
-  .nav-group { gap: 2px; }
-}
-
-/* Mobile breakpoint: hamburger takes over, links stack vertically */
-@media (max-width: 768px) {
   nav { padding: 0 14px; }
 
   /* Show the mobile top bar (brand + hamburger) */
