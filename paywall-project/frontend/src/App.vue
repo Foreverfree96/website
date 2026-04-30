@@ -110,7 +110,7 @@
       <router-link to="/privacy">Privacy Policy</router-link>
       <button class="footer-toggle-btn" @click="footerVisible = !footerVisible">▼</button>
     </footer>
-    <button v-if="!footerVisible" class="footer-show-btn" @click="footerVisible = true">▲</button>
+    <button v-if="!footerVisible" class="footer-show-btn" @click="footerVisible = true; startFooterTimer()">▲</button>
   </div>
 </template>
 
@@ -230,11 +230,15 @@ const menuOpen = ref(false);
 // ─── FOOTER VISIBILITY ──────────────────────────────────────────────────────
 
 const footerVisible = ref(true);
+let footerTimer = null;
 
-// Auto-hide footer after 25 seconds
-onMounted(() => {
-  setTimeout(() => { footerVisible.value = false; }, 15000);
-});
+function startFooterTimer() {
+  clearTimeout(footerTimer);
+  footerTimer = setTimeout(() => { footerVisible.value = false; }, 15000);
+}
+
+// Auto-hide footer after 15 seconds
+onMounted(() => { startFooterTimer(); });
 
 // ─── USER IDENTITY HELPERS ───────────────────────────────────────────────────
 
