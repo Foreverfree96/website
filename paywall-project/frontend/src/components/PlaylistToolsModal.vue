@@ -219,17 +219,17 @@
 
               <!-- Year selection -->
               <div class="pt-section">
-                <label class="pt-label">Year</label>
+                <label class="pt-label">Year{{ pt.selectedYears.value.length ? ` (${pt.selectedYears.value.length})` : '' }}</label>
                 <div class="pt-year-row">
                   <button
-                    :class="['pt-year-btn', { active: !pt.selectedYear.value }]"
-                    @click="pt.selectedYear.value = null"
+                    :class="['pt-year-btn', { active: !pt.selectedYears.value.length }]"
+                    @click="pt.selectedYears.value = []"
                   >Any</button>
                   <button
                     v-for="yr in yearOptions"
                     :key="yr"
-                    :class="['pt-year-btn', { active: pt.selectedYear.value === yr }]"
-                    @click="pt.selectedYear.value = yr"
+                    :class="['pt-year-btn', { active: pt.selectedYears.value.includes(yr) }]"
+                    @click="toggleYear(yr)"
                   >{{ yr }}</button>
                 </div>
               </div>
@@ -796,9 +796,15 @@ const addCustom = () => {
 const yearOptions = computed(() => {
   const now = new Date().getFullYear();
   const years = [];
-  for (let y = now; y >= 2000; y--) years.push(y);
+  for (let y = 2000; y <= now; y++) years.push(y);
   return years;
 });
+
+const toggleYear = (yr) => {
+  const idx = pt.selectedYears.value.indexOf(yr);
+  if (idx >= 0) pt.selectedYears.value.splice(idx, 1);
+  else pt.selectedYears.value.push(yr);
+};
 
 const detectedPlatform = computed(() => {
   const url = pt.convertUrl.value;

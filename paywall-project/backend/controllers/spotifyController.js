@@ -878,10 +878,11 @@ export const searchTracks = async (req, res) => {
 // search queries from artist names + genres, collect and deduplicate results.
 export const generatePlaylist = async (req, res) => {
   try {
-    let { seedTrackIds = [], seedTrackMeta = [], seedPlaylistId, seedPlaylistIds = [], seedArtistIds = [], seedAlbumIds = [], genres = [], languages = ['en'], year = null, limit = 30 } = req.body;
+    let { seedTrackIds = [], seedTrackMeta = [], seedPlaylistId, seedPlaylistIds = [], seedArtistIds = [], seedAlbumIds = [], genres = [], languages = ['en'], years = [], limit = 30 } = req.body;
     limit = Math.max(1, Math.min(Number(limit) || 30, 100));
     if (!Array.isArray(languages) || !languages.length) languages = ['en'];
-    const targetYear = year ? Number(year) : null;
+    const targetYears = (Array.isArray(years) ? years : []).map(Number).filter(Boolean);
+    const targetYearSet = new Set(targetYears);
     const currentYear = new Date().getFullYear();
 
     // Support both singular and plural for backward compatibility
@@ -1211,10 +1212,14 @@ export const generatePlaylist = async (req, res) => {
       }
     }
 
-    // Append year filter to queries when a specific year is selected
-    if (targetYear) {
-      const yearTagged = queries.map(q => `${q} year:${targetYear}`);
-      // Also keep some untagged queries as fallback
+    // Append year filter to queries when specific years are selected
+    if (targetYears.length) {
+      const yearTagged = [];
+      const baseSlice = queries.slice();
+      for (const yr of targetYears) {
+        baseSlice.forEach(q => yearTagged.push(`${q} year:${yr}`));
+      }
+      // Keep some untagged queries as fallback
       queries.splice(0, queries.length, ...yearTagged, ...queries.slice(0, 4));
     }
 
@@ -1354,11 +1359,11 @@ export const generatePlaylist = async (req, res) => {
         const releaseYearB = parseInt((b.album?.release_date || '').slice(0, 4), 10) || 0;
         let pa = (a.popularity || 0) + (a.explicit ? 10 : 0);
         let pb = (b.popularity || 0) + (b.explicit ? 10 : 0);
-        if (targetYear) {
-          // Big boost for target year, smaller boost for current year
-          if (releaseYearA === targetYear) pa += 30;
+        if (targetYearSet.size) {
+          // Big boost for selected years, smaller boost for current year
+          if (targetYearSet.has(releaseYearA)) pa += 30;
           else if (releaseYearA === currentYear) pa += 15;
-          if (releaseYearB === targetYear) pb += 30;
+          if (targetYearSet.has(releaseYearB)) pb += 30;
           else if (releaseYearB === currentYear) pb += 15;
         }
         return pb - pa;
