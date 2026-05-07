@@ -17,6 +17,7 @@ const seedPlaylistUrls = ref([]); // array of URLs to reference
 const seedArtistUrls  = ref([]); // array of artist URLs
 const seedAlbumUrls   = ref([]); // array of album URLs
 const selectedGenres  = ref([]);
+const selectedYear    = ref(null); // null = any year
 const trackLimit      = ref(30);
 const generatedTracks = ref([]);
 const generateLoading = ref(false);
@@ -138,6 +139,7 @@ const _persistResults = () => {
       seedAlbumUrls: seedAlbumUrls.value,
       selectedGenres: selectedGenres.value,
       selectedLanguages: selectedLanguages.value,
+      selectedYear: selectedYear.value,
       trackLimit: trackLimit.value,
       bgStatus: bgStatus.value,
       bgDone: bgDone.value,
@@ -176,6 +178,7 @@ const _restoreResults = () => {
     seedAlbumUrls.value = state.seedAlbumUrls || [];
     selectedGenres.value = state.selectedGenres || [];
     selectedLanguages.value = state.selectedLanguages || ['en'];
+    selectedYear.value = state.selectedYear || null;
     trackLimit.value = state.trackLimit || 30;
     bgStatus.value = state.bgStatus || '';
     bgDone.value = state.bgDone || false;
@@ -343,6 +346,7 @@ export function usePlaylistTools() {
     seedTracks.value = [];
     seedPlaylistUrls.value = [];
     selectedGenres.value = [];
+    selectedYear.value = null;
     trackLimit.value = 30;
     generatedTracks.value = [];
     generateResults.value = [];
@@ -605,6 +609,7 @@ export function usePlaylistTools() {
         genres: selectedGenres.value,
         languages: selectedLanguages.value,
         limit: spotifyLimit,
+        ...(selectedYear.value ? { year: selectedYear.value } : {}),
       };
 
       // Extract artist IDs from artist URLs
@@ -1511,6 +1516,7 @@ export function usePlaylistTools() {
         seedTracks: seedTracks.value,
         seedPlaylistUrls: seedPlaylistUrls.value,
         selectedGenres: selectedGenres.value,
+        selectedYear: selectedYear.value,
         trackLimit: trackLimit.value,
         generatedTracks: generatedTracks.value,
         generateResults: generateResults.value,
@@ -1541,6 +1547,7 @@ export function usePlaylistTools() {
       seedTracks.value = state.seedTracks || [];
       seedPlaylistUrls.value = state.seedPlaylistUrls || [];
       selectedGenres.value = state.selectedGenres || [];
+      selectedYear.value = state.selectedYear || null;
       trackLimit.value = state.trackLimit || 30;
       generatedTracks.value = state.generatedTracks || [];
       generateResults.value = state.generateResults || [];
@@ -1563,7 +1570,7 @@ export function usePlaylistTools() {
   return {
     // State
     isOpen, activeTab, isMinimized, bgStatus, bgDone,
-    seedTracks, seedPlaylistUrls, seedArtistUrls, seedAlbumUrls, selectedGenres, trackLimit,
+    seedTracks, seedPlaylistUrls, seedArtistUrls, seedAlbumUrls, selectedGenres, selectedYear, trackLimit,
     generatedTracks, generateLoading, generateTarget, generateProgress,
     generateSpotifyResults, generateYoutubeResults,
     convertUrl, convertDirection, sourceTracks, matchedTracks, convertLoading, convertProgress,

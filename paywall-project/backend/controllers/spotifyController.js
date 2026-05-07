@@ -878,9 +878,11 @@ export const searchTracks = async (req, res) => {
 // search queries from artist names + genres, collect and deduplicate results.
 export const generatePlaylist = async (req, res) => {
   try {
-    let { seedTrackIds = [], seedTrackMeta = [], seedPlaylistId, seedPlaylistIds = [], seedArtistIds = [], seedAlbumIds = [], genres = [], languages = ['en'], limit = 30 } = req.body;
+    let { seedTrackIds = [], seedTrackMeta = [], seedPlaylistId, seedPlaylistIds = [], seedArtistIds = [], seedAlbumIds = [], genres = [], languages = ['en'], year = null, limit = 30 } = req.body;
     limit = Math.max(1, Math.min(Number(limit) || 30, 100));
     if (!Array.isArray(languages) || !languages.length) languages = ['en'];
+    const targetYear = year ? Number(year) : null;
+    const currentYear = new Date().getFullYear();
 
     // Support both singular and plural for backward compatibility
     const playlistIds = seedPlaylistIds.length ? seedPlaylistIds : (seedPlaylistId ? [seedPlaylistId] : []);
@@ -1209,6 +1211,13 @@ export const generatePlaylist = async (req, res) => {
       }
     }
 
+    // Append year filter to queries when a specific year is selected
+    if (targetYear) {
+      const yearTagged = queries.map(q => `${q} year:${targetYear}`);
+      // Also keep some untagged queries as fallback
+      queries.splice(0, queries.length, ...yearTagged, ...queries.slice(0, 4));
+    }
+
     // Deduplicate and cap — allow more queries when we need more tracks
     const maxQueries = limit > 50 ? 16 : limit > 20 ? 12 : 10;
     const uniqueQueries = [...new Set(queries)].slice(0, maxQueries);
@@ -1339,10 +1348,19 @@ export const generatePlaylist = async (req, res) => {
         return true;
       });
 
-      // Sort by popularity, boosting explicit versions
+      // Sort by popularity, boosting explicit versions and year matches
       items.sort((a, b) => {
-        const pa = (a.popularity || 0) + (a.explicit ? 10 : 0);
-        const pb = (b.popularity || 0) + (b.explicit ? 10 : 0);
+        const releaseYearA = parseInt((a.album?.release_date || '').slice(0, 4), 10) || 0;
+        const releaseYearB = parseInt((b.album?.release_date || '').slice(0, 4), 10) || 0;
+        let pa = (a.popularity || 0) + (a.explicit ? 10 : 0);
+        let pb = (b.popularity || 0) + (b.explicit ? 10 : 0);
+        if (targetYear) {
+          // Big boost for target year, smaller boost for current year
+          if (releaseYearA === targetYear) pa += 30;
+          else if (releaseYearA === currentYear) pa += 15;
+          if (releaseYearB === targetYear) pb += 30;
+          else if (releaseYearB === currentYear) pb += 15;
+        }
         return pb - pa;
       });
 

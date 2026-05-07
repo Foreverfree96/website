@@ -217,6 +217,23 @@
                 </div>
               </div>
 
+              <!-- Year selection -->
+              <div class="pt-section">
+                <label class="pt-label">Year</label>
+                <div class="pt-year-row">
+                  <button
+                    :class="['pt-year-btn', { active: !pt.selectedYear.value }]"
+                    @click="pt.selectedYear.value = null"
+                  >Any</button>
+                  <button
+                    v-for="yr in yearOptions"
+                    :key="yr"
+                    :class="['pt-year-btn', { active: pt.selectedYear.value === yr }]"
+                    @click="pt.selectedYear.value = yr"
+                  >{{ yr }}</button>
+                </div>
+              </div>
+
               <!-- Track count -->
               <div class="pt-section pt-row">
                 <label class="pt-label">Tracks: {{ pt.trackLimit.value }}</label>
@@ -775,6 +792,13 @@ const addCustom = () => {
     customGenreInput.value = '';
   }
 };
+
+const yearOptions = computed(() => {
+  const now = new Date().getFullYear();
+  const years = [];
+  for (let y = now; y >= 2000; y--) years.push(y);
+  return years;
+});
 
 const detectedPlatform = computed(() => {
   const url = pt.convertUrl.value;
@@ -1342,6 +1366,27 @@ const handleAddToExistingYt = (playlistId) => {
 /* ─── Range slider ────────────────────────────────────────────────────────── */
 .pt-row { flex-direction: row; align-items: center; gap: 12px; }
 .pt-range { flex: 1; accent-color: #7c3aed; }
+
+/* ─── Year selector ──────────────────────────────────────────────────────── */
+.pt-year-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 90px;
+  overflow-y: auto;
+}
+.pt-year-btn {
+  background: #1a1a2e;
+  color: #ccc;
+  border: 1px solid #333;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.pt-year-btn:hover { border-color: #7c3aed; color: #fff; }
+.pt-year-btn.active { background: #7c3aed; color: #fff; border-color: #7c3aed; }
 
 /* ─── Buttons ─────────────────────────────────────────────────────────────── */
 .pt-btn {
