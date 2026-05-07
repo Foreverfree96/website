@@ -1190,18 +1190,83 @@ export const generatePlaylist = async (req, res) => {
       else if (name) baseQueries.push(name);
     });
 
-    // Add genre-based queries
+    // ── Smart genre/mood query mapping ──────────────────────────────────────
+    // Instead of searching the mood word (which just finds songs with that
+    // word in the title), map to genre: operators and associated search terms
+    const MOOD_QUERIES = {
+      'sad':       ['genre:indie genre:folk', 'heartbreak', 'melancholy', 'slow ballad', 'emotional songs', 'genre:emo'],
+      'happy':     ['genre:pop feel good', 'upbeat hits', 'feel good songs', 'genre:dance-pop', 'positive vibes'],
+      'emo':       ['genre:emo', 'genre:pop-punk emotional', 'genre:screamo', 'emo rock', 'midwest emo'],
+      'workout':   ['genre:edm high energy', 'pump up songs', 'genre:trap workout', 'hype music', 'gym motivation'],
+      'focus':     ['genre:ambient study', 'concentration music', 'deep focus instrumental', 'genre:post-rock', 'minimal focus'],
+      'sleep':     ['genre:ambient sleep', 'genre:new-age', 'sleep sounds', 'calming piano', 'gentle acoustic'],
+      'road-trip': ['genre:rock road trip', 'genre:classic-rock driving', 'windows down music', 'highway songs', 'sing along hits'],
+      'romantic':  ['genre:r-n-b love songs', 'romantic ballad', 'love songs', 'slow jams', 'genre:soul romantic'],
+    };
+    const GENRE_QUERIES = {
+      'chill':     CHILL_DIVERSE,
+      'lofi':      LOFI_DIVERSE,
+      'pop':       ['genre:pop', 'pop hits', 'top pop'],
+      'hip-hop':   ['genre:hip-hop', 'hip hop hits', 'rap music'],
+      'r-n-b':     ['genre:r-n-b', 'r&b hits', 'rnb songs'],
+      'rap':       ['genre:rap', 'rap hits', 'bars'],
+      'trap':      ['genre:trap', 'trap beats', 'trap music'],
+      'latin':     ['genre:latin', 'reggaeton', 'latin hits'],
+      'afrobeats': ['genre:afrobeats', 'afrobeat hits', 'afropop'],
+      'rock':      ['genre:rock', 'rock hits', 'best rock'],
+      'alt-rock':  ['genre:alt-rock', 'alternative rock', 'indie rock'],
+      'indie':     ['genre:indie', 'indie hits', 'indie music'],
+      'punk':      ['genre:punk', 'punk rock', 'pop punk'],
+      'metal':     ['genre:metal', 'heavy metal', 'metal hits'],
+      'grunge':    ['genre:grunge', 'grunge rock', '90s grunge'],
+      'hardcore':  ['genre:hardcore', 'hardcore punk', 'post-hardcore'],
+      'electronic':['genre:electronic', 'electronic music', 'synth'],
+      'house':     ['genre:house', 'house music', 'deep house'],
+      'techno':    ['genre:techno', 'techno music', 'techno beats'],
+      'edm':       ['genre:edm', 'edm hits', 'festival music'],
+      'dubstep':   ['genre:dubstep', 'bass music', 'dubstep drops'],
+      'drum-and-bass': ['genre:drum-and-bass', 'dnb', 'jungle'],
+      'trance':    ['genre:trance', 'trance music', 'uplifting trance'],
+      'ambient':   ['genre:ambient', 'ambient music', 'atmospheric'],
+      'acoustic':  ['genre:acoustic', 'acoustic songs', 'unplugged covers'],
+      'folk':      ['genre:folk', 'folk music', 'folk songs'],
+      'singer-songwriter': ['genre:singer-songwriter', 'singer songwriter', 'storytelling songs'],
+      'bossa-nova':['genre:bossa-nova', 'bossa nova', 'brazilian jazz'],
+      'classical': ['genre:classical', 'classical music', 'orchestral'],
+      'piano':     ['genre:piano', 'piano music', 'piano pieces'],
+      'jazz':      ['genre:jazz', 'jazz music', 'smooth jazz'],
+      'blues':     ['genre:blues', 'blues music', 'blues songs'],
+      'soul':      ['genre:soul', 'soul music', 'neo soul'],
+      'gospel':    ['genre:gospel', 'gospel music', 'gospel songs'],
+      'opera':     ['genre:opera', 'opera music', 'operatic'],
+      'country':   ['genre:country', 'country hits', 'country music'],
+      'country-pop': ['genre:country-pop', 'country pop', 'pop country'],
+      'americana': ['genre:americana', 'americana music', 'roots'],
+      'bluegrass': ['genre:bluegrass', 'bluegrass music', 'banjo'],
+      'southern-rock': ['genre:southern-rock', 'southern rock', 'southern'],
+      'synth-pop': ['genre:synth-pop', 'synth pop', 'synthwave'],
+      'indie-pop': ['genre:indie-pop', 'indie pop hits'],
+      'electro-pop': ['genre:electro-pop', 'electropop'],
+      'dream-pop': ['genre:dream-pop', 'dream pop', 'shoegaze'],
+      'k-pop':     ['genre:k-pop', 'kpop hits', 'korean pop'],
+      'j-pop':     ['genre:j-pop', 'jpop hits', 'japanese pop'],
+      'alt-pop':   ['genre:alt-pop', 'alt pop', 'alternative pop'],
+    };
+
+    // Add genre-based queries using smart mappings
     genres.forEach(g => {
-      if (g === 'chill') {
-        const picks = CHILL_DIVERSE.sort(() => Math.random() - 0.5).slice(0, 3);
+      const moodMap = MOOD_QUERIES[g];
+      const genreMap = GENRE_QUERIES[g];
+      if (moodMap) {
+        const picks = moodMap.sort(() => Math.random() - 0.5).slice(0, 3);
         picks.forEach(q => baseQueries.push(q));
-      } else if (g === 'lofi') {
-        const picks = LOFI_DIVERSE.sort(() => Math.random() - 0.5).slice(0, 3);
+      } else if (genreMap) {
+        const picks = genreMap.sort(() => Math.random() - 0.5).slice(0, 3);
         picks.forEach(q => baseQueries.push(q));
       } else {
-        baseQueries.push(g);
-        baseQueries.push(`best ${g}`);
-        baseQueries.push(`${g} hits`);
+        // Fallback for custom/unknown genres — use genre: operator
+        baseQueries.push(`genre:${g}`);
+        baseQueries.push(`genre:${g} hits`);
       }
     });
 
