@@ -1339,8 +1339,12 @@ export const generatePlaylist = async (req, res) => {
         return true;
       });
 
-      // Sort by popularity so we pick the most popular tracks first
-      items.sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
+      // Sort by popularity, boosting explicit versions
+      items.sort((a, b) => {
+        const pa = (a.popularity || 0) + (a.explicit ? 10 : 0);
+        const pb = (b.popularity || 0) + (b.explicit ? 10 : 0);
+        return pb - pa;
+      });
 
       let added = 0;
       for (const t of items) {
@@ -1815,9 +1819,9 @@ export const matchTracks = async (req, res) => {
               ? bestTitleSim * 0.5 + bestArtistSim * 0.4 + durationBonus * 0.1
               : bestTitleSim * 0.85 + durationBonus * 0.15;
 
-            // Prefer explicit versions — penalize clean versions
-            if (t.explicit) score += 0.05;
-            else if (!t.explicit && allCandidates.length > 0) score -= 0.02;
+            // Strongly prefer explicit versions over clean
+            if (t.explicit) score += 0.15;
+            else score -= 0.10;
 
             // Penalize live/acoustic/remix versions — we want studio originals
             // BUT only if the source track itself isn't a live version

@@ -371,6 +371,8 @@
                     <div class="pt-match-target pt-no-match" v-else>
                       <span>No match found</span>
                     </div>
+                    <span v-if="m.bestMatch?.explicit" class="pt-explicit-badge" title="Explicit">E</span>
+                    <span v-else-if="m.bestMatch && !m.bestMatch.explicit" class="pt-clean-badge" title="Clean">C</span>
                     <span :class="['pt-confidence', m.confidence]">{{ m.confidence }}</span>
 
                     <!-- Alternatives dropdown + custom search -->
@@ -1661,6 +1663,20 @@ const handleAddToExistingYt = (playlistId) => {
 .pt-confidence.similar { background: #4a3728; color: #f5c78e; }
 .pt-confidence.autofill { background: #1e3a5f; color: #93c5fd; }
 .pt-confidence.none { background: #7f1d1d; color: #fca5a5; }
+.pt-explicit-badge, .pt-clean-badge {
+  font-size: 0.6rem;
+  font-weight: 800;
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  flex-shrink: 0;
+  line-height: 1;
+}
+.pt-explicit-badge { background: #666; color: #fff; }
+.pt-clean-badge { background: transparent; border: 1px solid #555; color: #888; }
 
 /* ─── Alternatives ────────────────────────────────────────────────────────── */
 .pt-alt-wrap { position: relative; flex-shrink: 0; }
