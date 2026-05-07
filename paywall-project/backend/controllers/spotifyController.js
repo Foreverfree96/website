@@ -1375,13 +1375,14 @@ export const generatePlaylist = async (req, res) => {
 
       // Filter out parody, karaoke, cover, tribute, live, and unverified music
       const JUNK_RE = /\b(parody|karaoke|tribute|8[- ]?bit|midi|cover|lullaby|music box|ringtone|made famous|in the style of|originally performed)\b/i;
-      const LIVE_RE = /\b(live\s+(at|in|from|on|version|session|performance|recording)|[\(\[]live[\)\]]|- live\b|live$)/i;
+      const LIVE_RE = /\b(live\s+(at|in|from|on|version|session|performance|recording|album)|[\(\[]live[^\)\]]*[\)\]]|- live\b|live$|^live\s|unplugged|live\s*\d{4}|concert|in concert)\b/i;
       items = items.filter(t => {
         if (!t?.id) return false;
         const name = t.name || '';
         const album = t.album?.name || '';
         if (JUNK_RE.test(name) || JUNK_RE.test(album)) return false;
-        if (LIVE_RE.test(name) || LIVE_RE.test(album)) return false;
+        const artistNames = (t.artists || []).map(a => a.name).join(' ');
+        if (LIVE_RE.test(name) || LIVE_RE.test(album) || LIVE_RE.test(artistNames)) return false;
         // Filter very low popularity tracks (likely spam/unverified)
         if (typeof t.popularity === 'number' && t.popularity < 15) return false;
         // Strict language filter
@@ -1886,7 +1887,7 @@ export const matchTracks = async (req, res) => {
             // BUT only if the source track itself isn't a live version
             const trackName = t.name || "";
             const albumName = t.album?.name || "";
-            const liveRe = /\b(live\s+(at|in|from|on|version|session|performance|recording)|[\(\[]live[\)\]]|- live\b|live$)/i;
+            const liveRe = /\b(live\s+(at|in|from|on|version|session|performance|recording|album)|[\(\[]live[^\)\]]*[\)\]]|- live\b|live$|^live\s|unplugged|live\s*\d{4}|concert|in concert)\b/i;
             const isLiveTrack = liveRe.test(trackName);
             const isLiveAlbum = liveRe.test(albumName);
             const srcIsLive = liveRe.test(rawTitle);
