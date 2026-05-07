@@ -1817,13 +1817,18 @@ export const matchTracks = async (req, res) => {
             if (t.explicit) score += 0.05;
             else if (!t.explicit && allCandidates.length > 0) score -= 0.02;
 
-            // Penalize live versions — we want studio recordings
+            // Penalize live/acoustic/remix versions — we want studio originals
+            // BUT only if the source track itself isn't a live version
             const trackName = t.name || "";
             const albumName = t.album?.name || "";
-            const isLiveTrack = /\b(live\s+(at|in|from|on|version|session|performance|recording)|[\(\[]live[\)\]]|- live\b|live$)/i.test(trackName);
-            const isLiveAlbum = /\b(live\s+(at|in|from|on)|[\(\[]live[\)\]]|- live\b|live$)/i.test(albumName);
-            if (isLiveTrack) score -= 0.10;
-            else if (isLiveAlbum) score -= 0.06;
+            const liveRe = /\b(live\s+(at|in|from|on|version|session|performance|recording)|[\(\[]live[\)\]]|- live\b|live$)/i;
+            const isLiveTrack = liveRe.test(trackName);
+            const isLiveAlbum = liveRe.test(albumName);
+            const srcIsLive = liveRe.test(rawTitle);
+            if (!srcIsLive) {
+              if (isLiveTrack) score -= 0.25;
+              else if (isLiveAlbum) score -= 0.18;
+            }
 
             return {
               id:          t.id,
