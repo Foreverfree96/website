@@ -1137,6 +1137,40 @@ export const generatePlaylist = async (req, res) => {
       ? (LANG_MARKETS[nonEnglishLangs[0]] || 'US')
       : 'US';
 
+    // ── Strict language filter ──────────────────────────────────────────────
+    // Detect language from track/artist/album text using Unicode script ranges
+    const SCRIPT_RE = {
+      ja: /[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]/,                // Hiragana, Katakana, CJK
+      ko: /[\uAC00-\uD7AF\u1100-\u11FF]/,                              // Hangul
+      ar: /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]/,                 // Arabic
+      es: /[ñ¡¿áéíóúü]/i,                                              // Spanish-specific
+      fr: /[àâæçéèêëïîôœùûüÿ]/i,                                      // French-specific
+    };
+    // Check if text contains characters from a specific script
+    const hasScript = (text, lang) => SCRIPT_RE[lang] ? SCRIPT_RE[lang].test(text) : false;
+    // Detect if a track is in a non-English language
+    const detectTrackLang = (t) => {
+      const text = `${t.name || ''} ${(t.artists || []).map(a => a.name).join(' ')} ${t.album?.name || ''}`;
+      for (const [lang, re] of Object.entries(SCRIPT_RE)) {
+        if (re.test(text)) return lang;
+      }
+      return 'en'; // Default to English if no non-Latin scripts detected
+    };
+    // Build the language filter function
+    const passesLangFilter = (t) => {
+      const trackLang = detectTrackLang(t);
+      if (onlyEnglish) {
+        // English only — allow English + Japanese (exception), block everything else
+        return trackLang === 'en' || trackLang === 'ja';
+      }
+      if (onlyNonEnglish) {
+        // Non-English only — must match one of the selected languages
+        return languages.includes(trackLang);
+      }
+      // Mixed selection — allow selected languages + English
+      return trackLang === 'en' || languages.includes(trackLang);
+    };
+
     // Chill/lofi diversity keywords — not just "chill" in the title
     const CHILL_DIVERSE = ['chill vibes', 'relaxing', 'mellow', 'laid back', 'downtempo', 'ambient chill', 'easy listening', 'soft', 'calm'];
     const LOFI_DIVERSE = ['lofi hip hop', 'lofi beats', 'lofi chill', 'chillhop', 'study beats', 'lofi jazz'];
@@ -1350,6 +1384,8 @@ export const generatePlaylist = async (req, res) => {
         if (LIVE_RE.test(name) || LIVE_RE.test(album)) return false;
         // Filter very low popularity tracks (likely spam/unverified)
         if (typeof t.popularity === 'number' && t.popularity < 15) return false;
+        // Strict language filter
+        if (!passesLangFilter(t)) return false;
         return true;
       });
 
