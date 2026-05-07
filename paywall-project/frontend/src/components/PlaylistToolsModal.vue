@@ -64,7 +64,7 @@
 
               <!-- Seed track search -->
               <div class="pt-section">
-                <label class="pt-label">Seed Tracks ({{ pt.seedTracks.value.length }}/5)</label>
+                <label class="pt-label">Tracks ({{ pt.seedTracks.value.length }}/5)</label>
                 <div class="pt-search-wrap">
                   <input
                     class="pt-input"
@@ -105,7 +105,7 @@
 
               <!-- Reference URLs (playlists or tracks) -->
               <div class="pt-section">
-                <label class="pt-label">Reference Playlists/Tracks (optional)</label>
+                <label class="pt-label">Playlists/Tracks (optional)</label>
                 <div class="pt-seed-urls-row">
                   <input
                     class="pt-input pt-seed-url-input"
@@ -126,7 +126,7 @@
 
               <!-- Artist seeds -->
               <div class="pt-section">
-                <label class="pt-label">Seed Artists (optional)</label>
+                <label class="pt-label">Artists (optional)</label>
                 <div class="pt-seed-urls-row">
                   <input
                     class="pt-input pt-seed-url-input"
@@ -146,7 +146,7 @@
 
               <!-- Album seeds -->
               <div class="pt-section">
-                <label class="pt-label">Seed Albums (optional)</label>
+                <label class="pt-label">Albums (optional)</label>
                 <div class="pt-seed-urls-row">
                   <input
                     class="pt-input pt-seed-url-input"
