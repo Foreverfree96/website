@@ -1106,6 +1106,13 @@ export const generatePlaylist = async (req, res) => {
       genres.push(...domainedGenres.slice(0, 3));
       console.log(`   📊 Using detected playlist genres: [${genres.join(", ")}]`);
     }
+    // When playlist provided, also add genre: operator queries for dominant genres
+    // so search results actually match the playlist's style
+    if (domainedGenres.length && hasPlaylist) {
+      domainedGenres.slice(0, 4).forEach(dg => {
+        if (!genres.includes(dg)) genres.push(dg);
+      });
+    }
 
     console.log(`   Seeds resolved: ${seedArtists.length} artists [${seedArtists.slice(0, 5).join(', ')}], ${uniqueIds.length} trackIds, ${genres.length} genres, ${playlistIds.length} playlists, domainedGenres=[${domainedGenres.join(", ")}]`);
 
@@ -1400,32 +1407,43 @@ export const generatePlaylist = async (req, res) => {
     emitProgress(10, 'Searching...');
 
     // Genre validation — when we have detected genres, validate track artists match those genres
+    // Cache artist genres to avoid redundant API calls during validation
+    const _artistGenreCache = new Map();
+    const getArtistGenres = async (artistIds) => {
+      const uncached = artistIds.filter(id => !_artistGenreCache.has(id));
+      if (uncached.length) {
+        try {
+          for (let i = 0; i < uncached.length; i += 50) {
+            const batch = uncached.slice(i, i + 50);
+            const r = await axios.get(`https://api.spotify.com/v1/artists`, {
+              params: { ids: batch.join(",") },
+              headers: auth,
+            });
+            for (const a of (r.data.artists || [])) {
+              _artistGenreCache.set(a.id, (a.genres || []).map(g => g.toLowerCase()));
+            }
+          }
+        } catch (e) {
+          console.warn(`   ⚠ Artist genre fetch failed:`, e.message);
+        }
+      }
+      return artistIds.flatMap(id => _artistGenreCache.get(id) || []);
+    };
+
     const validateTrackGenres = async (trackArtistIds) => {
-      if (!hasPlaylistInput || domainedGenres.length === 0) return true; // No validation if no playlist
+      if (!hasPlaylistInput || domainedGenres.length === 0) return true;
       if (!trackArtistIds || trackArtistIds.length === 0) return false;
 
       try {
-        const batchSize = 50;
-        for (let i = 0; i < trackArtistIds.length; i += batchSize) {
-          const batch = trackArtistIds.slice(i, Math.min(i + batchSize, trackArtistIds.length));
-          const artistRes = await axios.get(`https://api.spotify.com/v1/artists`, {
-            params: { ids: batch.join(",") },
-            headers: auth,
-          });
-
-          // Check if any artist shares genres with domainedGenres
-          for (const artist of (artistRes.data.artists || [])) {
-            const artistGenres = (artist.genres || []).map(g => g.toLowerCase());
-            const match = domainedGenres.some(dg =>
-              artistGenres.some(ag => ag.includes(dg.toLowerCase()) || dg.toLowerCase().includes(ag))
-            );
-            if (match) return true; // At least one artist matches
-          }
-        }
-        return false; // No artist genres matched
+        const artistGenres = await getArtistGenres(trackArtistIds);
+        if (!artistGenres.length) return false;
+        // Check if any artist genre overlaps with the playlist's dominant genres
+        return domainedGenres.some(dg =>
+          artistGenres.some(ag => ag.includes(dg.toLowerCase()) || dg.toLowerCase().includes(ag))
+        );
       } catch (e) {
         console.warn(`   ⚠ Genre validation failed, accepting track:`, e.message);
-        return true; // On error, accept the track (be lenient)
+        return true;
       }
     };
 
@@ -1475,6 +1493,13 @@ export const generatePlaylist = async (req, res) => {
       for (const t of items) {
         if (collected.length >= limit) break;
         if (seenIds.has(t.id)) continue;
+
+        // Genre validation — when playlist seed provided, verify track fits the genre profile
+        if (hasPlaylistInput && domainedGenres.length > 0) {
+          const trackArtistIds = (t.artists || []).map(a => a.id).filter(Boolean);
+          const genreMatch = await validateTrackGenres(trackArtistIds);
+          if (!genreMatch) continue;
+        }
 
         seenIds.add(t.id);
 
