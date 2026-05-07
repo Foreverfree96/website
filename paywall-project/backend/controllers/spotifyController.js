@@ -1325,13 +1325,15 @@ export const generatePlaylist = async (req, res) => {
 
       let items = await doSearch(uniqueQueries[qi]);
 
-      // Filter out parody, karaoke, cover, tribute, and unverified music
+      // Filter out parody, karaoke, cover, tribute, live, and unverified music
       const JUNK_RE = /\b(parody|karaoke|tribute|8[- ]?bit|midi|cover|lullaby|music box|ringtone|made famous|in the style of|originally performed)\b/i;
+      const LIVE_RE = /\b(live\s+(at|in|from|on|version|session|performance|recording)|[\(\[]live[\)\]]|- live\b|live$)/i;
       items = items.filter(t => {
         if (!t?.id) return false;
         const name = t.name || '';
         const album = t.album?.name || '';
         if (JUNK_RE.test(name) || JUNK_RE.test(album)) return false;
+        if (LIVE_RE.test(name) || LIVE_RE.test(album)) return false;
         // Filter very low popularity tracks (likely spam/unverified)
         if (typeof t.popularity === 'number' && t.popularity < 15) return false;
         return true;
