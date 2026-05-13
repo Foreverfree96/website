@@ -1,20 +1,73 @@
 <template>
-    <div class="auth-wrapper">
+    <div class="auth-wrapper login-enter">
         <h2 class="lgn-sgnup-txt">Login</h2>
-        <!-- Loading banner -->
-        <div v-if="loginLoading" class="login-loading-banner">
-            <div class="login-spinner"></div>
-            <span>Logging in...</span>
-        </div>
 
-        <form @submit.prevent="handleLogin" class="auth-form">
-            <input v-model="username" type="text" placeholder="Username/Email" class="auth-input" required @keydown.enter.prevent="handleLogin" :disabled="loginLoading" />
-            <input v-model="password" type="password" placeholder="Password" class="auth-input" required @keydown.enter.prevent="handleLogin" :disabled="loginLoading" />
-            <button type="submit" class="auth-button button-size" :disabled="loginLoading">{{ loginLoading ? 'Logging in...' : 'Login' }}</button>
+        <form @submit.prevent="handleLogin" class="auth-form" :class="{ 'form-shake': shaking }">
+            <!-- Username/Email floating label -->
+            <div class="input-group">
+                <input
+                    v-model="username"
+                    type="text"
+                    id="login-user"
+                    class="auth-input floating-input"
+                    :class="{ 'has-value': username }"
+                    required
+                    autocomplete="username"
+                    :disabled="loginLoading"
+                    @keydown.enter.prevent="handleLogin"
+                />
+                <label for="login-user" class="floating-label">Username or Email</label>
+            </div>
 
-            <a href="/forgot-password" class="txt-tag" style="font-size:16px;font-weight:700;cursor:pointer;text-decoration:underline;">Forgot password?</a>
-            <a href="/forgot-username" class="txt-tag" style="font-size:16px;font-weight:700;cursor:pointer;text-decoration:underline;">Forgot username?</a>
-            <a href="/forgot-email" class="txt-tag" style="font-size:16px;font-weight:700;cursor:pointer;text-decoration:underline;">Forgot email?</a>
+            <!-- Password floating label + toggle -->
+            <div class="input-group">
+                <input
+                    v-model="password"
+                    :type="showPassword ? 'text' : 'password'"
+                    id="login-pass"
+                    class="auth-input floating-input"
+                    :class="{ 'has-value': password }"
+                    required
+                    autocomplete="current-password"
+                    :disabled="loginLoading"
+                    @keydown.enter.prevent="handleLogin"
+                />
+                <label for="login-pass" class="floating-label">Password</label>
+                <button
+                    type="button"
+                    class="pw-toggle"
+                    @click="showPassword = !showPassword"
+                    tabindex="-1"
+                    :aria-label="showPassword ? 'Hide password' : 'Show password'"
+                >
+                    <svg v-if="!showPassword" class="pw-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/>
+                        <circle cx="12" cy="12" r="3"/>
+                    </svg>
+                    <svg v-else class="pw-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
+                        <line x1="1" y1="1" x2="23" y2="23"/>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Login button with inline spinner -->
+            <button type="submit" class="auth-button button-size login-btn" :disabled="loginLoading">
+                <span v-if="loginLoading" class="btn-spinner"></span>
+                <span>{{ loginLoading ? 'Logging in...' : 'Login' }}</span>
+            </button>
+
+            <!-- Need help? collapsible -->
+            <button type="button" class="help-toggle" @click="helpOpen = !helpOpen">
+                {{ helpOpen ? 'Hide help' : 'Need help?' }}
+                <span class="help-chevron" :class="{ open: helpOpen }">&#9662;</span>
+            </button>
+            <div class="help-links" :class="{ expanded: helpOpen }">
+                <a href="/forgot-password" class="help-link">Forgot password</a>
+                <a href="/forgot-username" class="help-link">Forgot username</a>
+                <a href="/forgot-email" class="help-link">Forgot email</a>
+            </div>
+
             <p class="txt-tag">Don't have an account?</p>
             <a href="/signup" class="auth-button button-size">Sign Up</a>
         </form>
@@ -22,7 +75,7 @@
         <!-- Error / block message -->
         <div v-if="error && !errorDismissed" class="login-error-block" :class="{ 'error-banned': isBanned, 'error-restricted': isRestricted }">
             <!-- Dismiss (X) button -->
-            <button class="error-dismiss" @click="dismissError" title="Dismiss">✕</button>
+            <button class="error-dismiss" @click="dismissError" title="Dismiss">&#10005;</button>
 
             <p class="error-icon">{{ isBanned ? '🚫' : isRestricted ? '⏳' : '⚠️' }}</p>
             <p class="error-msg">{{ error }}</p>
@@ -52,7 +105,7 @@
             <div class="appeal-box">
                 <div class="appeal-box__header">
                     <h3 class="appeal-box__title">{{ isBanned ? '🚫 Appeal Ban' : '⏳ Appeal Restriction' }}</h3>
-                    <button class="appeal-box__close" @click="closeAppealModal">✕</button>
+                    <button class="appeal-box__close" @click="closeAppealModal">&#10005;</button>
                 </div>
                 <p class="appeal-box__sub">
                     Explain why you believe this {{ isBanned ? 'ban' : 'restriction' }} should be lifted.
@@ -81,7 +134,7 @@
                   <p v-if="appealError" class="appeal-box__error">{{ appealError }}</p>
                 </template>
                 <div v-if="appealSent" class="appeal-box__success">
-                    <p>✅ Appeal submitted successfully.</p>
+                    <p>Appeal submitted successfully.</p>
                     <p>The mod team will review it and get back to you.</p>
                     <button class="appeal-box__cancel" @click="closeAppealModal">Close</button>
                 </div>
@@ -96,7 +149,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from "vue";
+import { ref, computed, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import { useAuth } from "../composables/useAuth.js";
 import axios from "axios";
@@ -111,14 +164,17 @@ const username     = ref("");
 const password     = ref("");
 const loginLoading = ref(false);
 const resendSent   = ref(false);
+const showPassword = ref(false);
+const helpOpen     = ref(false);
+const shaking      = ref(false);
 
 const isBanned     = ref(false);
 const isRestricted = ref(false);
 
-// Dismiss state — hides the error banner when user clicks ✕
+// Dismiss state
 const errorDismissed = ref(false);
 
-// Persists across modal close — shows "appeal under review" on the banner
+// Persists across modal close
 const appealSubmittedBanner = ref(false);
 
 // Hides the Submit Appeal button after the modal is closed without submitting
@@ -138,6 +194,11 @@ const withdrawMsg     = ref("");
 
 const showResend = computed(() => error.value?.toLowerCase().includes("verify your email"));
 
+const triggerShake = () => {
+    shaking.value = true;
+    setTimeout(() => { shaking.value = false; }, 500);
+};
+
 const handleLogin = async () => {
     resendSent.value            = false;
     isBanned.value              = false;
@@ -154,6 +215,7 @@ const handleLogin = async () => {
         const data = err.response?.data;
         if (data?.type === "banned")     isBanned.value     = true;
         if (data?.type === "restricted") isRestricted.value = true;
+        triggerShake();
     } finally {
         loginLoading.value = false;
     }
@@ -178,7 +240,6 @@ const closeAppealModal = () => {
     if (submitted) {
         appealSubmittedBanner.value = true;
     } else {
-        // Closed without submitting — hide the appeal button until next login attempt
         appealButtonHidden.value = true;
     }
     appealText.value          = "";
@@ -223,7 +284,6 @@ const withdrawAppeal = async () => {
         });
         appealSubmittedBanner.value = false;
         withdrawMsg.value = "";
-        // Re-show the Submit an Appeal button
     } catch (err) {
         withdrawMsg.value = err.response?.data?.message || "Failed to withdraw. Try again.";
     } finally {
@@ -233,35 +293,167 @@ const withdrawAppeal = async () => {
 </script>
 
 <style scoped>
-/* Loading banner */
-.login-loading-banner {
+/* ===== Page enter animation ===== */
+.login-enter {
+    animation: fadeSlideUp 0.4s ease-out both;
+}
+@keyframes fadeSlideUp {
+    from { opacity: 0; transform: translateY(24px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ===== Shake on error ===== */
+.form-shake {
+    animation: shake 0.4s ease-in-out;
+}
+@keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    20%      { transform: translateX(-8px); }
+    40%      { transform: translateX(8px); }
+    60%      { transform: translateX(-6px); }
+    80%      { transform: translateX(6px); }
+}
+
+/* ===== Floating label input group ===== */
+.input-group {
+    position: relative;
+    width: 85%;
+}
+.floating-input {
+    width: 100%;
+    height: 52px;
+    padding: 22px 14px 8px !important;
+    font-size: 16px !important;
+    box-sizing: border-box;
+    background: #fff;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.floating-label {
+    position: absolute;
+    left: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 1rem;
+    color: #888;
+    pointer-events: none;
+    transition: all 0.2s ease;
+    background: transparent;
+}
+.floating-input:focus + .floating-label,
+.floating-input.has-value + .floating-label {
+    top: 10px;
+    transform: translateY(0);
+    font-size: 0.72rem;
+    color: #14532d;
+    font-weight: 700;
+}
+.floating-input:focus {
+    border-color: #14532d !important;
+    box-shadow: 0 0 0 3px rgba(125, 190, 157, 0.35) !important;
+}
+
+/* ===== Password toggle ===== */
+.pw-toggle {
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 6px;
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 10px;
-    padding: 12px 24px;
-    background: #1e3a5f;
-    color: #fff;
-    border-radius: 10px;
-    font-size: 0.95rem;
-    font-weight: 700;
-    margin-bottom: 12px;
-    max-width: 360px;
-    width: 100%;
+    color: #666;
+    transition: color 0.15s;
 }
-.login-spinner {
+.pw-toggle:hover { color: #14532d; }
+.pw-icon {
+    width: 20px;
+    height: 20px;
+}
+
+/* ===== Login button with inline spinner ===== */
+.login-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    transition: background-color 0.2s, transform 0.15s, box-shadow 0.2s;
+}
+.login-btn:disabled {
+    opacity: 0.75;
+    cursor: wait;
+}
+.btn-spinner {
     width: 18px;
     height: 18px;
-    border: 3px solid rgba(255,255,255,0.3);
-    border-top-color: #fff;
+    border: 3px solid rgba(255, 182, 193, 0.3);
+    border-top-color: pink;
     border-radius: 50%;
-    animation: login-spin 0.7s linear infinite;
+    animation: btn-spin 0.65s linear infinite;
+    flex-shrink: 0;
 }
-@keyframes login-spin {
+@keyframes btn-spin {
     to { transform: rotate(360deg); }
 }
 
-/* Error / block message */
+/* ===== Need help? collapsible ===== */
+.help-toggle {
+    background: none;
+    border: none;
+    color: #fff;
+    font-size: 0.95rem;
+    font-weight: 700;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 0;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    transition: color 0.15s;
+}
+.help-toggle:hover { color: pink; }
+.help-chevron {
+    display: inline-block;
+    transition: transform 0.25s ease;
+    font-size: 0.75rem;
+}
+.help-chevron.open {
+    transform: rotate(180deg);
+}
+.help-links {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease, opacity 0.25s ease;
+    opacity: 0;
+}
+.help-links.expanded {
+    max-height: 160px;
+    opacity: 1;
+}
+.help-link {
+    color: #fff;
+    font-size: 0.9rem;
+    font-weight: 700;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    cursor: pointer;
+    padding: 4px 0;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    transition: color 0.15s;
+}
+.help-link:hover { color: pink; }
+
+/* ===== Error / block message ===== */
 .login-error-block {
     position: relative;
     margin-top: 16px;
@@ -276,6 +468,7 @@ const withdrawAppeal = async () => {
     max-width: 360px;
     width: 100%;
     text-align: center;
+    animation: fadeSlideUp 0.3s ease-out both;
 }
 .login-error-block.error-restricted {
     border-color: #d97706;
@@ -457,6 +650,12 @@ const withdrawAppeal = async () => {
 
 /* Large phone / small tablet (600px) */
 @media (max-width: 600px) {
+    .input-group {
+        width: 92%;
+    }
+    .floating-input {
+        height: 54px;
+    }
     .login-error-block {
         max-width: 100%;
         padding: 14px 16px;
@@ -474,7 +673,7 @@ const withdrawAppeal = async () => {
     .appeal-box__cancel,
     .appeal-box__submit,
     .withdraw-btn {
-        min-height: 44px;
+        min-height: 48px;
         font-size: 0.9rem;
     }
     .error-dismiss {
@@ -493,10 +692,17 @@ const withdrawAppeal = async () => {
         align-items: center;
         justify-content: center;
     }
+    .help-link {
+        font-size: 1rem;
+        min-height: 48px;
+    }
 }
 
 /* Phone (480px) */
 @media (max-width: 480px) {
+    .input-group {
+        width: 95%;
+    }
     .login-error-block {
         padding: 12px 14px;
         gap: 6px;
@@ -521,23 +727,26 @@ const withdrawAppeal = async () => {
     .appeal-box__cancel,
     .appeal-box__submit {
         width: 100%;
-        min-height: 44px;
+        min-height: 48px;
         justify-content: center;
         text-align: center;
     }
     .appeal-trigger-btn {
         width: 100%;
-        min-height: 44px;
+        min-height: 48px;
         padding: 8px 12px;
     }
     .resend-btn {
-        min-height: 44px;
+        min-height: 48px;
         font-size: 0.88rem;
     }
 }
 
 /* Small phone (360px) */
 @media (max-width: 360px) {
+    .input-group {
+        width: 100%;
+    }
     .login-error-block {
         max-width: calc(100% - 24px);
         margin-left: 12px;
