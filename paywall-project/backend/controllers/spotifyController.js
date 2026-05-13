@@ -1091,6 +1091,7 @@ export const generatePlaylist = async (req, res) => {
 
     // Fetch artist info from seed track IDs
     const uniqueIds = [...new Set(seedTrackIds)].slice(0, 5);
+    const trackArtistIds = new Set();
     if (uniqueIds.length) {
       try {
         const r = await axios.get(`https://api.spotify.com/v1/tracks`, {
@@ -1101,8 +1102,39 @@ export const generatePlaylist = async (req, res) => {
           seedTrackUris.add(t.uri);
           const artist = t.artists?.[0]?.name;
           if (artist && !seedArtists.includes(artist)) seedArtists.push(artist);
+          // Collect artist IDs for genre discovery
+          t.artists?.forEach(a => { if (a.id) trackArtistIds.add(a.id); });
         });
       } catch { /* proceed with what we have */ }
+    }
+
+    // When tracks are the only input (no genres, no playlists, no artist/album seeds),
+    // auto-discover genres from the seed tracks' artists for better results
+    const tracksOnly = uniqueIds.length > 0 && !genres.length && !playlistIds.length && !seedArtistIds.length && !seedAlbumIds.length;
+    if (tracksOnly && trackArtistIds.size > 0) {
+      const artistIdBatch = [...trackArtistIds].slice(0, 50);
+      try {
+        const genreRes = await axios.get(`https://api.spotify.com/v1/artists`, {
+          params: { ids: artistIdBatch.join(",") },
+          headers: auth,
+        });
+        (genreRes.data.artists || []).forEach((artist) => {
+          (artist.genres || []).forEach((genre) => {
+            genreFrequency.set(genre, (genreFrequency.get(genre) || 0) + 1);
+          });
+        });
+        // Pick top 2-3 genres to guide search queries
+        if (genreFrequency.size > 0) {
+          const topGenres = [...genreFrequency.entries()]
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 3)
+            .map(([g]) => g);
+          topGenres.forEach(g => { if (!genres.includes(g)) genres.push(g); });
+          console.log(`   🎵 Auto-detected genres from seed tracks: [${topGenres.join(", ")}]`);
+        }
+      } catch (e) {
+        console.warn(`   ⚠ Failed to fetch seed track artist genres:`, e.response?.status || e.message);
+      }
     }
 
     // Use seed track metadata names/artists as search queries when no artist names resolved
@@ -1121,6 +1153,7 @@ export const generatePlaylist = async (req, res) => {
     }
     // When playlist provided, also add genre: operator queries for dominant genres
     // so search results actually match the playlist's style
+    const hasPlaylist = playlistIds.length > 0;
     if (domainedGenres.length && hasPlaylist) {
       domainedGenres.slice(0, 4).forEach(dg => {
         if (!genres.includes(dg)) genres.push(dg);
@@ -1129,9 +1162,8 @@ export const generatePlaylist = async (req, res) => {
 
     console.log(`   Seeds resolved: ${seedArtists.length} artists [${seedArtists.slice(0, 5).join(', ')}], ${uniqueIds.length} trackIds, ${genres.length} genres, ${playlistIds.length} playlists, domainedGenres=[${domainedGenres.join(", ")}]`);
 
-    // Allow generation if: (seed tracks OR genres) OR (playlist provided, even if fetch fails)
-    const hasSeeds = seedArtists.length || genres.length || uniqueIds.length;
-    const hasPlaylist = playlistIds.length > 0;
+    // Allow generation if: seed tracks/meta OR genres OR playlist/artist/album provided
+    const hasSeeds = seedArtists.length || genres.length || uniqueIds.length || seedTrackMeta.length;
 
     if (!hasSeeds && !hasPlaylist) {
       return res.status(400).json({ message: "Provide at least one seed track, genre, or reference playlist" });
@@ -1202,6 +1234,23 @@ export const generatePlaylist = async (req, res) => {
 
     // Always add artist-based queries first (works for any input type)
     seedArtists.forEach(artist => baseQueries.push(artist));
+
+    // When tracks are the only input, fetch related artists to boost query diversity
+    if (tracksOnly && trackArtistIds.size > 0) {
+      const primaryArtistId = [...trackArtistIds][0];
+      try {
+        const relRes = await axios.get(`https://api.spotify.com/v1/artists/${primaryArtistId}/related-artists`, { headers: auth });
+        const related = (relRes.data.artists || []).slice(0, 4);
+        related.forEach(a => {
+          if (a.name && !seedArtists.includes(a.name)) {
+            baseQueries.push(a.name);
+          }
+        });
+        console.log(`   🔗 Related artists added: [${related.map(a => a.name).join(", ")}]`);
+      } catch (e) {
+        console.warn(`   ⚠ Related artists fetch failed:`, e.response?.status || e.message);
+      }
+    }
 
     // Add track metadata queries (name + artist combos)
     seedTrackMeta.slice(0, 5).forEach(m => {
