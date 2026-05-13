@@ -846,11 +846,18 @@ export const searchTracks = async (req, res) => {
       return res.status(429).json({ tracks: [], retryAfter, message: 'Rate limited — try again shortly' });
     }
 
+    // Clean display names — strip stray special characters (!%$#&) but keep
+    // meaningful punctuation (apostrophes, hyphens, periods, commas, parens)
+    const cleanName = (s) => (s || '')
+      .replace(/[!@#$%^&*+=~`|\\{}[\]<>]/g, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+
     const tracks = (items || []).map((t) => ({
       id:          t.id,
       uri:         t.uri,
-      name:        t.name,
-      artist:      t.artists?.map((a) => a.name).join(", ") || "",
+      name:        cleanName(t.name),
+      artist:      t.artists?.map((a) => cleanName(a.name)).join(", ") || "",
       album:       t.album?.name || "",
       art:         t.album?.images?.[0]?.url || "",
       duration_ms: t.duration_ms,
@@ -907,6 +914,12 @@ export const generatePlaylist = async (req, res) => {
       .replace(/\s*Official$/i, '')
       .replace(/\s*Music$/i, '')
       .replace(/\s*Records$/i, '')
+      .trim();
+
+    // Clean display names — strip stray special characters (!%$#&)
+    const cleanDisplayName = (s) => (s || '')
+      .replace(/[!@#$%^&*+=~`|\\{}[\]<>]/g, '')
+      .replace(/\s{2,}/g, ' ')
       .trim();
 
     // Collect artist names from seed tracks
@@ -1127,6 +1140,7 @@ export const generatePlaylist = async (req, res) => {
     const startTime = Date.now();
     const TIMEOUT_MS = 180000; // 3 min — allows time for rate-limit waits
     const seenIds = new Set(uniqueIds); // exclude seed tracks from results
+    const seenNames = new Set(); // deduplicate same song across different releases (single vs album vs deluxe)
     const collected = [];
     const artistCount = new Map(); // track how many songs per primary artist
     const MAX_PER_ARTIST = 2;
@@ -1494,6 +1508,12 @@ export const generatePlaylist = async (req, res) => {
         if (collected.length >= limit) break;
         if (seenIds.has(t.id)) continue;
 
+        // Deduplicate by normalised name+artist to catch same song across different releases
+        const normName = (t.name || '').toLowerCase().replace(/\s*[\(\[].*[\)\]]/g, '').replace(/[^a-z0-9 ]/g, '').trim();
+        const normArtist = (t.artists?.[0]?.name || '').toLowerCase().replace(/[^a-z0-9 ]/g, '').trim();
+        const nameKey = `${normName}::${normArtist}`;
+        if (seenNames.has(nameKey)) continue;
+
         // Genre validation — when playlist seed provided, verify track fits the genre profile
         if (hasPlaylistInput && domainedGenres.length > 0) {
           const trackArtistIds = (t.artists || []).map(a => a.id).filter(Boolean);
@@ -1502,12 +1522,13 @@ export const generatePlaylist = async (req, res) => {
         }
 
         seenIds.add(t.id);
+        seenNames.add(nameKey);
 
         const primaryArtist = (t.artists?.[0]?.name || '').toLowerCase();
         const count = artistCount.get(primaryArtist) || 0;
         const track = {
-          id: t.id, uri: t.uri, name: t.name,
-          artist: t.artists?.map(a => a.name).join(', ') || '',
+          id: t.id, uri: t.uri, name: cleanDisplayName(t.name),
+          artist: t.artists?.map(a => cleanDisplayName(a.name)).join(', ') || '',
           album: t.album?.name || '', art: t.album?.images?.[0]?.url || '',
           duration_ms: t.duration_ms, popularity: t.popularity || 0,
         };

@@ -1,10 +1,16 @@
 <template>
     <div class="auth-wrapper">
         <h2 class="lgn-sgnup-txt">Login</h2>
+        <!-- Loading banner -->
+        <div v-if="loginLoading" class="login-loading-banner">
+            <div class="login-spinner"></div>
+            <span>Logging in...</span>
+        </div>
+
         <form @submit.prevent="handleLogin" class="auth-form">
-            <input v-model="username" type="text" placeholder="Username/Email" class="auth-input" required @keydown.enter.prevent="handleLogin" />
-            <input v-model="password" type="password" placeholder="Password" class="auth-input" required @keydown.enter.prevent="handleLogin" />
-            <button type="submit" class="auth-button button-size">Login</button>
+            <input v-model="username" type="text" placeholder="Username/Email" class="auth-input" required @keydown.enter.prevent="handleLogin" :disabled="loginLoading" />
+            <input v-model="password" type="password" placeholder="Password" class="auth-input" required @keydown.enter.prevent="handleLogin" :disabled="loginLoading" />
+            <button type="submit" class="auth-button button-size" :disabled="loginLoading">{{ loginLoading ? 'Logging in...' : 'Login' }}</button>
 
             <a href="/forgot-password" class="txt-tag" style="font-size:16px;font-weight:700;cursor:pointer;text-decoration:underline;">Forgot password?</a>
             <a href="/forgot-username" class="txt-tag" style="font-size:16px;font-weight:700;cursor:pointer;text-decoration:underline;">Forgot username?</a>
@@ -101,9 +107,10 @@ const API = import.meta.env.VITE_API_URL + "/api/users";
 
 const { login, error } = useAuth();
 
-const username   = ref("");
-const password   = ref("");
-const resendSent = ref(false);
+const username     = ref("");
+const password     = ref("");
+const loginLoading = ref(false);
+const resendSent   = ref(false);
 
 const isBanned     = ref(false);
 const isRestricted = ref(false);
@@ -139,6 +146,7 @@ const handleLogin = async () => {
     appealSubmittedBanner.value = false;
     appealButtonHidden.value    = false;
     withdrawMsg.value           = "";
+    loginLoading.value          = true;
     try {
         await login(username.value, password.value);
         router.push("/portfolio");
@@ -146,6 +154,8 @@ const handleLogin = async () => {
         const data = err.response?.data;
         if (data?.type === "banned")     isBanned.value     = true;
         if (data?.type === "restricted") isRestricted.value = true;
+    } finally {
+        loginLoading.value = false;
     }
 };
 
@@ -223,6 +233,34 @@ const withdrawAppeal = async () => {
 </script>
 
 <style scoped>
+/* Loading banner */
+.login-loading-banner {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 12px 24px;
+    background: #1e3a5f;
+    color: #fff;
+    border-radius: 10px;
+    font-size: 0.95rem;
+    font-weight: 700;
+    margin-bottom: 12px;
+    max-width: 360px;
+    width: 100%;
+}
+.login-spinner {
+    width: 18px;
+    height: 18px;
+    border: 3px solid rgba(255,255,255,0.3);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: login-spin 0.7s linear infinite;
+}
+@keyframes login-spin {
+    to { transform: rotate(360deg); }
+}
+
 /* Error / block message */
 .login-error-block {
     position: relative;
