@@ -777,19 +777,27 @@ export const searchTracks = async (req, res) => {
 
     if (!q) return res.status(400).json({ message: "Missing query parameter q" });
 
+    // Strip special characters that can break Spotify search
+    const cleanQ = q.replace(/[!@#$%^&*+=~`|\\{}[\]<>]/g, '').replace(/\s{2,}/g, ' ').trim();
+
     const doSearch = async (t) => {
       const r = await axios.get("https://api.spotify.com/v1/search", {
-        params: { q, type: "track", limit: Math.min(Number(limit), 50) },
+        params: { q: cleanQ, type: "track", limit: Math.min(Number(limit), 50) },
         headers: { Authorization: `Bearer ${t}` },
       });
       return r.data.tracks?.items || [];
     };
 
-    // Build token buckets — user token first (each user = separate rate limit), then client creds
+    // Build token buckets — user token first, then service account, then client creds
     const buckets = [];
     if (req.user?.id && Date.now() >= _searchUserRateLimitUntil) {
       const userResult = await getValidToken(req.user.id, false);
       if (!userResult.error) buckets.push({ token: userResult.accessToken, label: 'user', limitRef: 'user' });
+    }
+    // Add service account as a middle tier (real user token, avoids Dev Mode stripping)
+    const serviceToken = await getServiceToken();
+    if (serviceToken && !buckets.some(b => b.token === serviceToken)) {
+      buckets.push({ token: serviceToken, label: 'service-account', limitRef: 'user' });
     }
     if (Date.now() >= _searchCcRateLimitUntil) {
       buckets.push({ token: await getClientCredToken(), label: 'client-creds', limitRef: 'cc' });
@@ -807,6 +815,11 @@ export const searchTracks = async (req, res) => {
       for (let attempt = 0; attempt < 2; attempt++) {
         try {
           items = await doSearch(bucket.token);
+          // If search succeeded but returned empty, try next bucket (Dev Mode may strip results)
+          if (!items || items.length === 0) {
+            console.log(`   ⚠ Search "${cleanQ}" returned 0 results with ${bucket.label} token, trying next bucket`);
+            break;
+          }
           success = true;
           break;
         } catch (e) {

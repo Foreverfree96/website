@@ -3,6 +3,13 @@ import jwt from "jsonwebtoken";
 import User from "../models/userModel.js";
 import { siteLog } from "../utils/siteLog.js";
 
+// Decode common HTML entities that YouTube API returns in snippet titles
+const decodeHtmlEntities = (s) => s
+  .replace(/&#39;/g, "'").replace(/&apos;/g, "'")
+  .replace(/&quot;/g, '"').replace(/&amp;/g, '&')
+  .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+  .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)));
+
 // YouTube API key rotation — each key has its own 10k units/day quota.
 // When one key is exhausted, we rotate to the next.
 //
@@ -285,10 +292,13 @@ export const searchYoutubeTracks = async (req, res) => {
       if (!vr) return res.status(429).json({ message: "YouTube API quota exhausted" });
       const item = vr.data.items?.[0];
       if (!item) return res.status(404).json({ message: "Video not found" });
-      return res.json({ item: { title: item.snippet.title, channelTitle: item.snippet.channelTitle || "", videoId: item.id, thumbnail: item.snippet.thumbnails?.medium?.url || "" } });
+      return res.json({ item: { title: decodeHtmlEntities(item.snippet.title || ""), channelTitle: decodeHtmlEntities(item.snippet.channelTitle || ""), videoId: item.id, thumbnail: item.snippet.thumbnails?.medium?.url || "" } });
     }
 
     if (!q) return res.status(400).json({ message: "Missing query parameter q" });
+
+    // Strip special characters that break YouTube search
+    const cleanQ = q.replace(/[!@#$%^&*+=~`|\\{}[\]<>]/g, '').replace(/\s{2,}/g, ' ').trim();
 
     let r;
     let keyRotations = 0, rateLimitRetries = 0;
@@ -297,7 +307,7 @@ export const searchYoutubeTracks = async (req, res) => {
       if (!usedKey) break;
       try {
         r = await axios.get(`${BASE}/search`, {
-          params: { part: "snippet", type: "video", videoCategoryId: "10", q, maxResults: Math.min(Number(limit), 20), key: usedKey },
+          params: { part: "snippet", type: "video", videoCategoryId: "10", q: cleanQ, maxResults: Math.min(Number(limit), 20), key: usedKey },
         });
         break;
       } catch (e) {
@@ -325,8 +335,8 @@ export const searchYoutubeTracks = async (req, res) => {
     }
 
     const items = (r.data.items || []).map((i) => ({
-      title:        i.snippet.title,
-      channelTitle: i.snippet.channelTitle || "",
+      title:        decodeHtmlEntities(i.snippet.title || ""),
+      channelTitle: decodeHtmlEntities(i.snippet.channelTitle || ""),
       videoId:      i.id?.videoId || "",
       thumbnail:    i.snippet.thumbnails?.medium?.url || i.snippet.thumbnails?.default?.url || "",
     }));
@@ -542,8 +552,13 @@ export const matchYoutubeTracks = async (req, res) => {
 
     let _quotaExhausted = false;
 
+    // Strip special characters from YouTube search queries
+    const cleanYTQuery = (q) => q.replace(/[!@#$%^&*+=~`|\\{}[\]<>]/g, '').replace(/\s{2,}/g, ' ').trim();
+
     const searchYT = async (query) => {
       if (_quotaExhausted) return [];
+      const cleanQ = cleanYTQuery(query);
+      if (!cleanQ) return [];
       // Separate counters for key rotations vs rate-limit retries
       let keyRotations = 0;
       let rateLimitRetries = 0;
@@ -553,7 +568,7 @@ export const matchYoutubeTracks = async (req, res) => {
         if (!usedKey) { _quotaExhausted = true; break; }
         try {
           const r = await axios.get(`${BASE}/search`, {
-            params: { part: "snippet", type: "video", videoCategoryId: "10", q: query, maxResults: 5, key: usedKey },
+            params: { part: "snippet", type: "video", videoCategoryId: "10", q: cleanQ, maxResults: 5, key: usedKey },
           });
           return r.data.items || [];
         } catch (e) {
