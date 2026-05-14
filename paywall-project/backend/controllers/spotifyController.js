@@ -898,7 +898,7 @@ export const searchTracks = async (req, res) => {
 // search queries from artist names + genres, collect and deduplicate results.
 export const generatePlaylist = async (req, res) => {
   try {
-    let { seedTrackIds = [], seedTrackMeta = [], seedPlaylistId, seedPlaylistIds = [], seedArtistIds = [], seedAlbumIds = [], genres = [], languages = ['en'], years = [], limit = 30 } = req.body;
+    let { seedTrackIds = [], seedTrackMeta = [], seedPlaylistId, seedPlaylistIds = [], seedArtistIds = [], seedAlbumIds = [], genres = [], primaryGenre: reqPrimaryGenre = null, languages = ['en'], years = [], limit = 30 } = req.body;
     limit = Math.max(1, Math.min(Number(limit) || 30, 100));
     if (!Array.isArray(languages) || !languages.length) languages = ['en'];
     const targetYears = (Array.isArray(years) ? years : []).map(Number).filter(Boolean);
@@ -1285,6 +1285,9 @@ export const generatePlaylist = async (req, res) => {
       'sleep':     ['genre:ambient sleep', 'genre:new-age', 'sleep sounds', 'calming piano', 'gentle acoustic'],
       'road-trip': ['genre:rock road trip', 'genre:classic-rock driving', 'windows down music', 'highway songs', 'sing along hits'],
       'romantic':  ['genre:r-n-b love songs', 'romantic ballad', 'love songs', 'slow jams', 'genre:soul romantic'],
+      'angry':     ['genre:metal aggressive', 'rage music', 'genre:hardcore angry', 'hard rock intense', 'genre:punk fury'],
+      'party':     ['genre:dance-pop party', 'party anthems', 'genre:edm party', 'club bangers', 'turn up music'],
+      'nostalgic': ['genre:indie nostalgic', 'throwback hits', 'nostalgic songs', 'genre:dream-pop', 'coming of age songs'],
     };
     const GENRE_QUERIES = {
       'chill':     CHILL_DIVERSE,
@@ -1334,27 +1337,70 @@ export const generatePlaylist = async (req, res) => {
       'k-pop':     ['genre:k-pop', 'kpop hits', 'korean pop'],
       'j-pop':     ['genre:j-pop', 'jpop hits', 'japanese pop'],
       'alt-pop':   ['genre:alt-pop', 'alt pop', 'alternative pop'],
+      'dance-pop': ['genre:dance-pop', 'dance pop hits', 'pop dance'],
+      'honky-tonk':['genre:honky-tonk', 'honky tonk', 'classic country bar'],
+      'synthwave': ['genre:synthwave', 'retrowave', '80s synth'],
+      'future-bass':['genre:future-bass', 'future bass', 'melodic bass'],
+      'post-punk': ['genre:post-punk', 'post punk', 'darkwave'],
+      'shoegaze':  ['genre:shoegaze', 'shoegaze music', 'my bloody valentine'],
+      'prog-rock': ['genre:prog-rock', 'progressive rock', 'prog'],
+      'boom-bap':  ['genre:boom-bap', 'boom bap', '90s hip hop'],
+      'conscious-hip-hop': ['genre:conscious-hip-hop', 'conscious rap', 'lyrical hip hop'],
+      'lo-fi-rap': ['genre:lo-fi-rap', 'lofi rap', 'chill rap'],
+      'neo-soul':  ['genre:neo-soul', 'neo soul', 'modern soul'],
+      'funk':      ['genre:funk', 'funk music', 'funky'],
+      'g-funk':    ['genre:g-funk', 'g funk', 'west coast hip hop'],
+      'reggaeton': ['genre:reggaeton', 'reggaeton hits', 'perreo'],
+      'dancehall': ['genre:dancehall', 'dancehall music', 'dancehall riddim'],
+      'afropop':   ['genre:afropop', 'afropop hits', 'african pop'],
+      'samba':     ['genre:samba', 'samba music', 'brazilian samba'],
+      'flamenco':  ['genre:flamenco', 'flamenco guitar', 'spanish flamenco'],
+      'indie-folk':['genre:indie-folk', 'indie folk', 'folk indie'],
+      'swing':     ['genre:swing', 'swing music', 'big band'],
+      'bebop':     ['genre:bebop', 'bebop jazz', 'jazz bebop'],
     };
 
     // Separate genres from moods so moods can be scoped to the primary genre
     const selectedMoods = genres.filter(g => MOOD_QUERIES[g]);
-    const selectedGenres = genres.filter(g => !MOOD_QUERIES[g]);
-    const primaryGenre = selectedGenres[0] || null; // e.g. "country"
+    const selectedGenresOnly = genres.filter(g => !MOOD_QUERIES[g]);
+    // Use frontend-provided primary genre if valid, otherwise fall back to first genre
+    const primaryGenre = (reqPrimaryGenre && genres.includes(reqPrimaryGenre)) ? reqPrimaryGenre : (selectedGenresOnly[0] || null);
+    const secondaryGenres = selectedGenresOnly.filter(g => g !== primaryGenre);
 
-    // Add genre-based queries using smart mappings
-    // Genres first (they are the primary filter)
-    selectedGenres.forEach(g => {
-      const genreMap = GENRE_QUERIES[g];
+    if (primaryGenre) console.log(`   🎯 Primary genre: "${primaryGenre}", secondary: [${secondaryGenres.join(', ')}], moods: [${selectedMoods.join(', ')}]`);
+
+    // Add primary genre queries first (dominant)
+    if (primaryGenre) {
+      const genreMap = GENRE_QUERIES[primaryGenre];
       if (genreMap) {
         const picks = genreMap.sort(() => Math.random() - 0.5).slice(0, 3);
         picks.forEach(q => baseQueries.push(q));
       } else {
-        baseQueries.push(`genre:${g}`);
-        baseQueries.push(`genre:${g} hits`);
+        baseQueries.push(`genre:${primaryGenre}`);
+        baseQueries.push(`genre:${primaryGenre} hits`);
+        baseQueries.push(`${primaryGenre} music`);
+      }
+    }
+
+    // Secondary genres — scoped to primary genre when one exists
+    secondaryGenres.forEach(g => {
+      if (primaryGenre) {
+        // Scope secondary to primary: e.g. primary=country, secondary=rock → "country rock"
+        baseQueries.push(`genre:${primaryGenre} ${g}`);
+        baseQueries.push(`${primaryGenre} ${g} songs`);
+      } else {
+        const genreMap = GENRE_QUERIES[g];
+        if (genreMap) {
+          const picks = genreMap.sort(() => Math.random() - 0.5).slice(0, 3);
+          picks.forEach(q => baseQueries.push(q));
+        } else {
+          baseQueries.push(`genre:${g}`);
+          baseQueries.push(`genre:${g} hits`);
+        }
       }
     });
 
-    // Moods second — scoped to the primary genre when one is selected
+    // Moods — scoped to the primary genre when one is selected
     selectedMoods.forEach(mood => {
       const moodMap = MOOD_QUERIES[mood];
       if (moodMap) {
@@ -1363,23 +1409,20 @@ export const generatePlaylist = async (req, res) => {
           // e.g. "sad" + "country" → "country heartbreak", "genre:country sad", "sad country songs"
           const moodPicks = moodMap.sort(() => Math.random() - 0.5).slice(0, 3);
           moodPicks.forEach(q => {
-            // Replace generic genre: operators with the primary genre
             const scoped = q.replace(/genre:\S+/g, `genre:${primaryGenre}`);
             baseQueries.push(scoped);
           });
-          // Also add direct combos: "genre:country sad", "sad country songs"
           baseQueries.push(`genre:${primaryGenre} ${mood}`);
           baseQueries.push(`${mood} ${primaryGenre} songs`);
         } else {
-          // No primary genre — use mood queries as-is
           const picks = moodMap.sort(() => Math.random() - 0.5).slice(0, 3);
           picks.forEach(q => baseQueries.push(q));
         }
       }
     });
 
-    // Cross-pollinate: artist × genre combos (use actual genres, not moods)
-    const crossGenres = selectedGenres.length ? selectedGenres : genres;
+    // Cross-pollinate: artist × genre combos (prioritize primary genre)
+    const crossGenres = primaryGenre ? [primaryGenre, ...secondaryGenres.slice(0, 1)] : (selectedGenresOnly.length ? selectedGenresOnly : genres);
     seedArtists.slice(0, 3).forEach(artist => {
       crossGenres.slice(0, 2).forEach(g => baseQueries.push(`${artist} ${g}`));
     });

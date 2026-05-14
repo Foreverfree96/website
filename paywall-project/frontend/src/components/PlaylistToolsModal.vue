@@ -182,9 +182,9 @@
                 </div>
                 <!-- Selected genres chips -->
                 <div v-if="pt.selectedGenres.value.length" class="pt-chips" style="margin-bottom:6px">
-                  <div v-for="(g, i) in pt.selectedGenres.value" :key="'sel-'+g" class="pt-chip">
-                    <span class="pt-chip-text">{{ g }}</span>
-                    <button class="pt-chip-x" @click="pt.toggleGenre(g)">&times;</button>
+                  <div v-for="(g, i) in pt.selectedGenres.value" :key="'sel-'+g" :class="['pt-chip', { primary: pt.primaryGenre.value === g }]">
+                    <span class="pt-chip-text">{{ g }}{{ pt.primaryGenre.value === g ? ' ★' : '' }}</span>
+                    <button class="pt-chip-x" @click="pt.removeGenre(g)">&times;</button>
                   </div>
                 </div>
                 <!-- Categorized genre tags -->
@@ -197,7 +197,7 @@
                     <button
                       v-for="g in genres"
                       :key="g"
-                      :class="['pt-tag', { selected: pt.selectedGenres.value.includes(g) }]"
+                      :class="['pt-tag', { selected: pt.selectedGenres.value.includes(g), primary: pt.primaryGenre.value === g }]"
                       @click="pt.toggleGenre(g)"
                     >{{ g }}</button>
                   </div>
@@ -1308,6 +1308,8 @@ const handleAddToExistingYt = (playlistId) => {
 .pt-chip-text { font-size: 12px; color: #ccc; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pt-chip-x { background: none; border: none; color: #888; font-size: 16px; cursor: pointer; padding: 4px 6px; line-height: 1; }
 .pt-chip-x:hover { color: #f44; }
+.pt-chip.primary { border-color: #22c55e88; background: #1a2e1f; }
+.pt-chip.primary .pt-chip-text { color: #22c55e; }
 
 /* ─── Genre tags ──────────────────────────────────────────────────────────── */
 .pt-tags { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -1327,7 +1329,12 @@ const handleAddToExistingYt = (playlistId) => {
   border-color: #7c3aed;
   color: #fff;
 }
-.pt-tag:hover:not(.selected) { border-color: #555; color: #ddd; }
+.pt-tag.primary {
+  background: #22c55e;
+  border-color: #22c55e;
+  color: #fff;
+}
+.pt-tag:hover:not(.selected):not(.primary) { border-color: #555; color: #ddd; }
 
 /* ─── Reference URLs ──────────────────────────────────────────────────────── */
 .pt-seed-urls-row { display: flex; gap: 8px; margin-bottom: 8px; }

@@ -17,6 +17,7 @@ const seedPlaylistUrls = ref([]); // array of URLs to reference
 const seedArtistUrls  = ref([]); // array of artist URLs
 const seedAlbumUrls   = ref([]); // array of album URLs
 const selectedGenres  = ref([]);
+const primaryGenre    = ref(null); // double-click a genre to make it the main one (green)
 const selectedYears   = ref([]); // empty = any year
 const trackLimit      = ref(30);
 const generatedTracks = ref([]);
@@ -138,6 +139,7 @@ const _persistResults = () => {
       seedArtistUrls: seedArtistUrls.value,
       seedAlbumUrls: seedAlbumUrls.value,
       selectedGenres: selectedGenres.value,
+      primaryGenre: primaryGenre.value,
       selectedLanguages: selectedLanguages.value,
       selectedYears: selectedYears.value,
       trackLimit: trackLimit.value,
@@ -177,6 +179,7 @@ const _restoreResults = () => {
     seedArtistUrls.value = state.seedArtistUrls || [];
     seedAlbumUrls.value = state.seedAlbumUrls || [];
     selectedGenres.value = state.selectedGenres || [];
+    primaryGenre.value = state.primaryGenre || null;
     selectedLanguages.value = state.selectedLanguages || ['en'];
     selectedYears.value = state.selectedYears || [];
     trackLimit.value = state.trackLimit || 30;
@@ -192,14 +195,16 @@ try { _restoreResults(); } catch { try { sessionStorage.removeItem(RESULTS_KEY);
 
 // ─── Available genres (categorized) ──────────────────────────────────────────
 const GENRE_CATEGORIES = {
-  'Popular':          ['pop', 'hip-hop', 'r-n-b', 'rap', 'trap', 'latin', 'afrobeats'],
-  'Country':          ['country', 'country-pop', 'americana', 'bluegrass', 'southern-rock'],
-  'Pop':              ['synth-pop', 'indie-pop', 'electro-pop', 'dream-pop', 'k-pop', 'j-pop', 'alt-pop'],
-  'Electronic':       ['electronic', 'house', 'techno', 'edm', 'dubstep', 'drum-and-bass', 'trance', 'ambient'],
-  'Rock & Metal':     ['rock', 'alt-rock', 'indie', 'punk', 'metal', 'grunge', 'hardcore'],
-  'Chill & Acoustic': ['chill', 'lofi', 'acoustic', 'folk', 'singer-songwriter', 'bossa-nova'],
-  'Classical & Jazz':  ['classical', 'piano', 'jazz', 'blues', 'soul', 'gospel', 'opera'],
-  'Moods':            ['sad', 'happy', 'emo', 'workout', 'focus', 'sleep', 'road-trip', 'romantic'],
+  'Popular':          ['pop', 'hip-hop', 'r-n-b', 'rap', 'trap'],
+  'Country':          ['country', 'country-pop', 'americana', 'bluegrass', 'southern-rock', 'honky-tonk'],
+  'Pop':              ['synth-pop', 'indie-pop', 'electro-pop', 'dream-pop', 'k-pop', 'j-pop', 'alt-pop', 'dance-pop'],
+  'Electronic':       ['electronic', 'house', 'techno', 'edm', 'dubstep', 'drum-and-bass', 'trance', 'ambient', 'synthwave', 'future-bass'],
+  'Rock & Metal':     ['rock', 'alt-rock', 'indie', 'punk', 'metal', 'grunge', 'hardcore', 'post-punk', 'shoegaze', 'prog-rock'],
+  'Hip-Hop & R&B':    ['boom-bap', 'conscious-hip-hop', 'lo-fi-rap', 'neo-soul', 'funk', 'g-funk'],
+  'Latin & World':    ['latin', 'reggaeton', 'afrobeats', 'dancehall', 'samba', 'flamenco', 'afropop'],
+  'Chill & Acoustic': ['chill', 'lofi', 'acoustic', 'folk', 'singer-songwriter', 'bossa-nova', 'indie-folk'],
+  'Classical & Jazz':  ['classical', 'piano', 'jazz', 'blues', 'soul', 'gospel', 'opera', 'swing', 'bebop'],
+  'Moods':            ['sad', 'happy', 'emo', 'workout', 'focus', 'sleep', 'road-trip', 'romantic', 'angry', 'party', 'nostalgic'],
 };
 
 // ─── Language options ────────────────────────────────────────────────────────
@@ -346,6 +351,7 @@ export function usePlaylistTools() {
     seedTracks.value = [];
     seedPlaylistUrls.value = [];
     selectedGenres.value = [];
+    primaryGenre.value = null;
     selectedYears.value = [];
     trackLimit.value = 30;
     generatedTracks.value = [];
@@ -519,9 +525,26 @@ export function usePlaylistTools() {
   };
 
   const toggleGenre = (genre) => {
+    const isSelected = selectedGenres.value.includes(genre);
+    const isPrimary = primaryGenre.value === genre;
+
+    if (!isSelected) {
+      // Not selected → select it (purple)
+      selectedGenres.value.push(genre);
+    } else if (isSelected && !isPrimary) {
+      // Selected but not primary → make it primary (green), only 1 allowed
+      primaryGenre.value = genre;
+    } else {
+      // Already primary → deselect entirely
+      selectedGenres.value.splice(selectedGenres.value.indexOf(genre), 1);
+      primaryGenre.value = null;
+    }
+  };
+
+  const removeGenre = (genre) => {
     const idx = selectedGenres.value.indexOf(genre);
     if (idx >= 0) selectedGenres.value.splice(idx, 1);
-    else selectedGenres.value.push(genre);
+    if (primaryGenre.value === genre) primaryGenre.value = null;
   };
 
   const toggleLanguage = (code) => {
@@ -607,6 +630,7 @@ export function usePlaylistTools() {
         seedTrackIds: seedTracks.value.filter(t => !t.id.startsWith('yt_')).map(t => t.id),
         seedTrackMeta: seedTracks.value.map((t) => ({ name: t.name, artist: t.artist })),
         genres: selectedGenres.value,
+        primaryGenre: primaryGenre.value || null,
         languages: selectedLanguages.value,
         limit: spotifyLimit,
         ...(selectedYears.value.length ? { years: selectedYears.value } : {}),
@@ -1570,7 +1594,7 @@ export function usePlaylistTools() {
   return {
     // State
     isOpen, activeTab, isMinimized, bgStatus, bgDone,
-    seedTracks, seedPlaylistUrls, seedArtistUrls, seedAlbumUrls, selectedGenres, selectedYears, trackLimit,
+    seedTracks, seedPlaylistUrls, seedArtistUrls, seedAlbumUrls, selectedGenres, primaryGenre, selectedYears, trackLimit,
     generatedTracks, generateLoading, generateTarget, generateProgress,
     generateSpotifyResults, generateYoutubeResults,
     convertUrl, convertDirection, sourceTracks, matchedTracks, convertLoading, convertProgress,
@@ -1586,7 +1610,7 @@ export function usePlaylistTools() {
 
     // Methods
     open, close, minimize, reset, setTab, setGenerateTarget,
-    searchSeeds, addSeed, removeSeed, toggleGenre, addCustomGenre, toggleLanguage,
+    searchSeeds, addSeed, removeSeed, toggleGenre, removeGenre, addCustomGenre, toggleLanguage,
     addSeedPlaylistUrl, removeSeedPlaylistUrl,
     addSeedArtistUrl, removeSeedArtistUrl,
     addSeedAlbumUrl, removeSeedAlbumUrl,
