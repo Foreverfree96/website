@@ -1563,6 +1563,8 @@ export const generatePlaylist = async (req, res) => {
         if (JUNK_RE.test(name) || JUNK_RE.test(album)) return false;
         const artistNames = (t.artists || []).map(a => a.name).join(' ');
         if (LIVE_RE.test(name) || LIVE_RE.test(album) || LIVE_RE.test(artistNames)) return false;
+        // Exclude clean versions — only allow explicit tracks
+        if (t.explicit === false) return false;
         // Filter very low popularity tracks (likely spam/unverified)
         if (typeof t.popularity === 'number' && t.popularity < 15) return false;
         // Strict language filter
