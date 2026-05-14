@@ -1323,26 +1323,52 @@ export const generatePlaylist = async (req, res) => {
       'alt-pop':   ['genre:alt-pop', 'alt pop', 'alternative pop'],
     };
 
+    // Separate genres from moods so moods can be scoped to the primary genre
+    const selectedMoods = genres.filter(g => MOOD_QUERIES[g]);
+    const selectedGenres = genres.filter(g => !MOOD_QUERIES[g]);
+    const primaryGenre = selectedGenres[0] || null; // e.g. "country"
+
     // Add genre-based queries using smart mappings
-    genres.forEach(g => {
-      const moodMap = MOOD_QUERIES[g];
+    // Genres first (they are the primary filter)
+    selectedGenres.forEach(g => {
       const genreMap = GENRE_QUERIES[g];
-      if (moodMap) {
-        const picks = moodMap.sort(() => Math.random() - 0.5).slice(0, 3);
-        picks.forEach(q => baseQueries.push(q));
-      } else if (genreMap) {
+      if (genreMap) {
         const picks = genreMap.sort(() => Math.random() - 0.5).slice(0, 3);
         picks.forEach(q => baseQueries.push(q));
       } else {
-        // Fallback for custom/unknown genres — use genre: operator
         baseQueries.push(`genre:${g}`);
         baseQueries.push(`genre:${g} hits`);
       }
     });
 
-    // Cross-pollinate: artist × genre combos
+    // Moods second — scoped to the primary genre when one is selected
+    selectedMoods.forEach(mood => {
+      const moodMap = MOOD_QUERIES[mood];
+      if (moodMap) {
+        if (primaryGenre) {
+          // Scope mood queries to the primary genre
+          // e.g. "sad" + "country" → "country heartbreak", "genre:country sad", "sad country songs"
+          const moodPicks = moodMap.sort(() => Math.random() - 0.5).slice(0, 3);
+          moodPicks.forEach(q => {
+            // Replace generic genre: operators with the primary genre
+            const scoped = q.replace(/genre:\S+/g, `genre:${primaryGenre}`);
+            baseQueries.push(scoped);
+          });
+          // Also add direct combos: "genre:country sad", "sad country songs"
+          baseQueries.push(`genre:${primaryGenre} ${mood}`);
+          baseQueries.push(`${mood} ${primaryGenre} songs`);
+        } else {
+          // No primary genre — use mood queries as-is
+          const picks = moodMap.sort(() => Math.random() - 0.5).slice(0, 3);
+          picks.forEach(q => baseQueries.push(q));
+        }
+      }
+    });
+
+    // Cross-pollinate: artist × genre combos (use actual genres, not moods)
+    const crossGenres = selectedGenres.length ? selectedGenres : genres;
     seedArtists.slice(0, 3).forEach(artist => {
-      genres.slice(0, 2).forEach(g => baseQueries.push(`${artist} ${g}`));
+      crossGenres.slice(0, 2).forEach(g => baseQueries.push(`${artist} ${g}`));
     });
 
     // Artist pair combo
@@ -1392,9 +1418,17 @@ export const generatePlaylist = async (req, res) => {
       queries.splice(0, queries.length, ...yearTagged, ...queries.slice(0, 4));
     }
 
+    // Clean special characters from queries that break Spotify search
+    // Keep genre:/year: operators, alphanumeric, spaces, hyphens, apostrophes
+    const cleanQuery = (q) => q
+      .replace(/[!@#$%^&*+=~`|\\{}[\]<>]/g, '')  // strip special chars
+      .replace(/\s{2,}/g, ' ')                     // collapse double spaces
+      .trim();
+    const cleanedQueries = queries.map(cleanQuery).filter(Boolean);
+
     // Deduplicate and cap — allow more queries when we need more tracks
     const maxQueries = limit > 50 ? 16 : limit > 20 ? 12 : 10;
-    const uniqueQueries = [...new Set(queries)].slice(0, maxQueries);
+    const uniqueQueries = [...new Set(cleanedQueries)].slice(0, maxQueries);
     uniqueQueries.sort(() => Math.random() - 0.5);
 
     const perQuery = Math.ceil((limit + 10) / Math.max(uniqueQueries.length, 1));
