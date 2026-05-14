@@ -1619,8 +1619,6 @@ export const generatePlaylist = async (req, res) => {
         if (JUNK_RE.test(name) || JUNK_RE.test(album)) return false;
         const artistNames = (t.artists || []).map(a => a.name).join(' ');
         if (LIVE_RE.test(name) || LIVE_RE.test(album) || LIVE_RE.test(artistNames)) return false;
-        // Exclude clean versions — only allow explicit tracks
-        if (t.explicit === false) return false;
         // Filter very low popularity tracks (likely spam/unverified)
         if (typeof t.popularity === 'number' && t.popularity < 15) return false;
         // Strict language filter
@@ -1628,12 +1626,25 @@ export const generatePlaylist = async (req, res) => {
         return true;
       });
 
+      // When both explicit and clean versions of the same song exist, keep only the explicit one
+      const explicitMap = new Map(); // normKey → track
+      items.forEach(t => {
+        const normName = (t.name || '').toLowerCase().replace(/\s*[\(\[].*[\)\]]/g, '').replace(/[^a-z0-9 ]/g, '').trim();
+        const normArtist = (t.artists?.[0]?.name || '').toLowerCase().replace(/[^a-z0-9 ]/g, '').trim();
+        const key = `${normName}::${normArtist}`;
+        const existing = explicitMap.get(key);
+        if (!existing || (t.explicit && !existing.explicit)) {
+          explicitMap.set(key, t);
+        }
+      });
+      items = [...explicitMap.values()];
+
       // Sort by popularity, boosting explicit versions and year matches
       items.sort((a, b) => {
         const releaseYearA = parseInt((a.album?.release_date || '').slice(0, 4), 10) || 0;
         const releaseYearB = parseInt((b.album?.release_date || '').slice(0, 4), 10) || 0;
-        let pa = (a.popularity || 0) + (a.explicit ? 10 : 0);
-        let pb = (b.popularity || 0) + (b.explicit ? 10 : 0);
+        let pa = (a.popularity || 0) + (a.explicit ? 15 : 0);
+        let pb = (b.popularity || 0) + (b.explicit ? 15 : 0);
         if (targetYearSet.size) {
           // Big boost for selected years, smaller boost for current year
           if (targetYearSet.has(releaseYearA)) pa += 30;
